@@ -64,7 +64,7 @@ import {
 import type { ConsumeDragClickSuppression } from "@/components/ui/use-drag-click-suppression";
 import type { SidebarSortableDragBindings } from "./sortableMotion";
 import { SidebarChildToggleChevron } from "./SidebarChildToggleChevron";
-import { useSidebarThreadShortcut } from "./sidebarThreadShortcuts";
+import { useSidebarThreadShortcutAssignment } from "./sidebarThreadShortcuts";
 import { SidebarThreadTitle } from "./SidebarThreadTitleMentions";
 import { SplitPaneMiniMap } from "./SplitPaneMiniMap";
 import { usePaneContentSplitIndicator } from "./paneContentSplitIndicator";
@@ -483,7 +483,8 @@ function ThreadRowComponent({
   const setConversationCollapsed = useSetAtom(
     getThreadConversationCollapsedAtom(thread.id),
   );
-  const shortcut = useSidebarThreadShortcut(thread.id);
+  const shortcutAssignment = useSidebarThreadShortcutAssignment(thread.id);
+  const shortcut = shortcutAssignment?.shortcut ?? null;
   const pluginThreadRowStatus = usePluginThreadRowStatus(thread.id);
   const showActive = isActive;
   const hasPendingInteraction = thread.hasPendingInteraction;
@@ -643,6 +644,15 @@ function ThreadRowComponent({
         className="absolute inset-0 rounded-md outline-none ring-sidebar-ring focus-visible:ring-2"
       />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
+        {shortcutAssignment ? (
+          <span
+            aria-hidden="true"
+            data-sidebar-thread-number=""
+            className="w-3 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+          >
+            {shortcutAssignment.key}
+          </span>
+        ) : null}
         <span className="min-w-0 truncate" title={labelTitle}>
           <SidebarThreadTitle title={visibleTitle} />
         </span>

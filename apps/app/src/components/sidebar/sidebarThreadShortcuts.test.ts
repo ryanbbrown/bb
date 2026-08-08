@@ -1,9 +1,11 @@
 // @vitest-environment jsdom
 
+import { waitFor } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import {
   getSidebarThreadNavigationTargets,
   getSidebarThreadShortcutTargets,
+  observeSidebarThreadShortcutTargets,
 } from "./sidebarThreadShortcuts";
 
 function appendShortcutTarget(root: HTMLElement, threadId?: string) {
@@ -69,5 +71,35 @@ describe("sidebar thread shortcuts", () => {
     expect(
       getSidebarThreadShortcutTargets(root).map((target) => target.threadId),
     ).toEqual(["thr_a", "thr_d"]);
+  });
+
+  it("reports assignments when rendered rows mount, reorder, and unmount", async () => {
+    const root = document.createElement("aside");
+    const assignments: string[][] = [];
+    const stopObserving = observeSidebarThreadShortcutTargets(
+      root,
+      (targets) => {
+        assignments.push(targets.map((target) => target.threadId));
+      },
+    );
+
+    const first = appendShortcutTarget(root, "thr_1");
+    const second = appendShortcutTarget(root, "thr_2");
+    await waitFor(() => {
+      expect(assignments.at(-1)).toEqual(["thr_1", "thr_2"]);
+    });
+
+    root.prepend(second);
+    await waitFor(() => {
+      expect(assignments.at(-1)).toEqual(["thr_2", "thr_1"]);
+    });
+
+    second.remove();
+    await waitFor(() => {
+      expect(assignments.at(-1)).toEqual(["thr_1"]);
+    });
+
+    first.remove();
+    stopObserving();
   });
 });

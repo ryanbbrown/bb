@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
 import { Link, useNavigate } from "react-router-dom";
@@ -38,11 +38,12 @@ import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
 import type { SidebarThreadSearchNavigationItem } from "./sidebarThreadSearch";
 import { useSidebarThreadSearch } from "./useSidebarThreadSearch";
 import {
-  EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS,
+  EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS,
   getSidebarThreadNavigationTargets,
   getSidebarThreadShortcutTargets,
-  SidebarThreadShortcutKeysContext,
-  type SidebarThreadShortcutPresentation,
+  observeSidebarThreadShortcutTargets,
+  SidebarThreadShortcutAssignmentsContext,
+  type SidebarThreadShortcutAssignment,
   type SidebarThreadShortcutTarget,
 } from "./sidebarThreadShortcuts";
 import {
@@ -70,6 +71,27 @@ interface AppSidebarProps {
   toolsRoutePath?: string;
 }
 
+function haveSameThreadShortcutAssignments(
+  current: ReadonlyMap<string, SidebarThreadShortcutAssignment>,
+  next: ReadonlyMap<string, SidebarThreadShortcutAssignment>,
+): boolean {
+  if (current.size !== next.size) return false;
+
+  for (const [threadId, nextAssignment] of next) {
+    const currentAssignment = current.get(threadId);
+    if (
+      currentAssignment?.key !== nextAssignment.key ||
+      currentAssignment.shortcut?.ariaKeyshortcuts !==
+        nextAssignment.shortcut?.ariaKeyshortcuts ||
+      currentAssignment.shortcut?.label !== nextAssignment.shortcut?.label
+    ) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 export function AppSidebar({
   onResizeMouseDown,
   isResizing,
@@ -93,9 +115,10 @@ export function AppSidebar({
   const closeOnMobile = useCloseMobileSidebar();
   const { isCompactViewport, setOpen, setOpenMobile } = useSidebar();
   const [desktopInfo] = useState(getBbDesktopInfo);
-  const [threadShortcutKeysById, setThreadShortcutKeysById] = useState<
-    ReadonlyMap<string, SidebarThreadShortcutPresentation>
-  >(EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS);
+  const [threadShortcutAssignmentsById, setThreadShortcutAssignmentsById] =
+    useState<ReadonlyMap<string, SidebarThreadShortcutAssignment>>(
+      EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS,
+    );
   const sidebarRef = useRef<HTMLDivElement | null>(null);
   const threadShortcutTargetsRef = useRef<
     readonly SidebarThreadShortcutTarget[]
@@ -153,26 +176,27 @@ export function AppSidebar({
     });
   }, [closeOnMobile, navigate]);
 
-  const showThreadShortcuts = useCallback(() => {
-    const targets = getSidebarThreadShortcutTargets(sidebarRef.current);
-    threadShortcutTargetsRef.current = targets;
-    setThreadShortcutKeysById(
-      new Map(
-        targets.flatMap((target, index) => {
+  const refreshThreadShortcutAssignments = useCallback(
+    (targets: readonly SidebarThreadShortcutTarget[]) => {
+      threadShortcutTargetsRef.current = targets;
+      const nextAssignments = new Map(
+        targets.map((target, index) => {
           const command = THREAD_JUMP_APP_COMMAND_IDS[index];
-          const shortcut = command
-            ? threadJumpShortcuts.get(command)
-            : undefined;
-          return shortcut ? [[target.threadId, shortcut] as const] : [];
+          const shortcut =
+            isAppCommandModifierHeld && command
+              ? (threadJumpShortcuts.get(command) ?? null)
+              : null;
+          return [target.threadId, { key: target.key, shortcut }] as const;
         }),
-      ),
-    );
-  }, [threadJumpShortcuts]);
-
-  const hideThreadShortcuts = useCallback(() => {
-    threadShortcutTargetsRef.current = [];
-    setThreadShortcutKeysById(EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS);
-  }, []);
+      );
+      setThreadShortcutAssignmentsById((current) =>
+        haveSameThreadShortcutAssignments(current, nextAssignments)
+          ? current
+          : nextAssignments,
+      );
+    },
+    [isAppCommandModifierHeld, threadJumpShortcuts],
+  );
 
   const activateThreadShortcut = useCallback((index: number): boolean => {
     const targets = threadShortcutTargetsRef.current;
@@ -229,13 +253,14 @@ export function AppSidebar({
   useAppCommandHandler("thread.previous", () => activateAdjacentThread(-1));
   useAppCommandHandler("thread.next", () => activateAdjacentThread(1));
 
-  useEffect(() => {
-    if (isAppCommandModifierHeld) {
-      showThreadShortcuts();
-      return;
-    }
-    hideThreadShortcuts();
-  }, [hideThreadShortcuts, isAppCommandModifierHeld, showThreadShortcuts]);
+  useLayoutEffect(() => {
+    const sidebar = sidebarRef.current;
+    if (!sidebar) return;
+    return observeSidebarThreadShortcutTargets(
+      sidebar,
+      refreshThreadShortcutAssignments,
+    );
+  }, [refreshThreadShortcutAssignments]);
 
   // Keep this object identity stable across unrelated re-renders (opening
   // the mobile drawer flips useSidebar context and re-renders AppSidebar):
@@ -274,7 +299,9 @@ export function AppSidebar({
   );
 
   return (
-    <SidebarThreadShortcutKeysContext.Provider value={threadShortcutKeysById}>
+    <SidebarThreadShortcutAssignmentsContext.Provider
+      value={threadShortcutAssignmentsById}
+    >
       <Sidebar ref={sidebarRef} onKeyDown={threadSearch.onKeyDown}>
         {showTopReserve ? (
           /* Top reserve that keeps the sidebar's content (New Thread / New
@@ -413,6 +440,6 @@ export function AppSidebar({
           onMouseDown={onResizeMouseDown}
         />
       </Sidebar>
-    </SidebarThreadShortcutKeysContext.Provider>
+    </SidebarThreadShortcutAssignmentsContext.Provider>
   );
 }

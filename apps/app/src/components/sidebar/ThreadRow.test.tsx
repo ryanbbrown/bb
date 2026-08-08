@@ -15,8 +15,8 @@ import {
   SIDEBAR_WORKING_STATUS_COLOR_CLASS,
 } from "./sidebarRowClasses";
 import {
-  EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS,
-  SidebarThreadShortcutKeysContext,
+  EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS,
+  SidebarThreadShortcutAssignmentsContext,
 } from "./sidebarThreadShortcuts";
 import {
   resetPluginThreadRowStatusesForTest,
@@ -93,6 +93,7 @@ function ThreadRowTestHarness({
   displayTitle,
   hasComposerDraft = false,
   isActive = false,
+  numberKey,
   options = DEFAULT_OPTIONS,
   shortcutKey,
   thread,
@@ -101,22 +102,34 @@ function ThreadRowTestHarness({
   displayTitle?: string;
   hasComposerDraft?: boolean;
   isActive?: boolean;
+  numberKey?: string;
   options?: ThreadRowOptions;
   shortcutKey?: string;
   thread: ThreadListEntry;
 }) {
-  const shortcutKeys = shortcutKey
+  const assignmentKey = numberKey ?? shortcutKey;
+  const shortcutAssignments = assignmentKey
     ? new Map([
         [
           thread.id,
-          { ariaKeyshortcuts: `Meta+${shortcutKey}`, label: `⌘${shortcutKey}` },
+          {
+            key: assignmentKey,
+            shortcut: shortcutKey
+              ? {
+                  ariaKeyshortcuts: `Meta+${shortcutKey}`,
+                  label: `⌘${shortcutKey}`,
+                }
+              : null,
+          },
         ],
       ])
-    : EMPTY_SIDEBAR_THREAD_SHORTCUT_KEYS;
+    : EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS;
 
   return (
     <MemoryRouter>
-      <SidebarThreadShortcutKeysContext.Provider value={shortcutKeys}>
+      <SidebarThreadShortcutAssignmentsContext.Provider
+        value={shortcutAssignments}
+      >
         <ThreadRow
           projectId={thread.projectId}
           thread={thread}
@@ -126,7 +139,7 @@ function ThreadRowTestHarness({
           displayTitle={displayTitle}
           accessibleTitle={accessibleTitle}
         />
-      </SidebarThreadShortcutKeysContext.Provider>
+      </SidebarThreadShortcutAssignmentsContext.Provider>
     </MemoryRouter>
   );
 }
@@ -134,12 +147,14 @@ function ThreadRowTestHarness({
 function renderThreadRow({
   hasComposerDraft = false,
   isActive = false,
+  numberKey,
   options = DEFAULT_OPTIONS,
   shortcutKey,
   thread = createThread(),
 }: {
   hasComposerDraft?: boolean;
   isActive?: boolean;
+  numberKey?: string;
   options?: ThreadRowOptions;
   shortcutKey?: string;
   thread?: ThreadListEntry;
@@ -148,6 +163,7 @@ function renderThreadRow({
     <ThreadRowTestHarness
       hasComposerDraft={hasComposerDraft}
       isActive={isActive}
+      numberKey={numberKey}
       options={options}
       shortcutKey={shortcutKey}
       thread={thread}
@@ -160,6 +176,7 @@ function renderThreadRow({
         <ThreadRowTestHarness
           hasComposerDraft={hasComposerDraft}
           isActive={isActive}
+          numberKey={numberKey}
           options={options}
           shortcutKey={shortcutKey}
           thread={nextThread}
@@ -820,6 +837,31 @@ describe("ThreadRow", () => {
         .getByRole("button", { name: "Collapse Parent thread threads" })
         .getAttribute("data-sidebar-hover-actions-mobile"),
     ).toBe("always");
+  });
+
+  it("shows and updates its assigned navigation number before the title", () => {
+    const thread = createThread();
+    const result = render(
+      <ThreadRowTestHarness thread={thread} numberKey="3" />,
+    );
+
+    const number = document.querySelector("[data-sidebar-thread-number]");
+    expect(number?.textContent).toBe("3");
+    expect(number?.getAttribute("aria-hidden")).toBe("true");
+    expect(number?.className).toContain("w-3");
+    expect(number?.className).toContain("text-xs");
+    expect(number?.className).toContain("tabular-nums");
+    expect(number?.className).toContain("text-muted-foreground");
+    expect(number?.nextElementSibling?.textContent).toBe("Thread");
+    expect(screen.queryByText("⌘3")).toBeNull();
+
+    result.rerender(<ThreadRowTestHarness thread={thread} numberKey="7" />);
+    expect(
+      document.querySelector("[data-sidebar-thread-number]")?.textContent,
+    ).toBe("7");
+
+    result.rerender(<ThreadRowTestHarness thread={thread} />);
+    expect(document.querySelector("[data-sidebar-thread-number]")).toBeNull();
   });
 
   it("shows its Command shortcut in place of an active indicator", () => {
