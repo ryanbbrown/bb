@@ -644,13 +644,13 @@ function ThreadRowComponent({
         className="absolute inset-0 rounded-md outline-none ring-sidebar-ring focus-visible:ring-2"
       />
       <span className="flex min-w-0 flex-1 items-center gap-1.5">
-        {shortcutAssignment ? (
+        {shortcutAssignment?.number ? (
           <span
             aria-hidden="true"
             data-sidebar-thread-number=""
             className="w-3 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
           >
-            {shortcutAssignment.key}
+            {shortcutAssignment.number}
           </span>
         ) : null}
         <span className="min-w-0 truncate" title={labelTitle}>

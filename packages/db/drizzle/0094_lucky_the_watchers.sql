@@ -1,0 +1,1 @@
+ALTER TABLE `app_settings` ADD `show_sidebar_thread_numbers` integer DEFAULT false NOT NULL;

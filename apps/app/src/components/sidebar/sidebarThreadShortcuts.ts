@@ -34,7 +34,7 @@ export interface SidebarThreadShortcutTarget {
 }
 
 export interface SidebarThreadShortcutAssignment {
-  key: string;
+  number: string | null;
   shortcut: AppShortcutPresentation | null;
 }
 

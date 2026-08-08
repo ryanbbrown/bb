@@ -87,6 +87,9 @@ message agents, or inspect projects, providers, and environments.
   keyboard keeps Return as a newline; iPadOS WebKit preserves the Enter
   shortcuts for a connected Magic Keyboard. Update the preference with
   `bb settings general steerActiveThreadOnEnter <true|false>`.
+- The `showSidebarThreadNumbers` General preference defaults to false. Enable
+  it to show `1` through `9` beside the first nine sidebar threads. Update it
+  with `bb settings general showSidebarThreadNumbers <true|false>`.
 - Settings → Keyboard records server-backed per-command shortcut overrides.
   The `showKeyboardHints` preference controls the delayed badges shown while
   holding Command or Control and defaults to true; update it with

@@ -71,6 +71,26 @@ describe("bb settings commands", () => {
     });
   });
 
+  it("updates sidebar thread number visibility while preserving the full contract", async () => {
+    const put = vi.fn(async ({ json }) => json);
+    stubServerApi({
+      "v1.system.config.$get": vi.fn(async () => ({
+        generalSettings: defaultAppSettings,
+        experiments: defaultExperiments,
+      })),
+      "v1.settings.general.$put": put,
+    });
+
+    await runCommand(
+      ["settings", "general", "showSidebarThreadNumbers", "true"],
+      register,
+    );
+
+    expect(put).toHaveBeenCalledWith({
+      json: { ...defaultAppSettings, showSidebarThreadNumbers: true },
+    });
+  });
+
   it("updates the Tools Hub experiment while preserving other flags", async () => {
     const put = vi.fn(async ({ json }) => json);
     stubServerApi({

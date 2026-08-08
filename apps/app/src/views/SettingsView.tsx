@@ -141,6 +141,12 @@ export interface SteerActiveThreadOnEnterSettingsControlProps {
   onEnabledChange: (enabled: boolean) => void;
 }
 
+export interface SidebarThreadNumbersSettingsControlProps {
+  disabled: boolean;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}
+
 export interface RichTextEditingSettingsControlProps {
   enabled: boolean;
   onEnabledChange: (enabled: boolean) => void;
@@ -183,11 +189,14 @@ export interface GeneralSettingsSectionProps {
   onOpenLinksInAppBrowserChange: (enabled: boolean) => void;
   onRewriteLocalhostLinksChange: (enabled: boolean) => void;
   onRichTextEditingChange: (enabled: boolean) => void;
+  onShowSidebarThreadNumbersChange: (enabled: boolean) => void;
   onSteerActiveThreadOnEnterChange: (enabled: boolean) => void;
   openLinksInAppBrowser: boolean;
   rewriteLocalhostLinks: boolean;
   richTextEditing: boolean;
   replayOnboardingAvailable: boolean;
+  showSidebarThreadNumbers: boolean;
+  showSidebarThreadNumbersDisabled: boolean;
   steerActiveThreadOnEnter: boolean;
   steerActiveThreadOnEnterDisabled: boolean;
 }
@@ -492,6 +501,7 @@ const UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL =
 const CAFFEINATE_SETTING_LABEL = "Caffeinate";
 const STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL =
   "Steer running threads on Enter";
+const SIDEBAR_THREAD_NUMBERS_SETTING_LABEL = "Show thread numbers";
 
 export function RootComposeBehaviorSettingsControl({
   navigateToThreadAfterCreate,
@@ -543,6 +553,26 @@ export function SteerActiveThreadOnEnterSettingsControl({
         disabled={disabled}
         onCheckedChange={onEnabledChange}
         aria-label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
+      />
+    </SettingsWithControl>
+  );
+}
+
+export function SidebarThreadNumbersSettingsControl({
+  disabled,
+  enabled,
+  onEnabledChange,
+}: SidebarThreadNumbersSettingsControlProps) {
+  return (
+    <SettingsWithControl
+      label={SIDEBAR_THREAD_NUMBERS_SETTING_LABEL}
+      description="Show 1–9 beside the first nine sidebar threads."
+    >
+      <Switch
+        checked={enabled}
+        disabled={disabled}
+        onCheckedChange={onEnabledChange}
+        aria-label={SIDEBAR_THREAD_NUMBERS_SETTING_LABEL}
       />
     </SettingsWithControl>
   );
@@ -782,11 +812,14 @@ export function GeneralSettingsSection({
   onOpenLinksInAppBrowserChange,
   onRewriteLocalhostLinksChange,
   onRichTextEditingChange,
+  onShowSidebarThreadNumbersChange,
   onSteerActiveThreadOnEnterChange,
   openLinksInAppBrowser,
   rewriteLocalhostLinks,
   richTextEditing,
   replayOnboardingAvailable,
+  showSidebarThreadNumbers,
+  showSidebarThreadNumbersDisabled,
   steerActiveThreadOnEnter,
   steerActiveThreadOnEnterDisabled,
   onReplayOnboarding,
@@ -810,6 +843,12 @@ export function GeneralSettingsSection({
           disabled={steerActiveThreadOnEnterDisabled}
           enabled={steerActiveThreadOnEnter}
           onEnabledChange={onSteerActiveThreadOnEnterChange}
+        />
+
+        <SidebarThreadNumbersSettingsControl
+          disabled={showSidebarThreadNumbersDisabled}
+          enabled={showSidebarThreadNumbers}
+          onEnabledChange={onShowSidebarThreadNumbersChange}
         />
 
         {caffeinateAvailable ? (
@@ -1227,6 +1266,11 @@ export function SettingsView() {
           rewriteLocalhostLinks={rewriteLocalhostLinks}
           richTextEditing={richTextEditing}
           replayOnboardingAvailable={experiments.newOnboarding}
+          showSidebarThreadNumbers={generalSettings.showSidebarThreadNumbers}
+          showSidebarThreadNumbersDisabled={
+            systemConfigQuery.data === undefined ||
+            updateGeneralSettingsMutation.isPending
+          }
           steerActiveThreadOnEnter={generalSettings.steerActiveThreadOnEnter}
           steerActiveThreadOnEnterDisabled={
             systemConfigQuery.data === undefined ||
@@ -1248,6 +1292,12 @@ export function SettingsView() {
           }
           onRewriteLocalhostLinksChange={setRewriteLocalhostLinks}
           onRichTextEditingChange={setRichTextEditing}
+          onShowSidebarThreadNumbersChange={(enabled) =>
+            updateGeneralSettingsMutation.mutate({
+              ...generalSettings,
+              showSidebarThreadNumbers: enabled,
+            })
+          }
           onSteerActiveThreadOnEnterChange={(enabled) =>
             updateGeneralSettingsMutation.mutate({
               ...generalSettings,

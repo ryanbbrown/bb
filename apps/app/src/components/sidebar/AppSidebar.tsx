@@ -1,6 +1,6 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@bb/shared-ui/lib/utils";
-import { THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
+import { defaultAppSettings, THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
 import { Link, useNavigate } from "react-router-dom";
 import { Icon } from "@bb/shared-ui/icon";
 import { COARSE_POINTER_CHILD_ICON_BUTTON_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
@@ -54,6 +54,7 @@ import {
   useIndexedAppCommandHandlers,
 } from "@/components/commands/AppCommandProvider";
 import { useRouteState } from "@/hooks/useRouteState";
+import { useSystemConfig } from "@/hooks/queries/system-queries";
 
 const NEW_THREAD_PANE_CONTENT = { kind: "new-thread" } as const;
 
@@ -80,7 +81,7 @@ function haveSameThreadShortcutAssignments(
   for (const [threadId, nextAssignment] of next) {
     const currentAssignment = current.get(threadId);
     if (
-      currentAssignment?.key !== nextAssignment.key ||
+      currentAssignment?.number !== nextAssignment.number ||
       currentAssignment.shortcut?.ariaKeyshortcuts !==
         nextAssignment.shortcut?.ariaKeyshortcuts ||
       currentAssignment.shortcut?.label !== nextAssignment.shortcut?.label
@@ -130,6 +131,10 @@ export function AppSidebar({
   );
   const isAppCommandModifierHeld = useIsAppCommandModifierHeld();
   const settingsShortcut = useAppCommandShortcut("settings.open");
+  const systemConfigQuery = useSystemConfig();
+  const showSidebarThreadNumbers =
+    systemConfigQuery.data?.generalSettings.showSidebarThreadNumbers ??
+    defaultAppSettings.showSidebarThreadNumbers;
 
   const openSidebarForThreadSearch = useCallback(() => {
     if (isCompactViewport) {
@@ -186,7 +191,13 @@ export function AppSidebar({
             isAppCommandModifierHeld && command
               ? (threadJumpShortcuts.get(command) ?? null)
               : null;
-          return [target.threadId, { key: target.key, shortcut }] as const;
+          return [
+            target.threadId,
+            {
+              number: showSidebarThreadNumbers ? target.key : null,
+              shortcut,
+            },
+          ] as const;
         }),
       );
       setThreadShortcutAssignmentsById((current) =>
@@ -195,7 +206,7 @@ export function AppSidebar({
           : nextAssignments,
       );
     },
-    [isAppCommandModifierHeld, threadJumpShortcuts],
+    [isAppCommandModifierHeld, showSidebarThreadNumbers, threadJumpShortcuts],
   );
 
   const activateThreadShortcut = useCallback((index: number): boolean => {

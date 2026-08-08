@@ -54,6 +54,13 @@ every window and client sees the same value.
   stays a newline; iPadOS WebKit preserves the Enter shortcuts for a connected
   Magic Keyboard.
 
+## Sidebar thread numbers
+
+- `showSidebarThreadNumbers` defaults to false. Set it with
+  `bb settings general showSidebarThreadNumbers <true|false>`.
+- When enabled, the built-in sidebar shows `1` through `9` beside the first
+  nine threads. These numbers match the direct thread navigation commands.
+
 ## New onboarding
 
 - The `newOnboarding` experiment defaults to false.

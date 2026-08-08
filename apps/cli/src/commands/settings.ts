@@ -62,6 +62,7 @@ function updateGeneralSetting(
   switch (key) {
     case "caffeinate":
     case "showKeyboardHints":
+    case "showSidebarThreadNumbers":
     case "steerActiveThreadOnEnter":
     case "showUnhandledProviderEvents":
     case "codexMemoryEnabled":

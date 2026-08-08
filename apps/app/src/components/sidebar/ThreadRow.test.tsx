@@ -107,23 +107,23 @@ function ThreadRowTestHarness({
   shortcutKey?: string;
   thread: ThreadListEntry;
 }) {
-  const assignmentKey = numberKey ?? shortcutKey;
-  const shortcutAssignments = assignmentKey
-    ? new Map([
-        [
-          thread.id,
-          {
-            key: assignmentKey,
-            shortcut: shortcutKey
-              ? {
-                  ariaKeyshortcuts: `Meta+${shortcutKey}`,
-                  label: `⌘${shortcutKey}`,
-                }
-              : null,
-          },
-        ],
-      ])
-    : EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS;
+  const shortcutAssignments =
+    numberKey || shortcutKey
+      ? new Map([
+          [
+            thread.id,
+            {
+              number: numberKey ?? null,
+              shortcut: shortcutKey
+                ? {
+                    ariaKeyshortcuts: `Meta+${shortcutKey}`,
+                    label: `⌘${shortcutKey}`,
+                  }
+                : null,
+            },
+          ],
+        ])
+      : EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS;
 
   return (
     <MemoryRouter>
@@ -877,6 +877,7 @@ describe("ThreadRow", () => {
     });
 
     const shortcut = screen.getByText("⌘3");
+    expect(document.querySelector("[data-sidebar-thread-number]")).toBeNull();
     expect(shortcut.className).toContain("px-1.5");
     expect(shortcut.className).toContain("py-1");
     expect(shortcut.className).toContain("opacity-60");

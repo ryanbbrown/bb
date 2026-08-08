@@ -298,6 +298,7 @@ function dropRewindAddedTables(db: DbConnection): void {
     .run();
   dropHostMaxPermissionModeColumn(db);
   dropEnvironmentRetireRequestedAtColumn(db);
+  dropShowSidebarThreadNumbersColumn(db);
   dropThreadSectionSchema(db);
   restoreWideExperimentsTable(db);
   // system_experiments predates thread search, so the table itself isn't
@@ -626,6 +627,21 @@ function dropEnvironmentRetireRequestedAtColumn(db: DbConnection): void {
   }
 }
 
+// Migration 0093 adds the sidebar thread-number preference. Rewind scenarios
+// must remove the column before replaying its non-idempotent ADD statement.
+function dropShowSidebarThreadNumbersColumn(db: DbConnection): void {
+  const columns = db.$client
+    .prepare<[], TableInfoRow>("PRAGMA table_info(app_settings)")
+    .all();
+  if (columns.some((column) => column.name === "show_sidebar_thread_numbers")) {
+    db.$client
+      .prepare(
+        "ALTER TABLE app_settings DROP COLUMN show_sidebar_thread_numbers",
+      )
+      .run();
+  }
+}
+
 /**
  * cleanup_mode existed since the baseline and is dropped by 0033, so a forward
  * replay from before 0033 must first restore it for 0033's DROP COLUMN to apply
@@ -682,6 +698,7 @@ function dropQueuedMessageSenderThreadIdColumn(db: DbConnection): void {
 /** Tables created by migrations after 0023, dropped so migrate() re-applies. */
 function dropPost0023Tables(db: DbConnection): void {
   dropEnvironmentRetireRequestedAtColumn(db);
+  dropShowSidebarThreadNumbersColumn(db);
   dropProjectGitRemoteUrlColumn(db);
   db.$client.prepare("DROP TABLE IF EXISTS thread_tabs").run();
   db.$client.exec(`
@@ -1393,6 +1410,7 @@ describe("migrate", () => {
     dropOnboardingCompletedAtColumn(db);
     dropNewOnboardingExperimentColumn(db);
     dropEnvironmentRetireRequestedAtColumn(db);
+    dropShowSidebarThreadNumbersColumn(db);
     // Delete by the journal timestamp, not a hash substring: migration hashes
     // are hex and can contain "0085" by coincidence.
     db.$client
@@ -1684,6 +1702,7 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
+      dropShowSidebarThreadNumbersColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       migrate(db);
@@ -2084,6 +2103,7 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
+      dropShowSidebarThreadNumbersColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(
@@ -2181,6 +2201,7 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
+      dropShowSidebarThreadNumbersColumn(db);
 
       restoreLegacyThreadOriginColumn(db);
       expect(() => migrate(db)).not.toThrow();

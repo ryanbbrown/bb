@@ -169,6 +169,10 @@ software-keyboard Return path inserts a newline and the submit button sends.
 iPadOS WebKit additionally preserves the Enter and Command+Enter shortcuts
 above for a connected Magic Keyboard.
 
+The "Show thread numbers" toggle in Settings → General shows `1` through `9`
+beside the first nine sidebar threads. It defaults to off. Set it with
+`bb settings general showSidebarThreadNumbers <true|false>`.
+
 ## Keyboard Shortcuts
 
 Settings → Keyboard edits app command shortcuts. Overrides are stored in the

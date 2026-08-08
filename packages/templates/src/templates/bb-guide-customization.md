@@ -87,6 +87,9 @@ in zen mode. On coarse-pointer touch devices, the software-keyboard Return path
 inserts a newline. iPadOS WebKit preserves these Enter shortcuts for a connected
 Magic Keyboard.
 
+Settings → General includes `showSidebarThreadNumbers`, which defaults to
+false. Turn it on to show `1` through `9` beside the first nine sidebar threads.
+
   bb settings show
   bb settings general <key> <true|false>
   bb settings replay-onboarding
