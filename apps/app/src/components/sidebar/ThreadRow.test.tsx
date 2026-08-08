@@ -851,7 +851,8 @@ describe("ThreadRow", () => {
     expect(number?.className).toContain("w-3");
     expect(number?.className).toContain("text-xs");
     expect(number?.className).toContain("tabular-nums");
-    expect(number?.className).toContain("text-muted-foreground");
+    expect(number?.className).toContain("text-subtle-foreground");
+    expect(number?.className).toContain("opacity-60");
     expect(number?.nextElementSibling?.textContent).toBe("Thread");
     expect(screen.queryByText("⌘3")).toBeNull();
 

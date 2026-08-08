@@ -648,7 +648,7 @@ function ThreadRowComponent({
           <span
             aria-hidden="true"
             data-sidebar-thread-number=""
-            className="w-3 shrink-0 text-right text-xs tabular-nums text-muted-foreground"
+            className="w-3 shrink-0 text-right text-xs tabular-nums text-subtle-foreground opacity-60"
           >
             {shortcutAssignment.number}
           </span>
