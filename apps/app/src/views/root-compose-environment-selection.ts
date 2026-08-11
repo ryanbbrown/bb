@@ -1,5 +1,7 @@
 import {
   findLocalPathProjectSourceForHost,
+  resolveEnvironmentWorkspaceDisplayKind,
+  type Environment,
   type ProjectSource,
   type ThreadListEntry,
 } from "@bb/domain";
@@ -37,58 +39,53 @@ export interface ResolveRootComposeEffectiveEnvironmentValueArgs {
 export const PROJECT_SOURCE_WORKTREE_DISABLED_REASON =
   "Project source is not a git repository";
 
-function isWorktreeWithEnv(thread: ThreadListEntry): boolean {
-  if (thread.environmentId === null) return false;
+function isReusableWorktreeEnvironment(environment: Environment): boolean {
   return (
-    thread.environmentWorkspaceDisplayKind === "managed-worktree" ||
-    thread.environmentWorkspaceDisplayKind === "unmanaged-worktree"
+    environment.status === "ready" &&
+    environment.path !== null &&
+    resolveEnvironmentWorkspaceDisplayKind({ environment }) !== "other"
   );
 }
 
 export function buildReuseThreadOptions(
+  environments: readonly Environment[],
   threads: readonly ThreadListEntry[],
   /** Host id → machine name, provided only when worktree rows should carry a
    * machine hint when more than one host exists. */
   hostNameById: ReadonlyMap<string, string> | null = null,
 ): ReuseThreadOption[] {
-  // One option per worktree env. Threads within each env are sorted
-  // most-recently-active first so the picker preview surfaces the threads
-  // the user is most likely to recognize. Only unarchived threads reach
-  // here — `useThreads({ archived: false })` filters at the source. Envs
-  // with no unarchived threads naturally drop out.
+  // One option per ready worktree. Threads only provide recent preview labels,
+  // so an environment stays reusable after its last thread is archived.
   const threadsByEnvironmentId = new Map<string, ThreadListEntry[]>();
-  const branchByEnvironmentId = new Map<string, string | null>();
-  const nameByEnvironmentId = new Map<string, string | null>();
-  const hostIdByEnvironmentId = new Map<string, string | null>();
+  const reusableEnvironments = environments.filter(
+    isReusableWorktreeEnvironment,
+  );
+  const reusableEnvironmentIds = new Set(
+    reusableEnvironments.map((environment) => environment.id),
+  );
   for (const thread of threads) {
-    if (!isWorktreeWithEnv(thread)) continue;
     if (thread.environmentId === null) continue;
+    if (!reusableEnvironmentIds.has(thread.environmentId)) continue;
     let bucket = threadsByEnvironmentId.get(thread.environmentId);
     if (!bucket) {
       bucket = [];
       threadsByEnvironmentId.set(thread.environmentId, bucket);
-      branchByEnvironmentId.set(
-        thread.environmentId,
-        thread.environmentBranchName,
-      );
-      nameByEnvironmentId.set(thread.environmentId, thread.environmentName);
-      hostIdByEnvironmentId.set(thread.environmentId, thread.environmentHostId);
     }
     bucket.push(thread);
   }
   const options: ReuseThreadOption[] = [];
-  for (const [environmentId, bucket] of threadsByEnvironmentId) {
+  for (const environment of reusableEnvironments) {
+    const bucket = threadsByEnvironmentId.get(environment.id) ?? [];
     bucket.sort(
       (left, right) => right.latestAttentionAt - left.latestAttentionAt,
     );
-    const hostId = hostIdByEnvironmentId.get(environmentId) ?? null;
     options.push({
-      environmentId,
-      branchName: branchByEnvironmentId.get(environmentId) ?? null,
-      name: nameByEnvironmentId.get(environmentId) ?? null,
+      environmentId: environment.id,
+      branchName: environment.branchName,
+      name: environment.name,
       hostName:
-        hostNameById !== null && hostId !== null
-          ? (hostNameById.get(hostId) ?? null)
+        hostNameById !== null
+          ? (hostNameById.get(environment.hostId) ?? null)
           : null,
       threads: bucket.map((thread) => ({
         id: thread.id,

@@ -5,6 +5,7 @@ import { noopNotifier } from "../../src/notifier.js";
 import type { DbNotifier } from "../../src/notifier.js";
 import {
   createEnvironment,
+  listReadyWorktreeEnvironmentsForProjects,
   listRetiredLoadedEnvironmentIdsOnHost,
   recordEnvironmentCurrentBranch,
   recordProvisionedEnvironmentWorkspace,
@@ -38,6 +39,48 @@ function createNotifierSpy(): DbNotifier {
 }
 
 describe("environments", () => {
+  it("lists only ready worktrees for the requested projects", () => {
+    const { db, host, project } = setup();
+    const reusableWorktree = createEnvironment(db, noopNotifier, {
+      projectId: project.id,
+      hostId: host.id,
+      path: "/tmp/test-worktree",
+      isWorktree: true,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    createEnvironment(db, noopNotifier, {
+      projectId: project.id,
+      hostId: host.id,
+      path: "/tmp/test",
+      isWorktree: false,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+    const { project: otherProject } = createProject(db, noopNotifier, {
+      name: "other-project",
+      source: {
+        type: "local_path",
+        hostId: host.id,
+        path: "/tmp/other-project",
+      },
+    });
+    createEnvironment(db, noopNotifier, {
+      projectId: otherProject.id,
+      hostId: host.id,
+      path: "/tmp/other-worktree",
+      isWorktree: true,
+      workspaceProvisionType: "unmanaged",
+      status: "ready",
+    });
+
+    expect(
+      listReadyWorktreeEnvironmentsForProjects(db, [project.id]).map(
+        (environment) => environment.id,
+      ),
+    ).toEqual([reusableWorktree.id]);
+  });
+
   it("emits metadata-changed when merge base branch changes", () => {
     const { db, host, project } = setup();
     const environment = createEnvironment(db, noopNotifier, {

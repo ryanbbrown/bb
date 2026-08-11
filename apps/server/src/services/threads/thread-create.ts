@@ -799,6 +799,13 @@ export async function createThreadFromRequest(
   switch (resolvedEnvironment.type) {
     case "reuse": {
       let environment = resolvedEnvironment.environment;
+      if (
+        requestInput.environment.type === "reuse" &&
+        environment.status !== "ready" &&
+        environment.status !== "provisioning"
+      ) {
+        throwEnvironmentNotReady(environment);
+      }
       if (environment.status === "retiring") {
         applyLoggedEnvironmentLifecycleEvent(deps, {
           environmentId: environment.id,

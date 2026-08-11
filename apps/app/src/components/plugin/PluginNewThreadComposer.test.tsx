@@ -17,6 +17,7 @@ import { PluginNewThreadComposer } from "./PluginNewThreadComposer";
 
 const mocks = vi.hoisted(() => ({
   promptBoxProps: [] as Array<Record<string, any>>,
+  sidebarLoading: false,
 }));
 
 vi.mock("@/components/promptbox/NewThreadPromptBox", () => ({
@@ -65,7 +66,12 @@ const OTHER_PROJECT = {
 
 vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({
   useSidebarNavigation: () => ({
-    data: { projects: [PROJECT, OTHER_PROJECT], personalProject: undefined },
+    data: {
+      projects: [PROJECT, OTHER_PROJECT],
+      personalProject: undefined,
+      worktreeEnvironments: [],
+    },
+    isLoading: mocks.sidebarLoading,
   }),
 }));
 
@@ -264,6 +270,7 @@ async function submit(): Promise<void> {
 describe("PluginNewThreadComposer seeding", () => {
   beforeEach(() => {
     mocks.promptBoxProps.length = 0;
+    mocks.sidebarLoading = false;
     window.localStorage.clear();
   });
 
@@ -288,6 +295,25 @@ describe("PluginNewThreadComposer seeding", () => {
 
     expect(submitted).toHaveLength(1);
     expect(submitted[0]).toEqual(STORED_REQUEST);
+  });
+
+  it("keeps a persisted reuse selection unresolved while sidebar bootstrap loads", async () => {
+    mocks.sidebarLoading = true;
+    renderComposer(
+      {
+        ...STORED_REQUEST,
+        environment: { type: "reuse", environmentId: "env_persisted" },
+      },
+      vi.fn(),
+      "reuse-bootstrap-loading",
+    );
+
+    await waitFor(() => {
+      expect(latestPromptBoxProps().modeConfig.environment.value).toBe(
+        "reuse",
+      );
+    });
+    expect(latestPromptBoxProps().modeConfig.worktree.value).toBeNull();
   });
 
   it("re-seeds every selection when the seed props change, even after a user pick", async () => {

@@ -90,6 +90,7 @@ const personalProject = makeProject({
 
 const loadedSidebarNavigation = {
   sections: [],
+  worktreeEnvironments: [],
   personalProject: {
     ...personalProject,
     defaultExecutionOptions: null,

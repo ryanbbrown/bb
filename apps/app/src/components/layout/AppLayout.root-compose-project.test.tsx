@@ -104,6 +104,7 @@ vi.mock("@/hooks/queries/sidebar-navigation-query", () => ({
   useSidebarNavigation: () => ({
     data: {
       sections: [],
+      worktreeEnvironments: [],
       personalProject: {
         id: "proj_personal",
         kind: "personal",

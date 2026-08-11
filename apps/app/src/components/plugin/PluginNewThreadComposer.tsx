@@ -192,9 +192,22 @@ export function PluginNewThreadComposer({
   );
   const reuseThreadOptions = useMemo(
     () =>
-      buildReuseThreadOptions(threadsQuery.data ?? [], worktreeHostNameById),
-    [threadsQuery.data, worktreeHostNameById],
+      buildReuseThreadOptions(
+        sidebarNavigationQuery.data?.worktreeEnvironments?.filter(
+          (environment) => environment.projectId === projectId,
+        ) ?? [],
+        threadsQuery.data ?? [],
+        worktreeHostNameById,
+      ),
+    [
+      projectId,
+      sidebarNavigationQuery.data?.worktreeEnvironments,
+      threadsQuery.data,
+      worktreeHostNameById,
+    ],
   );
+  const reuseThreadOptionsLoading =
+    sidebarNavigationQuery.isLoading || threadsQuery.isLoading;
 
   // --- Execution options --------------------------------------------------
   const resolveProviderRouting = useCallback(
@@ -206,7 +219,7 @@ export function PluginNewThreadComposer({
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: threadsQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       isProjectless,
@@ -214,7 +227,7 @@ export function PluginNewThreadComposer({
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      threadsQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   const projectDefaultExecutionOptionsQuery = useProjectDefaultExecutionOptions(
@@ -334,7 +347,7 @@ export function PluginNewThreadComposer({
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: threadsQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       environmentSelectionValue,
@@ -343,7 +356,7 @@ export function PluginNewThreadComposer({
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      threadsQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   const parsedEnvironment = useMemo(

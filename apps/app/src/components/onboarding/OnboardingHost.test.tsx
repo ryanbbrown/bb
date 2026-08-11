@@ -52,7 +52,9 @@ beforeEach(() => {
     runningJobKey: null,
     startInstall: vi.fn(),
   });
-  mocks.useSidebarNavigation.mockReturnValue({ data: { projects: [] } });
+  mocks.useSidebarNavigation.mockReturnValue({
+    data: { projects: [], worktreeEnvironments: [] },
+  });
   mocks.useUpdateGeneralSettings.mockReturnValue({ mutate: vi.fn() });
 });
 

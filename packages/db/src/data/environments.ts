@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, lt, ne, or, sql } from "drizzle-orm";
 import type {
   DiscoveredWorkspaceProperties,
   EnvironmentChangeKind,
@@ -149,6 +149,31 @@ export function listEnvironmentsByIds(
     .select()
     .from(environments)
     .where(inArray(environments.id, [...environmentIds]))
+    .all();
+}
+
+export function listReadyWorktreeEnvironmentsForProjects(
+  db: DbConnection,
+  projectIds: readonly string[],
+) {
+  if (projectIds.length === 0) {
+    return [];
+  }
+
+  return db
+    .select()
+    .from(environments)
+    .where(
+      and(
+        inArray(environments.projectId, [...projectIds]),
+        eq(environments.status, "ready"),
+        isNotNull(environments.path),
+        or(
+          eq(environments.workspaceProvisionType, "managed-worktree"),
+          eq(environments.isWorktree, true),
+        ),
+      ),
+    )
     .all();
 }
 

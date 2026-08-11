@@ -1,5 +1,6 @@
 import {
   PERSONAL_PROJECT_ID,
+  type Environment,
   type ProjectSource,
   type ThreadListEntry,
 } from "@bb/domain";
@@ -35,6 +36,7 @@ import {
   shouldNavigateAfterThreadCreate,
 } from "./RootComposeView";
 import {
+  buildReuseThreadOptions,
   isProjectSourceWorktreeUnavailable,
   resolveComposeHostId,
   resolveRootComposeEffectiveEnvironmentValue,
@@ -212,6 +214,30 @@ function makeProject(args: MakeProjectArgs): ProjectWithThreadsResponse {
   };
 }
 
+function makeWorktreeEnvironment(
+  overrides: Partial<Environment> = {},
+): Environment {
+  return {
+    id: "env_worktree",
+    name: null,
+    projectId: "project_1",
+    hostId: "host_1",
+    path: "/repo-worktree",
+    managed: false,
+    isGitRepo: true,
+    isWorktree: true,
+    workspaceProvisionType: "unmanaged",
+    branchName: "feature/reuse",
+    baseBranch: null,
+    defaultBranch: "main",
+    mergeBaseBranch: null,
+    status: "ready",
+    createdAt: 1,
+    updatedAt: 1,
+    ...overrides,
+  };
+}
+
 function makeTerminalSession(
   overrides: Partial<TerminalSession>,
 ): TerminalSession {
@@ -258,6 +284,7 @@ describe("buildMobileRecentThreads", () => {
   it("includes projectless and every project thread", () => {
     const sidebarNavigation: SidebarBootstrapResponse = {
       sections: [],
+      worktreeEnvironments: [],
       personalProject: makeProject({
         id: PERSONAL_PROJECT_ID,
         kind: "personal",
@@ -760,6 +787,81 @@ describe("resolveRootComposeProjectRouting", () => {
         "host_primary",
       ),
     ).toEqual({ environmentId: "env_remote" });
+  });
+});
+
+describe("buildReuseThreadOptions", () => {
+  it("keeps a ready unmanaged worktree after all its threads are archived", () => {
+    expect(buildReuseThreadOptions([makeWorktreeEnvironment()], [])).toEqual([
+      {
+        environmentId: "env_worktree",
+        branchName: "feature/reuse",
+        name: null,
+        hostName: null,
+        threads: [],
+      },
+    ]);
+  });
+
+  it("uses unarchived threads as recent previews for a ready worktree", () => {
+    expect(
+      buildReuseThreadOptions(
+        [makeWorktreeEnvironment()],
+        [
+          {
+            ...makeThread({ id: "thr_old", projectId: "project_1" }),
+            environmentId: "env_worktree",
+            latestAttentionAt: 10,
+            title: "Older thread",
+          },
+          {
+            ...makeThread({ id: "thr_recent", projectId: "project_1" }),
+            environmentId: "env_worktree",
+            latestAttentionAt: 20,
+            title: "Recent thread",
+          },
+        ],
+        new Map([["host_1", "Mac Studio"]]),
+      ),
+    ).toEqual([
+      {
+        environmentId: "env_worktree",
+        branchName: "feature/reuse",
+        name: null,
+        hostName: "Mac Studio",
+        threads: [
+          { id: "thr_recent", title: "Recent thread" },
+          { id: "thr_old", title: "Older thread" },
+        ],
+      },
+    ]);
+  });
+
+  it("excludes retiring and destroyed managed worktrees", () => {
+    expect(
+      buildReuseThreadOptions(
+        [
+          makeWorktreeEnvironment({
+            id: "env_ready",
+            managed: true,
+            workspaceProvisionType: "managed-worktree",
+          }),
+          makeWorktreeEnvironment({
+            id: "env_retiring",
+            managed: true,
+            workspaceProvisionType: "managed-worktree",
+            status: "retiring",
+          }),
+          makeWorktreeEnvironment({
+            id: "env_destroyed",
+            managed: true,
+            workspaceProvisionType: "managed-worktree",
+            status: "destroyed",
+          }),
+        ],
+        [],
+      ).map((option) => option.environmentId),
+    ).toEqual(["env_ready"]);
   });
 });
 

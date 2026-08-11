@@ -1303,7 +1303,7 @@ export interface HasLiveThreadAtHostPathArgs {
 }
 
 /**
- * Whether any project has a live thread working in one physical directory.
+ * Whether any project has a thread that can still own one physical directory.
  * A branch checkout rewrites the working tree, so it must not run while
  * another project's agent uses the same folder.
  */
@@ -1320,6 +1320,7 @@ export function hasLiveThreadAtHostPath(
         eq(environments.hostId, args.hostId),
         eq(environments.path, args.path),
         inArray(threads.status, [...NON_TERMINAL_THREAD_STATUSES]),
+        or(isNull(threads.archivedAt), ne(threads.status, "idle")),
         isNull(threads.deletedAt),
       ),
     )

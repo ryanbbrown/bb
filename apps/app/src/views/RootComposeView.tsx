@@ -996,18 +996,30 @@ export function RootComposeView() {
     () => currentProject?.sources ?? [],
     [currentProject?.sources],
   );
-  // Worktree picker options come from the project's unarchived threads.
-  // Threads on managed or unmanaged worktrees with a non-null environmentId
-  // contribute; envs with only archived threads disappear naturally.
+  // Ready project worktrees supply picker rows. Unarchived threads only supply
+  // recent preview labels, so archived threads do not hide reusable worktrees.
   const threadsQuery = useThreads(
     { projectId, archived: false },
     { enabled: Boolean(projectId) },
   );
   const reuseThreadOptions = useMemo(
     () =>
-      buildReuseThreadOptions(threadsQuery.data ?? [], worktreeHostNameById),
-    [threadsQuery.data, worktreeHostNameById],
+      buildReuseThreadOptions(
+        sidebarNavigationQuery.data?.worktreeEnvironments?.filter(
+          (environment) => environment.projectId === projectId,
+        ) ?? [],
+        threadsQuery.data ?? [],
+        worktreeHostNameById,
+      ),
+    [
+      projectId,
+      sidebarNavigationQuery.data?.worktreeEnvironments,
+      threadsQuery.data,
+      worktreeHostNameById,
+    ],
   );
+  const reuseThreadOptionsLoading =
+    sidebarNavigationQuery.isLoading || threadsQuery.isLoading;
   const resolveProviderRouting = useCallback(
     (environmentSelectionValue: string) =>
       resolveRootComposeProviderRouting({
@@ -1017,7 +1029,7 @@ export function RootComposeView() {
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: threadsQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       isProjectless,
@@ -1025,7 +1037,7 @@ export function RootComposeView() {
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      threadsQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   // Seed the picker from the server-resolved project defaults so the visible
@@ -1317,7 +1329,7 @@ export function RootComposeView() {
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: threadsQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       environmentSelectionValue,
@@ -1326,7 +1338,7 @@ export function RootComposeView() {
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      threadsQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   const parsedEnvironment = useMemo(

@@ -268,6 +268,7 @@ export {
   listEnvironments,
   findForeignManagedEnvironmentAtHostPath,
   listEnvironmentsByIds,
+  listReadyWorktreeEnvironmentsForProjects,
   listRetiredLoadedEnvironmentIdsOnHost,
   updateEnvironmentMetadata,
 } from "./environments.js";

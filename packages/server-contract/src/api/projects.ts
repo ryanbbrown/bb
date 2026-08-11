@@ -1,6 +1,7 @@
 import { z } from "zod";
 import {
   FILE_LIST_QUERY_MAX_LENGTH,
+  environmentSchema,
   getProjectPathValidationMessage,
   gitBranchNameSchema,
   normalizeProjectPathInput,
@@ -543,6 +544,8 @@ export const sidebarBootstrapResponseSchema = z.object({
   sections: z.array(threadSectionSchema),
   projects: z.array(projectWithThreadsResponseSchema),
   personalProject: projectWithThreadsResponseSchema,
+  /** Ready worktrees that the new-thread composer can reuse. */
+  worktreeEnvironments: z.array(environmentSchema),
 });
 export type SidebarBootstrapResponse = z.infer<
   typeof sidebarBootstrapResponseSchema

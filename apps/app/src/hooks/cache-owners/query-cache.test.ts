@@ -5,14 +5,38 @@ import {
   ARCHIVED_THREADS_LIST_KIND,
   THREADS_QUERY_KEY,
   archivedThreadsListQueryKey,
+  sidebarNavigationQueryKey,
   threadListQueryKey,
 } from "../queries/query-keys";
 import {
+  applyToCachedSidebarNavigationThreads,
   getCachedGlobalThreadListInvalidationQueryKeys,
   getCachedProjectThreadListInvalidationQueryKeys,
 } from "./query-cache";
 
 describe("query cache thread list invalidation keys", () => {
+  it("preserves the complete sidebar response when mapping threads", () => {
+    const { queryClient } = createQueryClientTestHarness();
+    const sidebarKey = sidebarNavigationQueryKey();
+    queryClient.setQueryData(sidebarKey, {
+      sections: [],
+      projects: [{ threads: [] }],
+      personalProject: { threads: [] },
+      worktreeEnvironments: [],
+      futureResponseField: "preserve me",
+    });
+
+    applyToCachedSidebarNavigationThreads({
+      mapper: (threads) => threads,
+      queryClient,
+    });
+
+    expect(queryClient.getQueryData(sidebarKey)).toMatchObject({
+      futureResponseField: "preserve me",
+      worktreeEnvironments: [],
+    });
+  });
+
   it("includes global archived lists in global invalidation", () => {
     const { queryClient } = createQueryClientTestHarness();
     const projectArchivedKey = archivedThreadsListQueryKey({

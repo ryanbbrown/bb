@@ -4,6 +4,7 @@ import {
 } from "./public-thread-test-harness.js";
 
 import {
+  archiveThread,
   createProjectSource,
   getProjectExecutionDefaults,
   listThreads,
@@ -673,6 +674,64 @@ describe("public thread default routes", () => {
       );
       expect(sidebarProject?.threads.map((thread) => thread.id)).not.toContain(
         hiddenThread.id,
+      );
+    });
+  });
+
+  it("includes ready worktrees without loading their archived threads", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps);
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/tmp/sidebar-ready-worktrees",
+      });
+      const reusable = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/tmp/sidebar-ready-worktrees/feature",
+        isWorktree: true,
+        workspaceProvisionType: "unmanaged",
+      });
+      const archivedThread = seedThread(harness.deps, {
+        environmentId: reusable.id,
+        projectId: project.id,
+      });
+      archiveThread(harness.deps.db, harness.deps.hub, archivedThread.id);
+      const retiring = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/tmp/sidebar-ready-worktrees/retiring",
+        status: "retiring",
+        managed: true,
+        workspaceProvisionType: "managed-worktree",
+      });
+      const destroyed = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/tmp/sidebar-ready-worktrees/destroyed",
+        status: "destroyed",
+        managed: true,
+        workspaceProvisionType: "managed-worktree",
+      });
+
+      const response = await harness.app.request("/api/v1/sidebar-bootstrap");
+
+      expect(response.status).toBe(200);
+      const bootstrap = sidebarBootstrapResponseSchema.parse(
+        await readJson(response),
+      );
+      const sidebarProject = bootstrap.projects.find(
+        (candidate) => candidate.id === project.id,
+      );
+      expect(sidebarProject?.threads).toEqual([]);
+      expect(
+        bootstrap.worktreeEnvironments.map((environment) => environment.id),
+      ).toEqual([reusable.id]);
+      expect(bootstrap.worktreeEnvironments).not.toContainEqual(
+        expect.objectContaining({ id: retiring.id }),
+      );
+      expect(bootstrap.worktreeEnvironments).not.toContainEqual(
+        expect.objectContaining({ id: destroyed.id }),
       );
     });
   });

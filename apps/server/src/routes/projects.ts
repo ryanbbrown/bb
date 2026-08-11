@@ -10,6 +10,7 @@ import {
   getProjectSourceForProject,
   listProjectExecutionDefaultsByProjectIds,
   listPublicProjects,
+  listReadyWorktreeEnvironmentsForProjects,
   listProjectSourcesByProjectIds,
   listThreadSections,
   listThreadsWithPendingInteractionStateForProjects,
@@ -236,7 +237,6 @@ function buildProjectsWithThreadsResponseFromRows(
     deps.db,
     { projectIds },
   );
-
   return projects.map((project) => ({
     ...project,
     threads: threadsByProjectId.get(project.id) ?? [],
@@ -266,13 +266,18 @@ function buildSidebarBootstrapResponse(deps: AppDeps) {
       "Personal project response was not built",
     );
   }
+  const projects = buildProjectsWithThreadsResponseFromRows(
+    deps,
+    listPublicProjects(deps.db),
+  );
   return {
     sections: listThreadSections(deps.db),
-    projects: buildProjectsWithThreadsResponseFromRows(
-      deps,
-      listPublicProjects(deps.db),
-    ),
+    projects,
     personalProject: personalProjectResponse,
+    worktreeEnvironments: listReadyWorktreeEnvironmentsForProjects(deps.db, [
+      personalProjectResponse.id,
+      ...projects.map((project) => project.id),
+    ]),
   };
 }
 

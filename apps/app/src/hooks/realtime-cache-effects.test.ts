@@ -491,6 +491,105 @@ describe("createRealtimeCacheEffects", () => {
     effects.dispose();
   });
 
+  it.each(["environment-created", "environment-deleted"] as const)(
+    "invalidates sidebar navigation for %s without an environment thread",
+    async (change) => {
+      vi.useFakeTimers();
+      const { effects, queryClient } = createRealtimeEffectsTestContext();
+      const sidebarKey = sidebarNavigationQueryKey();
+      queryClient.setQueryData(sidebarKey, {
+        personalProject: { threads: [] },
+        projects: [{ id: "project-1", threads: [] }],
+        worktreeEnvironments: [],
+      });
+
+      effects.handleChanged({
+        type: "changed",
+        entity: "environment",
+        id: "env_1",
+        changes: [change],
+      });
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(queryClient.getQueryState(sidebarKey)?.isInvalidated).toBe(true);
+      effects.dispose();
+    },
+  );
+
+  it("removes a threadless worktree after its status becomes ineligible", async () => {
+    vi.useFakeTimers();
+    const { effects, queryClient } = createRealtimeEffectsTestContext();
+    const sidebarKey = sidebarNavigationQueryKey();
+    const initial = {
+      personalProject: { threads: [] },
+      projects: [{ id: "project-1", threads: [] }],
+      worktreeEnvironments: [{ id: "env_1", name: "Ready worktree" }],
+    };
+    const updated = { ...initial, worktreeEnvironments: [] };
+    queryClient.setQueryData(sidebarKey, initial);
+    const queryFn = vi.fn(async () => updated);
+    const observer = new QueryObserver(queryClient, {
+      queryKey: sidebarKey,
+      queryFn,
+      staleTime: Infinity,
+    });
+    const unsubscribe = observer.subscribe(() => {});
+    queryFn.mockClear();
+
+    effects.handleChanged({
+      type: "changed",
+      entity: "environment",
+      id: "env_1",
+      changes: ["status-changed"],
+    });
+    await vi.advanceTimersByTimeAsync(250);
+
+    expect(queryFn).toHaveBeenCalledTimes(1);
+    expect(queryClient.getQueryData(sidebarKey)).toEqual(updated);
+    unsubscribe();
+    effects.dispose();
+  });
+
+  it.each([
+    ["label", [{ id: "env_1", name: "Renamed worktree" }]],
+    ["eligibility", []],
+  ] as const)(
+    "refreshes a threadless worktree's %s after metadata changes",
+    async (_change, worktreeEnvironments) => {
+      vi.useFakeTimers();
+      const { effects, queryClient } = createRealtimeEffectsTestContext();
+      const sidebarKey = sidebarNavigationQueryKey();
+      const initial = {
+        personalProject: { threads: [] },
+        projects: [{ id: "project-1", threads: [] }],
+        worktreeEnvironments: [{ id: "env_1", name: "Old worktree" }],
+      };
+      const updated = { ...initial, worktreeEnvironments };
+      queryClient.setQueryData(sidebarKey, initial);
+      const queryFn = vi.fn(async () => updated);
+      const observer = new QueryObserver(queryClient, {
+        queryKey: sidebarKey,
+        queryFn,
+        staleTime: Infinity,
+      });
+      const unsubscribe = observer.subscribe(() => {});
+      queryFn.mockClear();
+
+      effects.handleChanged({
+        type: "changed",
+        entity: "environment",
+        id: "env_1",
+        changes: ["metadata-changed"],
+      });
+      await vi.advanceTimersByTimeAsync(250);
+
+      expect(queryFn).toHaveBeenCalledTimes(1);
+      expect(queryClient.getQueryData(sidebarKey)).toEqual(updated);
+      unsubscribe();
+      effects.dispose();
+    },
+  );
+
   it("refetches active root thread lists without refetching child lists for order changes", async () => {
     vi.useFakeTimers();
     const { effects, queryClient } = createRealtimeEffectsTestContext();

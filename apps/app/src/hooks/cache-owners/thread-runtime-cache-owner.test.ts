@@ -102,6 +102,7 @@ function makeSidebarNavigation(
 ): SidebarBootstrapResponse {
   return {
     sections: [],
+    worktreeEnvironments: [],
     projects: [
       {
         id: "project-1",

@@ -356,6 +356,7 @@ export const REALTIME_THREAD_CHANGE_REGISTRY = {
 export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
   "environment-created": {
     dirty: [
+      dirtySidebarNavigationQueries, // Reusable worktrees can exist without any unarchived thread.
       dirtyEnvironmentRecordQueries, // Newly persisted environment metadata.
       dirtyEnvironmentWorkspaceStateQueries, // Initial work status/diff/preview state may exist.
       dirtyEnvironmentBranchListQueries, // New environment can expose branch options.
@@ -363,6 +364,7 @@ export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
   },
   "environment-deleted": {
     dirty: [
+      dirtySidebarNavigationQueries, // Remove deleted worktrees from the composer.
       dirtyEnvironmentRecordQueries, // Record should reconcile to deleted/not-found.
       dirtyEnvironmentWorkspaceStateQueries, // Work status/diff/preview data is no longer valid.
       dirtyEnvironmentBranchListQueries, // Branch options are scoped to the environment.
@@ -370,6 +372,7 @@ export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
   },
   "metadata-changed": {
     dirty: [
+      dirtySidebarNavigationQueries, // Refresh worktree names, branches, and eligibility metadata.
       dirtyEnvironmentRecordQueries, // Branch/display metadata is rendered directly.
       dirtyEnvironmentWorkspaceStateQueries, // Metadata can change workspace-state request resolution.
       dirtyEnvironmentBranchListQueries, // Branch metadata can change merge-base options.
@@ -379,6 +382,7 @@ export const REALTIME_ENVIRONMENT_CHANGE_REGISTRY = {
   },
   "status-changed": {
     dirty: [
+      dirtySidebarNavigationQueries, // Ready status controls worktree reuse eligibility.
       dirtyEnvironmentRecordQueries, // Environment record renders current status.
       dirtyEnvironmentWorkspaceStateQueries, // Status affects availability of workspace state.
       dirtyEnvironmentBranchListQueries, // Status can affect branch option availability.
@@ -811,6 +815,10 @@ function dirtyEnvironmentRecordQueries(
   context: EnvironmentRealtimeDirtyContext,
 ): QueryKey[] {
   return getEnvironmentRecordInvalidationQueryKeys(context);
+}
+
+function dirtySidebarNavigationQueries(): QueryKey[] {
+  return [sidebarNavigationQueryKey()];
 }
 
 function dirtyEnvironmentWorkspaceStateQueries(
