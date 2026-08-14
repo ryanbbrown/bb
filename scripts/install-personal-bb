@@ -1,0 +1,185 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+repo_root="$(dirname -- "${script_dir}")"
+built_app="${repo_root}/apps/desktop/release/mac-arm64/bb.app"
+installed_app="/Applications/bb.app"
+bb_data_dir="${HOME}/.bb"
+live_database="${bb_data_dir}/bb.db"
+migrations_folder="${repo_root}/packages/db/drizzle"
+server_health_url="http://127.0.0.1:38886/health"
+
+die() {
+  printf 'ERROR: %s\n' "$*" >&2
+  exit 1
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "Missing required command: $1"
+}
+
+is_bb_running() {
+  pgrep -f "^${installed_app}/Contents/" >/dev/null 2>&1
+}
+
+wait_for_bb_to_quit() {
+  local attempt
+  for attempt in {1..100}; do
+    if ! is_bb_running; then
+      return 0
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+stop_installed_bb() {
+  if ! is_bb_running; then
+    return
+  fi
+
+  osascript -e 'tell application id "dev.bb.desktop" to quit' >/dev/null 2>&1 || true
+  if wait_for_bb_to_quit; then
+    return
+  fi
+
+  pkill -TERM -f "^${installed_app}/Contents/" >/dev/null 2>&1 || true
+  if wait_for_bb_to_quit; then
+    return
+  fi
+
+  pkill -KILL -f "^${installed_app}/Contents/" >/dev/null 2>&1 || true
+  wait_for_bb_to_quit
+}
+
+wait_for_bb_health() {
+  local attempt
+  local response
+  for attempt in {1..150}; do
+    response="$(curl --fail --silent --show-error --max-time 1 "${server_health_url}" 2>/dev/null || true)"
+    if is_bb_running &&
+      [[ "${response}" =~ \"ok\"[[:space:]]*:[[:space:]]*true ]]; then
+      return 0
+    fi
+    if ! is_bb_running && [[ "${attempt}" -gt 10 ]]; then
+      return 1
+    fi
+    sleep 0.2
+  done
+  return 1
+}
+
+[[ "$(uname -s)" == "Darwin" ]] || die "This command requires macOS."
+[[ "$(uname -m)" == "arm64" ]] || die "This command requires Apple Silicon."
+
+require_command curl
+require_command ditto
+require_command git
+require_command node
+require_command open
+require_command osascript
+require_command pgrep
+require_command pkill
+require_command pnpm
+
+[[ "$(git -C "${repo_root}" branch --show-current)" == "personal" ]] ||
+  die "Run this command from the personal branch."
+[[ -f "${live_database}" ]] || die "Live database not found: ${live_database}"
+
+printf 'Building personal bb from %s\n' "${repo_root}"
+(
+  cd -- "${repo_root}"
+  pnpm exec turbo run build --filter=@bb/desktop
+  node apps/desktop/scripts/run-electron-builder.mjs --mac --dir --arm64
+)
+
+[[ -d "${built_app}" ]] || die "Packaged app not found: ${built_app}"
+
+was_running=0
+if is_bb_running; then
+  was_running=1
+  printf 'Stopping installed bb\n'
+  stop_installed_bb
+fi
+
+database_work_dir="$(mktemp -d "${bb_data_dir}/.personal-install.XXXXXX")"
+app_work_dir="$(mktemp -d "/Applications/.bb-personal-install.XXXXXX")"
+chmod 700 "${database_work_dir}" "${app_work_dir}"
+migrated_database="${database_work_dir}/migrated.db"
+backup_database="${database_work_dir}/original.db"
+staged_app="${app_work_dir}/new-bb.app"
+backup_app="${app_work_dir}/original-bb.app"
+install_succeeded=0
+new_app_installed=0
+
+restore_or_cleanup() {
+  local status=$?
+  trap - EXIT
+
+  if [[ "${install_succeeded}" != "1" ]]; then
+    if [[ "${new_app_installed}" == "1" || -d "${backup_app}" ]]; then
+      if ! stop_installed_bb; then
+        printf 'ERROR: Could not stop the failed installation. Backups remain in %s and %s.\n' \
+          "${database_work_dir}" "${app_work_dir}" >&2
+        exit 1
+      fi
+      rm -rf -- "${installed_app}"
+    fi
+    if [[ -d "${backup_app}" ]]; then
+      mv -- "${backup_app}" "${installed_app}"
+    fi
+
+    if [[ -e "${backup_database}" ]]; then
+      rm -f -- "${live_database}" "${live_database}-shm" "${live_database}-wal"
+      for suffix in "" "-shm" "-wal"; do
+        if [[ -e "${backup_database}${suffix}" ]]; then
+          mv -- "${backup_database}${suffix}" "${live_database}${suffix}"
+        fi
+      done
+    fi
+
+    if [[ "${was_running}" == "1" && -d "${installed_app}" ]]; then
+      open "${installed_app}" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  rm -rf -- "${database_work_dir}" "${app_work_dir}"
+  exit "${status}"
+}
+trap restore_or_cleanup EXIT
+
+printf 'Preparing application and database copies\n'
+ditto "${built_app}" "${staged_app}"
+(
+  cd -- "${repo_root}"
+  node --conditions=source --import tsx \
+    packages/db/scripts/personal-install-db.ts \
+    "${live_database}" \
+    "${migrated_database}" \
+    "${migrations_folder}"
+)
+
+is_bb_running && die "An installed bb process started during database preparation."
+
+if [[ -d "${installed_app}" ]]; then
+  mv -- "${installed_app}" "${backup_app}"
+fi
+for suffix in "" "-shm" "-wal"; do
+  if [[ -e "${live_database}${suffix}" ]]; then
+    mv -- "${live_database}${suffix}" "${backup_database}${suffix}"
+  fi
+done
+
+mv -- "${migrated_database}" "${live_database}"
+mv -- "${staged_app}" "${installed_app}"
+new_app_installed=1
+
+printf 'Opening personal bb\n'
+open "${installed_app}"
+if ! wait_for_bb_health; then
+  die "Personal bb did not pass startup validation. Restoring the previous installation."
+fi
+
+install_succeeded=1
+printf 'Personal bb is healthy.\n'
