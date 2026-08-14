@@ -1,9 +1,4 @@
-import {
-  deleteThread,
-  findProjectEnvironmentByHostPath,
-  getEnvironment,
-  getThread,
-} from "@bb/db";
+import { deleteThread, getEnvironment, getThread } from "@bb/db";
 import type {
   ProjectExecutionDefaults,
   Project,
@@ -12,11 +7,17 @@ import type {
   ThreadVisibility,
 } from "@bb/domain";
 import { supportsNativeFork } from "@bb/agent-providers";
-import type { BaseBranchSpec, UnmanagedBranchSpec } from "@bb/server-contract";
+import type {
+  ManagedCheckoutIntent,
+  UnmanagedBranchSpec,
+} from "@bb/server-contract";
 import type { LoggedPendingInteractionWorkSessionDeps } from "../../types.js";
 import { COMMAND_TIMEOUT_MS } from "../../constants.js";
 import { ApiError } from "../../errors.js";
-import { unmanagedAttachRefusal } from "./workspace-path-claims.js";
+import {
+  resolveUnmanagedAttach,
+  type UnmanagedAttachResolution,
+} from "./workspace-path-claims.js";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import { callHostRetryableOnlineRpc } from "../hosts/online-rpc.js";
 import { requireNonDestroyedHostWithStatus } from "../lib/entity-lookup.js";
@@ -63,7 +64,7 @@ import type {
   ThreadProvisionContext,
   ThreadProvisionEnvironmentIntent,
 } from "./thread-provisioning-context.js";
-import { resolveManagedDefaultBaseBranchSpec } from "../projects/worktree-base-branch.js";
+import { resolveDefaultWorktreeBaseBranch } from "../projects/worktree-base-branch.js";
 import { applyLoggedEnvironmentLifecycleEvent } from "../environments/lifecycle-outcome.js";
 import { resolveSystemProviderModels } from "../system/execution-options.js";
 
@@ -71,9 +72,9 @@ type ThreadCreateDeps = LoggedPendingInteractionWorkSessionDeps;
 
 interface ExistingUnmanagedEnvironmentIntentByHostPathArgs {
   branch: UnmanagedBranchSpec | undefined;
+  existing: UnmanagedAttachResolution["existingProjectEnvironment"];
   hostId: string;
   path: string;
-  request: ThreadCreateServiceRequest;
 }
 
 interface ExistingUnmanagedEnvironmentIntentResult {
@@ -262,7 +263,7 @@ interface EnsureCreateHostOnlineArgs {
 }
 
 interface ResolveManagedDefaultBaseBranchForCreateArgs {
-  baseBranch: BaseBranchSpec;
+  checkout: ManagedCheckoutIntent;
   hostId: string;
   sourcePath: string;
 }
@@ -380,33 +381,75 @@ async function ensureCreateHostOnline(
 async function resolveManagedDefaultBaseBranchForCreate(
   deps: ThreadCreateDeps,
   args: ResolveManagedDefaultBaseBranchForCreateArgs,
-): Promise<BaseBranchSpec> {
-  if (args.baseBranch.kind === "named") {
-    return args.baseBranch;
+): Promise<
+  Extract<
+    ThreadProvisionEnvironmentIntent,
+    { type: "direct-managed" }
+  >["checkout"]
+> {
+  if (
+    args.checkout.kind === "new-branch" &&
+    args.checkout.baseBranch.kind === "named"
+  ) {
+    return {
+      kind: "new-branch",
+      baseBranch: args.checkout.baseBranch.name,
+    };
   }
 
-  try {
-    const result = await callHostRetryableOnlineRpc(deps, {
-      hostId: args.hostId,
-      timeoutMs: COMMAND_TIMEOUT_MS,
-      command: {
-        type: "host.list_branches",
-        path: args.sourcePath,
-        limit: 1,
-      },
-    });
-    return resolveManagedDefaultBaseBranchSpec(result);
-  } catch (error) {
-    deps.logger.warn(
-      {
-        hostId: args.hostId,
-        sourcePath: args.sourcePath,
-        ...runtimeErrorLogFields(deps.config, error),
-      },
-      "Failed to resolve smart worktree base branch; using source default",
-    );
-    return args.baseBranch;
+  const selectedBranch =
+    args.checkout.kind === "existing-branch" ? args.checkout.name : undefined;
+  const result = await callHostRetryableOnlineRpc(deps, {
+    hostId: args.hostId,
+    timeoutMs: COMMAND_TIMEOUT_MS,
+    command: {
+      type: "host.list_branches",
+      path: args.sourcePath,
+      ...(selectedBranch ? { selectedBranch } : {}),
+      limit: 1,
+    },
+  });
+  if (args.checkout.kind === "new-branch") {
+    const baseBranch = resolveDefaultWorktreeBaseBranch(result);
+    if (baseBranch === null) {
+      throw new ApiError(
+        409,
+        "invalid_request",
+        "Cannot create a worktree because the project source has no branch",
+      );
+    }
+    return { kind: "new-branch", baseBranch };
   }
+
+  if (result.selectedBranch?.kind === "missing" || !result.selectedBranch) {
+    throw new ApiError(
+      409,
+      "invalid_request",
+      `Cannot continue missing branch ${args.checkout.name}`,
+    );
+  }
+  if (result.selectedBranch.kind === "local") {
+    return {
+      kind: "existing-branch",
+      branchName: args.checkout.name,
+      startPoint: args.checkout.name,
+      upstream: null,
+    };
+  }
+  const separator = args.checkout.name.indexOf("/");
+  if (separator <= 0 || separator === args.checkout.name.length - 1) {
+    throw new ApiError(
+      409,
+      "invalid_request",
+      `Cannot resolve remote branch ${args.checkout.name}`,
+    );
+  }
+  return {
+    kind: "existing-branch",
+    branchName: args.checkout.name.slice(separator + 1),
+    startPoint: args.checkout.name,
+    upstream: args.checkout.name,
+  };
 }
 
 interface AssertUnmanagedHostPathIsAttachableArgs {
@@ -423,32 +466,27 @@ interface AssertUnmanagedHostPathIsAttachableArgs {
  * place to another project's bb-managed worktree, and rewriting the working
  * tree while another project works in the same folder.
  */
-function assertUnmanagedHostPathIsAttachable(
+async function assertUnmanagedHostPathIsAttachable(
   deps: ThreadCreateDeps,
   args: AssertUnmanagedHostPathIsAttachableArgs,
-): void {
-  const refusal = unmanagedAttachRefusal(deps.db, {
+): Promise<UnmanagedAttachResolution> {
+  const resolution = await resolveUnmanagedAttach(deps, {
     checksOutBranch: args.branch !== undefined,
     dataDir: args.dataDir,
     hostId: args.hostId,
     path: args.path,
     projectId: args.projectId,
   });
-  if (refusal) {
-    throw new ApiError(409, "invalid_request", refusal.message);
+  if (resolution.refusal) {
+    throw new ApiError(409, "invalid_request", resolution.refusal.message);
   }
+  return resolution;
 }
 
 function existingUnmanagedEnvironmentIntentByHostPath(
-  deps: ThreadCreateDeps,
   args: ExistingUnmanagedEnvironmentIntentByHostPathArgs,
 ): ExistingUnmanagedEnvironmentIntentResult | null {
-  const existing = findProjectEnvironmentByHostPath(
-    deps.db,
-    args.request.projectId,
-    args.hostId,
-    args.path,
-  );
+  const existing = args.existing;
   if (!existing) {
     return null;
   }
@@ -836,26 +874,26 @@ export async function createThreadFromRequest(
             "Validated unmanaged host request is missing a workspace path",
           );
         }
-        assertUnmanagedHostPathIsAttachable(deps, {
-          branch: workspace.branch,
-          dataDir: hostDataDir,
-          hostId,
-          path: resolvedEnvironment.unmanagedPath,
-          projectId: request.projectId,
-        });
-        const existingIntent = existingUnmanagedEnvironmentIntentByHostPath(
+        const attachResolution = await assertUnmanagedHostPathIsAttachable(
           deps,
           {
             branch: workspace.branch,
+            dataDir: hostDataDir,
             hostId,
             path: resolvedEnvironment.unmanagedPath,
-            request,
+            projectId: request.projectId,
           },
         );
+        const existingIntent = existingUnmanagedEnvironmentIntentByHostPath({
+          branch: workspace.branch,
+          existing: attachResolution.existingProjectEnvironment,
+          hostId,
+          path: attachResolution.canonicalPath,
+        });
         environmentIntent = existingIntent?.intent ?? {
           type: "direct-unmanaged",
           hostId,
-          path: resolvedEnvironment.unmanagedPath,
+          path: attachResolution.canonicalPath,
           ...(workspace.branch ? { branch: workspace.branch } : {}),
         };
         if (existingIntent) {
@@ -874,8 +912,8 @@ export async function createThreadFromRequest(
         type: "direct-managed",
         hostId,
         sourcePath: managedSource.path,
-        baseBranch: await resolveManagedDefaultBaseBranchForCreate(deps, {
-          baseBranch: workspace.baseBranch,
+        checkout: await resolveManagedDefaultBaseBranchForCreate(deps, {
+          checkout: workspace.checkout,
           hostId,
           sourcePath: managedSource.path,
         }),

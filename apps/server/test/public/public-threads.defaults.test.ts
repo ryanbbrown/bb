@@ -149,7 +149,10 @@ describe("public thread default routes", () => {
             hostId: secondaryHost.id,
             workspace: {
               type: "managed-worktree",
-              baseBranch: { kind: "default" },
+              checkout: {
+                kind: "new-branch",
+                baseBranch: { kind: "default" },
+              },
             },
           },
         }),

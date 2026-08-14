@@ -1,5 +1,4 @@
 import type { ProjectSourceCheckout } from "@bb/domain";
-import type { BaseBranchSpec } from "@bb/server-contract";
 
 export interface ResolveDefaultWorktreeBaseBranchArgs {
   defaultBranch: ProjectSourceCheckout["defaultBranch"];
@@ -23,18 +22,4 @@ export function resolveDefaultWorktreeBaseBranch(
     return args.originDefaultBranch;
   }
   return args.defaultBranch;
-}
-
-export function resolveManagedDefaultBaseBranchSpec(
-  args: ResolveDefaultWorktreeBaseBranchArgs,
-): BaseBranchSpec {
-  const defaultWorktreeBaseBranch = resolveDefaultWorktreeBaseBranch(args);
-  if (
-    defaultWorktreeBaseBranch &&
-    defaultWorktreeBaseBranch !== args.defaultBranch
-  ) {
-    return { kind: "named", name: defaultWorktreeBaseBranch };
-  }
-
-  return { kind: "default" };
 }

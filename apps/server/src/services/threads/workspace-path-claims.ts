@@ -1,9 +1,10 @@
 import {
-  findForeignManagedEnvironmentAtHostPath,
-  findProjectEnvironmentByHostPath,
   hasLiveThreadAtHostPath,
-  type DbConnection,
+  listActiveEnvironmentsWithPathsOnHost,
 } from "@bb/db";
+import type { WorkSessionDeps } from "../../types.js";
+import { ApiError } from "../../errors.js";
+import { resolveCanonicalHostPaths } from "../hosts/canonical-paths.js";
 import { isBbManagedWorkspacePath } from "./worktree-paths.js";
 
 /**
@@ -28,6 +29,16 @@ export interface UnmanagedAttachCheckArgs {
   projectId: string;
 }
 
+type HostEnvironment = ReturnType<
+  typeof listActiveEnvironmentsWithPathsOnHost
+>[number];
+
+export interface UnmanagedAttachResolution {
+  canonicalPath: string;
+  existingProjectEnvironment: HostEnvironment | null;
+  refusal: UnmanagedAttachRefusal | null;
+}
+
 /**
  * Why an unmanaged attach to this directory must be refused, or null when it is
  * safe. Two hazards survive project scoping:
@@ -40,61 +51,97 @@ export interface UnmanagedAttachCheckArgs {
  * 2. A branch checkout rewrites the working tree while another project's agent
  *    is working in the same folder.
  */
-export function unmanagedAttachRefusal(
-  db: DbConnection,
+export async function resolveUnmanagedAttach(
+  deps: WorkSessionDeps,
   args: UnmanagedAttachCheckArgs,
-): UnmanagedAttachRefusal | null {
+): Promise<UnmanagedAttachResolution> {
+  const environments = listActiveEnvironmentsWithPathsOnHost(
+    deps.db,
+    args.hostId,
+  );
+  const canonicalPaths = await resolveCanonicalHostPaths(deps, {
+    hostId: args.hostId,
+    paths: [
+      args.path,
+      ...(args.dataDir === null ? [] : [args.dataDir]),
+      ...environments.flatMap((environment) =>
+        environment.path === null ? [] : [environment.path],
+      ),
+    ],
+  });
+  const canonicalPath = canonicalPaths.get(args.path);
+  if (canonicalPath === null || canonicalPath === undefined) {
+    throw new ApiError(
+      409,
+      "invalid_request",
+      `Workspace path does not exist: ${args.path}`,
+    );
+  }
+  const matchingEnvironments = environments.filter(
+    (environment) =>
+      environment.path !== null &&
+      canonicalPaths.get(environment.path) === canonicalPath,
+  );
+  const existingProjectEnvironment =
+    matchingEnvironments.find(
+      (environment) => environment.projectId === args.projectId,
+    ) ?? null;
   const foreignManagedMessage =
     "Workspace path is a bb-managed workspace owned by another project";
+  const canonicalDataDir =
+    args.dataDir === null ? null : (canonicalPaths.get(args.dataDir) ?? null);
 
   if (
-    findForeignManagedEnvironmentAtHostPath(db, {
-      hostId: args.hostId,
-      path: args.path,
-      projectId: args.projectId,
-    })
+    matchingEnvironments.some(
+      (environment) =>
+        environment.managed && environment.projectId !== args.projectId,
+    )
   ) {
-    return { reason: "foreign-managed", message: foreignManagedMessage };
+    return {
+      canonicalPath,
+      existingProjectEnvironment,
+      refusal: { reason: "foreign-managed", message: foreignManagedMessage },
+    };
   }
 
   // A path under bb's workspace roots belongs to a managed environment even
   // when that environment has not stored its path yet.
   if (
-    args.dataDir !== null &&
-    isBbManagedWorkspacePath({ dataDir: args.dataDir, path: args.path }) &&
-    !findProjectOwnsPath(db, args)
+    canonicalDataDir !== null &&
+    isBbManagedWorkspacePath({
+      dataDir: canonicalDataDir,
+      path: canonicalPath,
+    }) &&
+    existingProjectEnvironment === null
   ) {
-    return { reason: "foreign-managed", message: foreignManagedMessage };
+    return {
+      canonicalPath,
+      existingProjectEnvironment,
+      refusal: { reason: "foreign-managed", message: foreignManagedMessage },
+    };
   }
 
   if (
     args.checksOutBranch &&
-    hasLiveThreadAtHostPath(db, { hostId: args.hostId, path: args.path })
+    matchingEnvironments.some(
+      (environment) =>
+        environment.path !== null &&
+        hasLiveThreadAtHostPath(deps.db, {
+          hostId: args.hostId,
+          path: environment.path,
+        }),
+    )
   ) {
     return {
-      reason: "live-thread",
-      message:
-        "Cannot checkout branch while another thread is using this workspace",
+      canonicalPath,
+      existingProjectEnvironment,
+      refusal: {
+        reason: "live-thread",
+        message:
+          "Cannot checkout branch while another thread is using this workspace",
+      },
     };
   }
 
-  return null;
-}
-
-/**
- * A project may still attach to a bb-managed path it already owns — that is a
- * plain reuse of its own workspace, not a cross-project alias.
- */
-function findProjectOwnsPath(
-  db: DbConnection,
-  args: Pick<UnmanagedAttachCheckArgs, "hostId" | "path" | "projectId">,
-): boolean {
-  return (
-    findProjectEnvironmentByHostPath(
-      db,
-      args.projectId,
-      args.hostId,
-      args.path,
-    ) !== null
-  );
+  return { canonicalPath, existingProjectEnvironment, refusal: null };
 }

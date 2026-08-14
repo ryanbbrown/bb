@@ -148,7 +148,12 @@ export function EnvironmentPickerUI({
   // Mockup A: the composer chip names the machine whenever the selection
   // isn't on the primary host ("Mac Studio · New worktree").
   const selectedMachineName = useMemo(() => {
-    if (!isMachineMenu || !machines || parsed?.type !== "host") return null;
+    if (
+      !isMachineMenu ||
+      !machines ||
+      (parsed?.type !== "host" && parsed?.type !== "worktree-path")
+    )
+      return null;
     if (
       parsed.hostId ===
       selectPrimaryHost(machines.hosts, machines.primaryHostId)?.id
@@ -182,7 +187,7 @@ export function EnvironmentPickerUI({
         icon: "Laptop" as const,
       };
     }
-    if (parsed.type === "reuse") {
+    if (parsed.type === "reuse" || parsed.type === "worktree-path") {
       return {
         modeLabel: "Reuse worktree",
         compactModeLabel: "Reuse",
@@ -202,7 +207,14 @@ export function EnvironmentPickerUI({
       compactModeLabel,
       icon,
     };
-  }, [parsed, localLabel, isLocal, hostUnavailableReason, host, selectedMachineName]);
+  }, [
+    parsed,
+    localLabel,
+    isLocal,
+    hostUnavailableReason,
+    host,
+    selectedMachineName,
+  ]);
 
   return (
     <DropdownMenu defaultOpen={defaultOpen} modal={modal}>
@@ -367,7 +379,9 @@ function EnvironmentOptionsSection({
             label="Existing worktree"
             description={reuseDisabledReason ?? undefined}
             icon={getEnvironmentWorkspaceLabelIconName("managed-worktree")}
-            selected={selectedType === "reuse"}
+            selected={
+              selectedType === "reuse" || selectedType === "worktree-path"
+            }
             disabled={reuseDisabledReason !== null}
             onSelect={() => onChange(REUSE_VALUE_WITHOUT_ENVIRONMENT)}
           />
@@ -443,7 +457,9 @@ function MachineGroupedEnvironmentOptions({
           label="Existing worktree"
           description={reuseDisabledReason ?? undefined}
           icon={getEnvironmentWorkspaceLabelIconName("managed-worktree")}
-          selected={selectedType === "reuse"}
+          selected={
+            selectedType === "reuse" || selectedType === "worktree-path"
+          }
           disabled={reuseDisabledReason !== null}
           onSelect={() => onChange(REUSE_VALUE_WITHOUT_ENVIRONMENT)}
         />

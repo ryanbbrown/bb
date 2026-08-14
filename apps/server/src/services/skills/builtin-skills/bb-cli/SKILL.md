@@ -178,6 +178,11 @@ message agents, or inspect projects, providers, and environments.
   context variables. Omitted execution flags use remembered project defaults;
   without a remembered model, bb uses the explicitly requested provider or
   Codex and resolves its provider-reported default model on the target machine.
+- Use `bb project worktrees <project-id>` to list Git worktrees on every project
+  source machine. The list includes user-managed worktrees with no active thread.
+- Run `bb thread spawn --new-environment worktree --continue-branch <branch>`
+  to reopen a local or remote branch in a temporary managed worktree.
+  A normal push updates the selected remote branch.
 - Add repeatable `--file <path>` / `--image <path>` flags for structured prompt
   attachments, and `--section <id>` to add the new thread to a section. These
   flags pass host-readable absolute paths (or relative server-upload tokens)

@@ -1,3 +1,4 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import type { GitBranchRefClassification } from "@bb/domain";
 import {
@@ -8,6 +9,7 @@ import {
   getWorkspaceGitOperation,
   hasUncommittedChanges,
   listBranches,
+  listGitWorktrees,
   listRemoteBranches,
   readDefaultBranchRefs,
 } from "@bb/host-workspace";
@@ -205,5 +207,38 @@ export async function listHostBranches(
     remoteBranches: limitedRemoteBranches.branches,
     remoteBranchesTruncated: limitedRemoteBranches.truncated,
     selectedBranch,
+  };
+}
+
+export async function listHostWorktrees(
+  command: CommandOf<"host.list_worktrees">,
+): Promise<HostDaemonOnlineRpcResult<"host.list_worktrees">> {
+  if (!path.isAbsolute(command.path)) {
+    throw new CommandDispatchError("invalid_path", "Path must be absolute");
+  }
+  if (!(await detectGitRepo(command.path))) {
+    throw new CommandDispatchError(
+      "not_git_repo",
+      `Path is not a Git repository: ${command.path}`,
+    );
+  }
+  return { worktrees: await listGitWorktrees(command.path) };
+}
+
+export async function resolveHostPaths(
+  command: CommandOf<"host.resolve_paths">,
+): Promise<HostDaemonOnlineRpcResult<"host.resolve_paths">> {
+  for (const candidate of command.paths) {
+    if (!path.isAbsolute(candidate)) {
+      throw new CommandDispatchError("invalid_path", "Paths must be absolute");
+    }
+  }
+  return {
+    paths: await Promise.all(
+      command.paths.map(async (candidate) => ({
+        path: candidate,
+        canonicalPath: await fs.realpath(candidate).catch(() => null),
+      })),
+    ),
   };
 }

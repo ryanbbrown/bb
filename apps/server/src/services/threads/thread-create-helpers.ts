@@ -9,29 +9,11 @@ import {
 import type { DbNotifier } from "@bb/db";
 import type { HostDaemonCommand } from "@bb/host-daemon-contract";
 import type { LocalPathProjectSource } from "@bb/domain";
-import type { BaseBranchSpec } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
 import { ApiError } from "../../errors.js";
 import { emitPluginThreadCreated } from "../plugins/plugin-thread-events.js";
 import type { ThreadCreateServiceRequest } from "./thread-create-request.js";
 import { sanitizeGeneratedBranchSlug } from "./title-generation.js";
-
-/**
- * Convert a {@link BaseBranchSpec} to the stored/wire branch-name shape.
- * `{ kind: "default" }` becomes `null`, which means the source's default
- * branch.
- */
-export function baseBranchSpecToStoredName(
-  spec: BaseBranchSpec,
-): string | null {
-  return spec.kind === "named" ? spec.name : null;
-}
-
-export function storedBaseBranchNameToSpec(
-  name: string | null,
-): BaseBranchSpec {
-  return name ? { kind: "named", name } : { kind: "default" };
-}
 
 type EnvironmentProvisionCommand = Extract<
   HostDaemonCommand,
@@ -107,8 +89,14 @@ export type EnvironmentProvisionCommandArgs =
       initiator: EnvironmentProvisionCommandInitiator;
       sourcePath: string;
       targetPath: string;
-      branchName: string;
-      baseBranch: BaseBranchSpec;
+      checkout:
+        | { kind: "new-branch"; branchName: string; baseBranch: string }
+        | {
+            kind: "existing-branch";
+            branchName: string;
+            startPoint: string;
+            upstream: string | null;
+          };
       setupTimeoutMs: number;
     }
   | {
@@ -140,8 +128,7 @@ export function buildEnvironmentProvisionCommand(
         workspaceProvisionType: args.workspaceProvisionType,
         sourcePath: args.sourcePath,
         targetPath: args.targetPath,
-        branchName: args.branchName,
-        baseBranch: baseBranchSpecToStoredName(args.baseBranch),
+        checkout: args.checkout,
         setupTimeoutMs: args.setupTimeoutMs,
       };
     case "personal":

@@ -5,10 +5,13 @@ import {
 } from "@bb/domain";
 import type {
   ProjectBranchesResponse,
+  ProjectWorktree,
   SystemProvidersQuery,
 } from "@bb/server-contract";
 import {
   encodeHostValue,
+  encodeReuseValue,
+  encodeWorktreePathValue,
   parseEnvironmentValue,
   REUSE_VALUE_WITHOUT_ENVIRONMENT,
 } from "@/components/pickers/environment-picker-value";
@@ -49,19 +52,15 @@ function isWorktreeWithEnv(thread: ThreadListEntry): boolean {
 
 export function buildReuseThreadOptions(
   threads: readonly ThreadListEntry[],
+  worktrees: readonly ProjectWorktree[],
   /** Host id → machine name, provided only when worktree rows should carry a
    * machine hint when more than one host exists. */
   hostNameById: ReadonlyMap<string, string> | null = null,
 ): ReuseThreadOption[] {
-  // One option per worktree env. Threads within each env are sorted
-  // most-recently-active first so the picker preview surfaces the threads
-  // the user is most likely to recognize. Only unarchived threads reach
-  // here — `useThreads({ archived: false })` filters at the source. Envs
-  // with no unarchived threads naturally drop out.
+  // Threads within each environment are sorted by recent activity.
   const threadsByEnvironmentId = new Map<string, ThreadListEntry[]>();
   const branchByEnvironmentId = new Map<string, string | null>();
   const nameByEnvironmentId = new Map<string, string | null>();
-  const hostIdByEnvironmentId = new Map<string, string | null>();
   for (const thread of threads) {
     if (!isWorktreeWithEnv(thread)) continue;
     if (thread.environmentId === null) continue;
@@ -74,23 +73,35 @@ export function buildReuseThreadOptions(
         thread.environmentBranchName,
       );
       nameByEnvironmentId.set(thread.environmentId, thread.environmentName);
-      hostIdByEnvironmentId.set(thread.environmentId, thread.environmentHostId);
     }
     bucket.push(thread);
   }
   const options: ReuseThreadOption[] = [];
-  for (const [environmentId, bucket] of threadsByEnvironmentId) {
+  for (const worktree of worktrees) {
+    const environmentId = worktree.environmentId;
+    const bucket = environmentId
+      ? (threadsByEnvironmentId.get(environmentId) ?? [])
+      : [];
     bucket.sort(
       (left, right) => right.latestAttentionAt - left.latestAttentionAt,
     );
-    const hostId = hostIdByEnvironmentId.get(environmentId) ?? null;
     options.push({
+      value: environmentId
+        ? encodeReuseValue(environmentId)
+        : encodeWorktreePathValue(worktree.hostId, worktree.path),
       environmentId,
-      branchName: branchByEnvironmentId.get(environmentId) ?? null,
-      name: nameByEnvironmentId.get(environmentId) ?? null,
+      path: worktree.path,
+      branchName:
+        worktree.branchName ??
+        (environmentId ? branchByEnvironmentId.get(environmentId) : null) ??
+        null,
+      name:
+        worktree.environmentName ??
+        (environmentId ? nameByEnvironmentId.get(environmentId) : null) ??
+        null,
       hostName:
-        hostNameById !== null && hostId !== null
-          ? (hostNameById.get(hostId) ?? null)
+        hostNameById !== null
+          ? (hostNameById.get(worktree.hostId) ?? null)
           : null,
       threads: bucket.map((thread) => ({
         id: thread.id,
@@ -104,7 +115,7 @@ export function buildReuseThreadOptions(
     if (leftLabel && rightLabel) {
       return leftLabel.localeCompare(rightLabel);
     }
-    return left.environmentId.localeCompare(right.environmentId);
+    return left.path.localeCompare(right.path);
   });
   return options;
 }
@@ -171,6 +182,16 @@ export function resolveRootComposeEffectiveEnvironmentValue({
     return fallbackHostValue;
   }
 
+  if (parsedSelection?.type === "worktree-path") {
+    if (reuseThreadOptionsLoading) return REUSE_VALUE_WITHOUT_ENVIRONMENT;
+    return knownHostIds.has(parsedSelection.hostId) &&
+      reuseThreadOptions.some(
+        (option) => option.value === environmentSelectionValue,
+      )
+      ? environmentSelectionValue
+      : fallbackHostValue;
+  }
+
   if (parsedSelection?.type === "reuse") {
     if (parsedSelection.environmentId === null) {
       return reuseThreadOptionsLoading || reuseThreadOptions.length > 0
@@ -210,7 +231,8 @@ export function resolveComposeHostId(
   parsedEnvironment: ReturnType<typeof parseEnvironmentValue>,
   primaryHostId: string | null,
 ): string | null {
-  return parsedEnvironment?.type === "host"
+  return parsedEnvironment?.type === "host" ||
+    parsedEnvironment?.type === "worktree-path"
     ? parsedEnvironment.hostId
     : primaryHostId;
 }
@@ -224,6 +246,9 @@ export function resolveRootComposeProjectRouting(
       ? {}
       : { environmentId: parsedEnvironment.environmentId };
   }
+  if (parsedEnvironment?.type === "worktree-path") {
+    return { hostId: parsedEnvironment.hostId };
+  }
   const hostId = resolveComposeHostId(parsedEnvironment, primaryHostId);
   return hostId === null ? {} : { hostId };
 }
@@ -234,7 +259,7 @@ export function resolveRootComposeProviderRouting(
   const parsed = parseEnvironmentValue(
     resolveRootComposeEffectiveEnvironmentValue(args),
   );
-  if (parsed?.type === "host") {
+  if (parsed?.type === "host" || parsed?.type === "worktree-path") {
     return { hostId: parsed.hostId };
   }
   if (parsed?.type === "reuse" && parsed.environmentId !== null) {

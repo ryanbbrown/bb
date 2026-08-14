@@ -588,7 +588,10 @@ describe("automations server plugin harness", () => {
         hostId: "host_test",
         workspace: {
           type: "managed-worktree",
-          baseBranch: { kind: "named", name: "release" },
+          checkout: {
+            kind: "new-branch",
+            baseBranch: { kind: "named", name: "release" },
+          },
         },
       },
     });

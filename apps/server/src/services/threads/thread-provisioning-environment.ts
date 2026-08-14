@@ -14,7 +14,7 @@ import {
   type ProvisioningTranscriptEntry,
   type Thread,
 } from "@bb/domain";
-import type { BaseBranchSpec, UnmanagedBranchSpec } from "@bb/server-contract";
+import type { UnmanagedBranchSpec } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
 import type { CommandResultSideEffectsDeps } from "../../internal/command-result-side-effects.js";
 import { ApiError } from "../../errors.js";
@@ -31,7 +31,6 @@ import {
   appendThreadProvisioningEventInTransaction,
 } from "./thread-events.js";
 import {
-  baseBranchSpecToStoredName,
   buildEnvironmentProvisionCommand,
   buildManagedBranchName,
   SETUP_TIMEOUT_MS,
@@ -232,7 +231,10 @@ interface ManagedEnvironmentPlanArgs {
   dataDir: string;
   hostId: string;
   sourcePath: string;
-  baseBranch: BaseBranchSpec;
+  checkout: Extract<
+    ThreadProvisionEnvironmentIntent,
+    { type: "direct-managed" }
+  >["checkout"];
   thread: Thread;
   workspaceProvisionType: "managed-worktree";
 }
@@ -410,6 +412,7 @@ function shouldPrepareEnvironmentBeforeMetadata(
   return (
     isMetadataPendingContext(context) &&
     context.request.environmentIntent.type === "direct-managed" &&
+    context.request.environmentIntent.checkout.kind === "new-branch" &&
     !context.request.titleProvided
   );
 }
@@ -451,7 +454,8 @@ async function resolveMetadataIfNeeded(
   }
 
   const needsBranch =
-    args.context.request.environmentIntent.type === "direct-managed";
+    args.context.request.environmentIntent.type === "direct-managed" &&
+    args.context.request.environmentIntent.checkout.kind === "new-branch";
   if (!needsBranch) {
     if (!args.context.request.titleProvided) {
       void inferThreadMetadata(deps, {
@@ -833,16 +837,28 @@ function buildManagedEnvironmentPlan(
       hostId: args.hostId,
       managed: true,
       workspaceProvisionType: args.workspaceProvisionType,
-      baseBranch: baseBranchSpecToStoredName(args.baseBranch),
+      branchName:
+        args.checkout.kind === "existing-branch"
+          ? args.checkout.branchName
+          : null,
+      baseBranch:
+        args.checkout.kind === "new-branch" ? args.checkout.baseBranch : null,
       status: "provisioning",
     },
     buildRequest: ({ context, environment }) => {
+      const checkout =
+        args.checkout.kind === "new-branch"
+          ? {
+              kind: "new-branch" as const,
+              branchName: buildManagedBranchName({
+                branchSlug: context.request.branchSlug,
+                threadId: args.thread.id,
+              }),
+              baseBranch: args.checkout.baseBranch,
+            }
+          : args.checkout;
       const command = buildEnvironmentProvisionCommand({
-        branchName: buildManagedBranchName({
-          branchSlug: context.request.branchSlug,
-          threadId: args.thread.id,
-        }),
-        baseBranch: args.baseBranch,
+        checkout,
         environmentId: environment.id,
         hostId: args.hostId,
         initiator: {
@@ -916,7 +932,7 @@ async function resolveEnvironmentCreationPlan(
         dataDir: hostSession.dataDir,
         hostId: args.intent.hostId,
         sourcePath: args.intent.sourcePath,
-        baseBranch: args.intent.baseBranch,
+        checkout: args.intent.checkout,
         thread: args.thread,
         workspaceProvisionType: args.intent.workspaceProvisionType,
       });

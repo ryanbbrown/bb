@@ -11,6 +11,7 @@ export interface ResolveRootComposeThreadEnvironmentArgs {
   defaultBranch: string | null | undefined;
   defaultWorktreeBaseBranch: string | null | undefined;
   environmentValue: string;
+  managedMode: "new" | "continue";
   projectId: string | undefined;
   selectedBranch: RootComposeSelectedBranch | null;
 }
@@ -52,6 +53,14 @@ export function resolveRootComposeThreadEnvironment(
     return { type: "reuse", environmentId: parsed.environmentId };
   }
 
+  if (parsed.type === "worktree-path") {
+    return {
+      type: "host",
+      hostId: parsed.hostId,
+      workspace: { type: "unmanaged", path: parsed.path },
+    };
+  }
+
   if (parsed.type === "host") {
     if (args.projectId === PERSONAL_PROJECT_ID) {
       return {
@@ -62,16 +71,30 @@ export function resolveRootComposeThreadEnvironment(
     }
 
     if (parsed.mode === "worktree") {
+      const continuedBranch =
+        args.managedMode === "continue" ? args.selectedBranch : null;
+      if (args.managedMode === "continue" && continuedBranch === null) {
+        return null;
+      }
       return {
         type: "host",
         hostId: parsed.hostId,
         workspace: {
           type: "managed-worktree",
-          baseBranch: resolveManagedBaseBranch({
-            defaultBranch: args.defaultBranch,
-            defaultWorktreeBaseBranch: args.defaultWorktreeBaseBranch,
-            selectedBranch: args.selectedBranch,
-          }),
+          checkout:
+            continuedBranch !== null
+              ? {
+                  kind: "existing-branch",
+                  name: continuedBranch.name,
+                }
+              : {
+                  kind: "new-branch",
+                  baseBranch: resolveManagedBaseBranch({
+                    defaultBranch: args.defaultBranch,
+                    defaultWorktreeBaseBranch: args.defaultWorktreeBaseBranch,
+                    selectedBranch: args.selectedBranch,
+                  }),
+                },
         },
       };
     }

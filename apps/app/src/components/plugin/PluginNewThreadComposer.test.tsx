@@ -43,6 +43,7 @@ const mocks = vi.hoisted(() => ({
   copyAttachments: vi.fn(),
   uploadAttachment: vi.fn(),
   threadsLoading: false,
+  worktreesLoading: false,
 }));
 
 vi.mock("@/components/promptbox/NewThreadPromptBox", () => ({
@@ -190,6 +191,10 @@ vi.mock("@/hooks/queries/thread-queries", () => ({
 vi.mock("@/hooks/queries/project-queries", () => ({
   stripProjectThreads: (project: unknown) => project,
   useProjectPromptHistory: () => ({ data: [] }),
+  useProjectWorktrees: () => ({
+    data: { worktrees: [] },
+    isLoading: mocks.worktreesLoading,
+  }),
   useProjectSourceBranches: () => ({
     data: {
       branches: ["main", "release"],
@@ -352,7 +357,10 @@ const STORED_REQUEST: NewThreadRequest = {
     hostId: "host_1",
     workspace: {
       type: "managed-worktree",
-      baseBranch: { kind: "named", name: "release" },
+      checkout: {
+        kind: "new-branch",
+        baseBranch: { kind: "named", name: "release" },
+      },
     },
   },
   input: [{ type: "text", text: "review every PR for slop", mentions: [] }],
@@ -370,6 +378,7 @@ describe("PluginNewThreadComposer seeding", () => {
     mocks.copyAttachments.mockReset();
     mocks.uploadAttachment.mockReset();
     mocks.threadsLoading = false;
+    mocks.worktreesLoading = false;
     window.localStorage.clear();
     getPromptDraftAccessor({ kind: "new-thread" }).setDraft({
       text: "",
@@ -526,7 +535,10 @@ describe("PluginNewThreadComposer seeding", () => {
       hostId: "host_1",
       workspace: {
         type: "managed-worktree",
-        baseBranch: { kind: "default" },
+        checkout: {
+          kind: "new-branch",
+          baseBranch: { kind: "default" },
+        },
       },
     });
   });
@@ -601,7 +613,7 @@ describe("PluginNewThreadComposer seeding", () => {
   });
 
   it("submits a fork with its seeded environment while reuse options load", async () => {
-    mocks.threadsLoading = true;
+    mocks.worktreesLoading = true;
     const submitted: NewThreadRequest[] = [];
     render(
       <Provider>

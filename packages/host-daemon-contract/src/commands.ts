@@ -36,7 +36,7 @@ import {
   providerCliStatusResponseSchema,
 } from "./local.js";
 
-export const HOST_DAEMON_PROTOCOL_VERSION = 123 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 125 as const;
 
 export {
   BRANCH_LIST_LIMIT_MAX,
@@ -915,6 +915,20 @@ const hostListBranchesCommandSchema = z.object({
   limit: z.number().int().positive().max(BRANCH_LIST_LIMIT_MAX),
 });
 
+const hostListWorktreesCommandSchema = z
+  .object({
+    type: z.literal("host.list_worktrees"),
+    path: z.string().min(1),
+  })
+  .strict();
+
+const hostResolvePathsCommandSchema = z
+  .object({
+    type: z.literal("host.resolve_paths"),
+    paths: z.array(z.string().min(1)).min(1).max(512),
+  })
+  .strict();
+
 const providerListModelsCommandSchema = z.object({
   type: z.literal("provider.list_models"),
   providerId: z.string().min(1),
@@ -984,18 +998,30 @@ const unmanagedEnvironmentProvisionCommandSchema =
     })
     .strict();
 
+const managedWorktreeCheckoutSchema = z.discriminatedUnion("kind", [
+  z
+    .object({
+      kind: z.literal("new-branch"),
+      branchName: gitBranchNameSchema,
+      baseBranch: gitBranchNameSchema,
+    })
+    .strict(),
+  z
+    .object({
+      kind: z.literal("existing-branch"),
+      branchName: gitBranchNameSchema,
+      startPoint: gitBranchNameSchema,
+      upstream: gitBranchNameSchema.nullable(),
+    })
+    .strict(),
+]);
+
 const managedEnvironmentProvisionFieldsSchema = z.object({
   /** Source repo path */
   sourcePath: z.string().min(1),
   /** Target path for worktree/clone creation */
   targetPath: z.string().min(1),
-  /** Name of the new branch the daemon should create for this environment. */
-  branchName: gitBranchNameSchema,
-  /**
-   * Branch on the source repo that the new branch should be based on. Pass
-   * `null` to use the source's default branch (resolved by the daemon).
-   */
-  baseBranch: gitBranchNameSchema.nullable(),
+  checkout: managedWorktreeCheckoutSchema,
   /** Maximum time in ms to wait for the setup script */
   setupTimeoutMs: z.number().int().positive(),
 });
@@ -1408,6 +1434,30 @@ const environmentProvisionResultSchema =
   discoveredWorkspacePropertiesSchema.extend({
     transcript: z.array(provisioningTranscriptEntrySchema),
   });
+const hostListWorktreesResultSchema = z
+  .object({
+    worktrees: z.array(
+      z
+        .object({
+          path: z.string().min(1),
+          branchName: z.string().min(1).nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
+const hostResolvePathsResultSchema = z
+  .object({
+    paths: z.array(
+      z
+        .object({
+          path: z.string().min(1),
+          canonicalPath: z.string().min(1).nullable(),
+        })
+        .strict(),
+    ),
+  })
+  .strict();
 const environmentProvisionCancelResultSchema = z.object({
   aborted: z.boolean(),
 });
@@ -1951,6 +2001,24 @@ export const hostDaemonCommandRegistry = {
     type: "host.list_branches",
     schema: hostListBranchesCommandSchema,
     resultSchema: projectSourceCheckoutSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.list_worktrees": defineHostDaemonCommandDescriptor({
+    type: "host.list_worktrees",
+    schema: hostListWorktreesCommandSchema,
+    resultSchema: hostListWorktreesResultSchema,
+    transport: "onlineRpc",
+    retryable: true,
+    flushEventsBeforeResult: false,
+    envLane: null,
+  }),
+  "host.resolve_paths": defineHostDaemonCommandDescriptor({
+    type: "host.resolve_paths",
+    schema: hostResolvePathsCommandSchema,
+    resultSchema: hostResolvePathsResultSchema,
     transport: "onlineRpc",
     retryable: true,
     flushEventsBeforeResult: false,

@@ -54,6 +54,7 @@ describe("environment reprovisioning", () => {
         managed: true,
         workspaceProvisionType: "managed-worktree",
         branchName: null,
+        baseBranch: "main",
       });
       const thread = seedThread(harness.deps, {
         projectId: project.id,
@@ -95,7 +96,9 @@ describe("environment reprovisioning", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.branchName).toBe(`bb/${thread.id}`);
+      expect(managedCommand.command.checkout.branchName).toBe(
+        `bb/${thread.id}`,
+      );
       expect(managedCommand.command.type).toBe("environment.provision");
     });
   });
@@ -117,6 +120,7 @@ describe("environment reprovisioning", () => {
         managed: true,
         workspaceProvisionType: "managed-worktree",
         branchName: "bb/existing-readable-branch",
+        baseBranch: "main",
       });
       const thread = seedThread(harness.deps, {
         projectId: project.id,
@@ -137,9 +141,62 @@ describe("environment reprovisioning", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.branchName).toBe(
+      expect(managedCommand.command.checkout.branchName).toBe(
         "bb/existing-readable-branch",
       );
+    });
+  });
+
+  it("reopens the preserved branch when a managed environment has no base branch", async () => {
+    await withTestHarness(async (harness) => {
+      const { host } = seedHostSession(harness.deps, {
+        id: "host-reprovision-continued-branch",
+      });
+      const { project } = seedProjectWithSource(harness.deps, {
+        hostId: host.id,
+        path: "/tmp/reprovision-continued-project",
+      });
+      const environment = seedEnvironment(harness.deps, {
+        hostId: host.id,
+        projectId: project.id,
+        path: "/tmp/reprovision-continued-target",
+        status: "error",
+        managed: true,
+        workspaceProvisionType: "managed-worktree",
+        branchName: "bb/preserved-pr",
+        baseBranch: null,
+      });
+      const thread = seedThread(harness.deps, {
+        projectId: project.id,
+        environmentId: environment.id,
+      });
+
+      await dispatchManagedEnvironmentReprovision(harness.deps, {
+        environment,
+        projectId: thread.projectId,
+        provisionEventSequence: 1,
+        provisioningId: "tpv-reprovision-continued-branch",
+        threadId: thread.id,
+      });
+
+      const queued = await waitForQueuedCommand(
+        harness,
+        ({ command }) => command.type === "environment.provision",
+      );
+      if (
+        queued.command.type !== "environment.provision" ||
+        queued.command.workspaceProvisionType !== "managed-worktree"
+      ) {
+        throw new Error(
+          "Expected managed-worktree environment.provision command",
+        );
+      }
+      expect(queued.command.checkout).toEqual({
+        kind: "existing-branch",
+        branchName: "bb/preserved-pr",
+        startPoint: "bb/preserved-pr",
+        upstream: null,
+      });
     });
   });
 
@@ -181,7 +238,9 @@ describe("environment reprovisioning", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.baseBranch).toBe("release/2026-05");
+      expect(managedCommand.command.checkout.baseBranch).toBe(
+        "release/2026-05",
+      );
     });
   });
 
@@ -202,7 +261,7 @@ describe("environment reprovisioning", () => {
         managed: true,
         workspaceProvisionType: "managed-worktree",
         branchName: "bb/default-base-branch-thread",
-        baseBranch: null,
+        baseBranch: "main",
       });
       const thread = seedThread(harness.deps, {
         projectId: project.id,
@@ -223,7 +282,7 @@ describe("environment reprovisioning", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.baseBranch).toBeNull();
+      expect(managedCommand.command.checkout.baseBranch).toBe("main");
     });
   });
 
@@ -302,7 +361,10 @@ describe("environment reprovisioning", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              baseBranch: { kind: "default" },
+              checkout: {
+                kind: "new-branch",
+                baseBranch: { kind: "default" },
+              },
             },
           },
           input: textInput("offline create"),
@@ -351,7 +413,10 @@ describe("environment reprovisioning", () => {
           hostId: host.id,
           workspace: {
             type: "managed-worktree",
-            baseBranch: { kind: "default" },
+            checkout: {
+              kind: "new-branch",
+              baseBranch: { kind: "default" },
+            },
           },
         },
         input: textInput("delete mid-provision"),
@@ -419,7 +484,10 @@ describe("environment reprovisioning", () => {
           hostId: host.id,
           workspace: {
             type: "managed-worktree",
-            baseBranch: { kind: "default" },
+            checkout: {
+              kind: "new-branch",
+              baseBranch: { kind: "default" },
+            },
           },
         },
         input: textInput("stop before provisioning finishes"),
@@ -508,7 +576,10 @@ describe("environment reprovisioning", () => {
           hostId: host.id,
           workspace: {
             type: "managed-worktree",
-            baseBranch: { kind: "default" },
+            checkout: {
+              kind: "new-branch",
+              baseBranch: { kind: "default" },
+            },
           },
         },
         input: textInput("cancelled provisioning log"),
@@ -576,7 +647,10 @@ describe("environment reprovisioning", () => {
           hostId: host.id,
           workspace: {
             type: "managed-worktree",
-            baseBranch: { kind: "default" },
+            checkout: {
+              kind: "new-branch",
+              baseBranch: { kind: "default" },
+            },
           },
         },
         input: textInput("first shared provisioning thread"),

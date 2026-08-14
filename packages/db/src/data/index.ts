@@ -294,6 +294,7 @@ export {
   getEnvironment,
   findProjectEnvironmentByHostPath,
   listEnvironments,
+  listActiveEnvironmentsWithPathsOnHost,
   findForeignManagedEnvironmentAtHostPath,
   listEnvironmentsByIds,
   listRetiredLoadedEnvironmentIdsOnHost,

@@ -322,7 +322,8 @@ type ExpectedProjectsKey =
   | "promptHistory"
   | "reorder"
   | "sources"
-  | "update";
+  | "update"
+  | "worktrees";
 
 type ExpectedProjectSourcesKey = "add" | "delete" | "update";
 type ExpectedProjectAttachmentsKey = "copy" | "read" | "upload";

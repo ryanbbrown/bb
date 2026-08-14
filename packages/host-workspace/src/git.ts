@@ -1465,6 +1465,42 @@ export async function listRemoteBranches(cwd: string): Promise<string[]> {
     .map((ref) => ref.branch);
 }
 
+export interface GitWorktreeEntry {
+  path: string;
+  branchName: string | null;
+}
+
+export async function listGitWorktrees(
+  cwd: string,
+): Promise<GitWorktreeEntry[]> {
+  await ensureGitRepo(cwd);
+  const result = await runGit(["worktree", "list", "--porcelain", "-z"], {
+    cwd,
+  });
+  const records = result.stdout.split("\0\0").filter(Boolean);
+  const entries = await Promise.all(
+    records.map(async (record): Promise<GitWorktreeEntry | null> => {
+      let worktreePath: string | null = null;
+      let branchName: string | null = null;
+      for (const field of record.split("\0")) {
+        if (field.startsWith("worktree ")) {
+          worktreePath = field.slice("worktree ".length);
+        } else if (field.startsWith("branch refs/heads/")) {
+          branchName = field.slice("branch refs/heads/".length);
+        }
+      }
+      if (worktreePath === null) return null;
+      return {
+        path: await fs
+          .realpath(worktreePath)
+          .catch(() => path.resolve(worktreePath)),
+        branchName,
+      };
+    }),
+  );
+  return entries.filter((entry): entry is GitWorktreeEntry => entry !== null);
+}
+
 export async function hasUncommittedChanges(cwd: string): Promise<boolean> {
   await ensureGitRepo(cwd);
   const status = await runGit(
