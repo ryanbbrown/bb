@@ -68,7 +68,9 @@ export function listQueuedCommands(
 type ManagedWorktreeEnvironmentProvisionCommand = Extract<
   HostDaemonCommand,
   { type: "environment.provision"; workspaceProvisionType: "managed-worktree" }
->;
+> & {
+  checkout: { kind: "new-branch"; branchName: string; baseBranch: string };
+};
 
 export type ManagedWorktreeEnvironmentProvisionLiveCommand =
   QueuedCommand<ManagedWorktreeEnvironmentProvisionCommand>;
@@ -78,7 +80,8 @@ export function isManagedWorktreeEnvironmentProvisionLiveCommand(
 ): queued is ManagedWorktreeEnvironmentProvisionLiveCommand {
   return (
     queued.command.type === "environment.provision" &&
-    queued.command.workspaceProvisionType === "managed-worktree"
+    queued.command.workspaceProvisionType === "managed-worktree" &&
+    queued.command.checkout.kind === "new-branch"
   );
 }
 
@@ -358,6 +361,24 @@ export function registerTestHostRpcCapture(
         return;
       }
       if (respondToProviderModelListCommand(deps, args, message)) {
+        return;
+      }
+      if (command.type === "host.resolve_paths") {
+        deps.hub.recordHostOnlineRpcResponse({
+          message: hostDaemonOnlineRpcResponseMessageSchema.parse({
+            type: "host-rpc.response",
+            requestId: message.requestId,
+            commandType: command.type,
+            ok: true,
+            result: {
+              paths: command.paths.map((candidate) => ({
+                path: candidate,
+                canonicalPath: candidate,
+              })),
+            },
+          }),
+          sessionId: args.sessionId,
+        });
         return;
       }
       if (command.type === "host.list_branches") {

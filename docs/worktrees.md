@@ -13,16 +13,16 @@ generating secrets, or anything else you need before the agent starts.
 
 ## What is a managed worktree?
 
-A managed worktree is a `git worktree` of your project's repo, on a fresh
-branch. Under the hood it's `git worktree add` plus some bookkeeping:
+A managed worktree is a `git worktree` of your project's repository. bb creates
+a generated branch by default. You can also continue an existing branch.
 
 - It shares the repo's `.git` state with your main checkout — cheap to
   create, no full clone.
-- It gets its own branch so multiple threads can run in parallel.
+- It checks out one branch so multiple threads can run in parallel.
 - It lives at `<BB_DATA_DIR>/worktrees/<environment-id>/<repo-name>` — for
   example, `~/.bb/worktrees/env_abc.../myrepo`.
-- Once every thread using the environment is archived or deleted, bb cleans the
-  worktree up (`git worktree remove --force`) along with the branch.
+- Once every thread using the environment is archived or deleted, bb removes
+  the worktree with `git worktree remove --force`. bb preserves the branch.
 
 ## Start a thread in a worktree
 
@@ -41,6 +41,23 @@ pnpm bb thread spawn \
 When you omit `--base-branch`, bb chooses the project's default worktree base,
 preferring the origin default branch when safe. Pass `--base-branch <name>`
 only when you need a specific base.
+
+To reopen an existing pull request branch, continue its remote branch:
+
+```bash
+pnpm bb thread spawn \
+  --project <project-id> \
+  --new-environment worktree \
+  --continue-branch origin/<branch> \
+  --prompt "..."
+```
+
+bb creates a local tracking branch. A normal `git push` updates the selected
+remote branch. bb rejects the request when another worktree uses the branch.
+
+To use a persistent personal worktree, select **Existing worktree** in the app.
+The picker lists every Git worktree on each project machine. bb treats a
+selected personal worktree as unmanaged and never removes it during cleanup.
 
 ## Copy local files with `.worktreeinclude`
 
@@ -105,11 +122,12 @@ Contract:
 
 ## Cleanup
 
-You don't need to clean up worktrees by hand — bb removes them once every
-thread using the environment is archived or deleted, and the branch goes with
-it. If you
-want to keep work the agent did, commit and push (or open a PR) from inside
-the worktree before letting the thread go.
+bb removes a managed worktree after every associated thread is archived or
+deleted. bb preserves its branch. Commit and push work before archiving when
+you need the commits on a remote.
+
+bb never removes a user-managed worktree selected through **Existing
+worktree**.
 
 ## If something isn't working
 

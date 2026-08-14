@@ -5,6 +5,7 @@ import type {
   CreateProjectSourceRequest,
   ProjectBranchesResponse,
   ProjectBranchesQuery,
+  ProjectWorktreesResponse,
   ProjectCommandsQuery,
   ProjectFileContentQuery,
   ProjectFilesQuery,
@@ -96,6 +97,11 @@ export interface ProjectDefaultExecutionOptionsArgs {
   signal?: AbortSignal;
 }
 
+export interface ProjectWorktreesArgs {
+  projectId: string;
+  signal?: AbortSignal;
+}
+
 export interface ProjectAttachmentFileLike {
   arrayBuffer(): Promise<ArrayBuffer>;
   readonly name: string;
@@ -155,6 +161,7 @@ export interface ProjectSourceDeleteArgs {
 }
 
 export type ProjectBranchesResult = ProjectBranchesResponse;
+export type ProjectWorktreesResult = ProjectWorktreesResponse;
 export interface ProjectAttachmentReadResult {
   bytes: Uint8Array;
   mimeType: string;
@@ -220,6 +227,7 @@ export interface ProjectsArea {
   reorder(args: ProjectReorderArgs): Promise<ProjectReorderResult>;
   sources: ProjectSourcesArea;
   update(args: ProjectUpdateArgs): Promise<ProjectUpdateResult>;
+  worktrees(args: ProjectWorktreesArgs): Promise<ProjectWorktreesResult>;
 }
 
 function projectUpdateJson(args: ProjectUpdateArgs): UpdateProjectRequest {
@@ -416,6 +424,14 @@ export function createProjectsArea(args: CreateSdkAreaArgs): ProjectsArea {
             query,
           },
           ...signalRequestArgs(signal),
+        ),
+      );
+    },
+    async worktrees(input) {
+      return transport.readJson(
+        transport.api.v1.projects[":id"].worktrees.$get(
+          { param: { id: input.projectId } },
+          ...signalRequestArgs(input.signal),
         ),
       );
     },

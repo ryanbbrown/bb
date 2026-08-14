@@ -123,6 +123,8 @@ export interface NewThreadBranchConfig {
    * the picked branch as the branch source instead.
    */
   onCreate?: () => void;
+  onContinue?: () => void;
+  managedMode?: "new" | "continue";
 }
 
 export interface NewThreadWorktreeConfig {
@@ -205,7 +207,7 @@ function getBranchPickerMenuKind({
     return undefined;
   }
 
-  return parsedEnvironment.mode === "worktree" ? "base" : "checkout";
+  return parsedEnvironment.mode === "worktree" ? "managed" : "checkout";
 }
 
 function getNewThreadPromptPlaceholder(isProjectless: boolean): string {
@@ -412,7 +414,9 @@ export function ThreadEnvSlot({
   const branchMenuKind = getBranchPickerMenuKind({ parsedEnvironment });
   const showBranchPicker =
     parsedEnvironment?.type === "host" && branch.hidden !== true;
-  const showWorktreePicker = parsedEnvironment?.type === "reuse";
+  const showWorktreePicker =
+    parsedEnvironment?.type === "reuse" ||
+    parsedEnvironment?.type === "worktree-path";
   return (
     <>
       <EnvironmentPickerUI
@@ -444,6 +448,7 @@ export function ThreadEnvSlot({
           triggerLabel={branch.triggerLabel}
           triggerTitle={branch.triggerTitle}
           menuKind={branchMenuKind}
+          managedMode={branch.managedMode}
           currentOptionLabel={branch.currentOptionLabel}
           currentOptionTitle={branch.currentOptionTitle}
           optionDisabledReason={branch.optionDisabledReason}
@@ -457,6 +462,7 @@ export function ThreadEnvSlot({
           onSearchQueryChange={branch.onSearchQueryChange}
           onCreateBaseChange={branch.onCreateBaseChange}
           onCreate={branch.onCreate}
+          onContinue={branch.onContinue}
         />
       ) : null}
       {showWorktreePicker ? (
@@ -555,6 +561,8 @@ export interface NewThreadConnectedBranchConfig {
   onCreateBaseChange?: (value: string) => void;
   disabled?: boolean;
   onCreate: () => void;
+  onContinue?: () => void;
+  managedMode?: "new" | "continue";
 }
 
 export interface NewThreadConnectedModeConfig {
@@ -620,11 +628,8 @@ function ConnectedThreadModeBranch({
   );
 
   const isHostMode = parsedEnvironment?.type === "host";
-  // Create-new-branch is only meaningful for host:local (work locally /
-  // on host) — the server checks out a fresh branch in the primary checkout
-  // before the thread starts. Worktree mode uses the picked branch as the
-  // branch source instead, so we omit onCreate there.
-  const allowCreate = isHostMode && parsedEnvironment.mode === "local";
+  // Local and managed host modes both expose a new-branch action.
+  const allowCreate = isHostMode;
 
   const uiEnvironment = useMemo(
     () => ({
@@ -659,6 +664,8 @@ function ConnectedThreadModeBranch({
       onOpenChange: branch.onOpenChange,
       onSearchQueryChange: branch.onSearchQueryChange,
       onCreateBaseChange: branch.onCreateBaseChange,
+      onContinue: branch.onContinue,
+      managedMode: branch.managedMode,
       disabled: branch.disabled,
       ...(allowCreate ? { onCreate: branch.onCreate } : {}),
     };

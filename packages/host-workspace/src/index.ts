@@ -11,6 +11,7 @@ export type {
   UnmanagedCheckoutOpts,
   UnmanagedWorkspaceOpts,
   ManagedWorkspaceBaseOpts,
+  ManagedWorktreeCheckoutOpts,
   ManagedWorktreeOpts,
   ReconnectManagedWorktreeOpts,
 } from "./provision.js";
@@ -38,6 +39,7 @@ export {
   gitBlobSize,
   hasUncommittedChanges,
   listBranches,
+  listGitWorktrees,
   listRemoteBranches,
   readDefaultBranch,
   readDefaultBranchRefs,
@@ -48,6 +50,7 @@ export type {
   DefaultBranchRefs,
   FetchRemoteBranchesResult,
   ReadGitBlobResult,
+  GitWorktreeEntry,
 } from "./git.js";
 
 export {

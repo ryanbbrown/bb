@@ -18,6 +18,7 @@ export const PROJECTS_QUERY_KEY = "projects";
 export const PROJECT_PATHS_QUERY_KEY = "projectPaths";
 export const PROJECT_FILE_PREVIEW_QUERY_KEY = "projectFilePreview";
 export const PROJECT_SOURCE_BRANCHES_QUERY_KEY = "projectSourceBranches";
+export const PROJECT_WORKTREES_QUERY_KEY = "projectWorktrees";
 export const PROJECT_DEFAULT_EXECUTION_OPTIONS_QUERY_KEY =
   "projectDefaultExecutionOptions";
 export const PROJECT_PROMPT_HISTORY_QUERY_KEY = "projectPromptHistory";
@@ -164,6 +165,10 @@ export type ProjectSourceBranchesQueryKey = readonly [
   string,
   string,
   number,
+  string,
+];
+export type ProjectWorktreesQueryKey = readonly [
+  typeof PROJECT_WORKTREES_QUERY_KEY,
   string,
 ];
 export type SidebarNavigationQueryKey = readonly [
@@ -616,6 +621,12 @@ export function projectSourceBranchesQueryKey(
     limit,
     selectedBranch,
   ];
+}
+
+export function projectWorktreesQueryKey(
+  projectId: string,
+): ProjectWorktreesQueryKey {
+  return [PROJECT_WORKTREES_QUERY_KEY, projectId];
 }
 
 export function allProjectSourceBranchesQueryKeyPrefix(): AllProjectSourceBranchesQueryKeyPrefix {

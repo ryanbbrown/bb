@@ -46,9 +46,11 @@ export function newThreadEnvironmentArgsToSeed(
     return {
       selectionValue: encodeHostValue(hostId, "worktree"),
       branch:
-        workspace.baseBranch.kind === "named"
-          ? { name: workspace.baseBranch.name, isNew: false }
-          : null,
+        workspace.checkout.kind === "existing-branch"
+          ? { name: workspace.checkout.name, isNew: false }
+          : workspace.checkout.baseBranch.kind === "named"
+            ? { name: workspace.checkout.baseBranch.name, isNew: true }
+            : null,
     };
   }
   // Unmanaged. `path` has no picker control — the composer always submits

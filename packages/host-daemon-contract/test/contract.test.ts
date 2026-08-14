@@ -297,6 +297,17 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
       kind: "local",
     },
   },
+  "host.list_worktrees": {
+    worktrees: [{ path: "/workspace/project", branchName: "main" }],
+  },
+  "host.resolve_paths": {
+    paths: [
+      {
+        path: "/workspace/project",
+        canonicalPath: "/private/workspace/project",
+      },
+    ],
+  },
   "host.file_metadata": {
     path: "/tmp/report.html",
     modifiedAtMs: 1234,
@@ -1093,7 +1104,7 @@ describe("host-daemon command schemas", () => {
   // mixed version. Version 113 carried the Devin Desktop open target rename
   // and remains part of the protocol lineage.
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(123);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(125);
   });
 
   it("requires an explicit intent on a thread stop command", () => {
@@ -1237,8 +1248,11 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        branchName: "bb/env-123",
-        baseBranch: null,
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env-123",
+          baseBranch: "main",
+        },
         setupTimeoutMs: 900000,
       }),
     ).toMatchObject({
@@ -2537,7 +2551,10 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        branchName: "bb/env-123",
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env-123",
+        },
         setupTimeoutMs: 900000,
       }),
     ).toThrow();
@@ -2587,8 +2604,11 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        branchName: "bb/env lock",
-        baseBranch: null,
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env lock",
+          baseBranch: "main",
+        },
         setupTimeoutMs: 900000,
       }).success,
     ).toBe(false);
@@ -2601,8 +2621,11 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        branchName: "bb/env-123",
-        baseBranch: "release lock",
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env-123",
+          baseBranch: "release lock",
+        },
         setupTimeoutMs: 900000,
       }).success,
     ).toBe(false);

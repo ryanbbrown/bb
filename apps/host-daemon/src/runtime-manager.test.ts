@@ -1070,8 +1070,11 @@ describe("RuntimeManager", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: repoPath,
         targetPath,
-        branchName: "bb/env-roots",
-        baseBranch: "main",
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env-roots",
+          baseBranch: "main",
+        },
         timeoutMs: 900000,
       },
     });
@@ -1198,8 +1201,11 @@ describe("RuntimeManager", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/source",
         targetPath: "/tmp/env-1",
-        branchName: "bb/env-1",
-        baseBranch: "main",
+        checkout: {
+          kind: "new-branch",
+          branchName: "bb/env-1",
+          baseBranch: "main",
+        },
         timeoutMs: 900000,
       },
     });

@@ -20,6 +20,7 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: null,
         defaultWorktreeBaseBranch: null,
         environmentValue: hostLocalEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: null,
       }),
@@ -39,6 +40,7 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: null,
         defaultWorktreeBaseBranch: null,
         environmentValue: hostLocalEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: selectedBranch("develop"),
       }),
@@ -59,6 +61,7 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: null,
         defaultWorktreeBaseBranch: null,
         environmentValue: hostLocalEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: { name: "develop", isNew: true },
       }),
@@ -76,13 +79,17 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: "main",
         defaultWorktreeBaseBranch: "main",
         environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: null,
       }),
     ).toMatchObject({
       workspace: {
         type: "managed-worktree",
-        baseBranch: { kind: "default" },
+        checkout: {
+          kind: "new-branch",
+          baseBranch: { kind: "default" },
+        },
       },
     });
   });
@@ -93,13 +100,17 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: "main",
         defaultWorktreeBaseBranch: "origin/main",
         environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: null,
       }),
     ).toMatchObject({
       workspace: {
         type: "managed-worktree",
-        baseBranch: { kind: "named", name: "origin/main" },
+        checkout: {
+          kind: "new-branch",
+          baseBranch: { kind: "named", name: "origin/main" },
+        },
       },
     });
   });
@@ -110,13 +121,38 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: "main",
         defaultWorktreeBaseBranch: "origin/main",
         environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "new",
         projectId,
-        selectedBranch: selectedBranch("develop"),
+        selectedBranch: { name: "develop", isNew: true },
       }),
     ).toMatchObject({
       workspace: {
         type: "managed-worktree",
-        baseBranch: { kind: "named", name: "develop" },
+        checkout: {
+          kind: "new-branch",
+          baseBranch: { kind: "named", name: "develop" },
+        },
+      },
+    });
+  });
+
+  it("continues the selected branch in a managed worktree", () => {
+    expect(
+      resolveRootComposeThreadEnvironment({
+        defaultBranch: "main",
+        defaultWorktreeBaseBranch: "origin/main",
+        environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "continue",
+        projectId,
+        selectedBranch: selectedBranch("origin/bb/pr-123"),
+      }),
+    ).toMatchObject({
+      workspace: {
+        type: "managed-worktree",
+        checkout: {
+          kind: "existing-branch",
+          name: "origin/bb/pr-123",
+        },
       },
     });
   });
@@ -127,6 +163,7 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: null,
         defaultWorktreeBaseBranch: null,
         environmentValue: hostLocalEnvironmentValue,
+        managedMode: "new",
         projectId: PERSONAL_PROJECT_ID,
         selectedBranch: selectedBranch("develop"),
       }),
@@ -135,5 +172,18 @@ describe("resolveRootComposeThreadEnvironment", () => {
       hostId: "host_123",
       workspace: { type: "personal" },
     });
+  });
+
+  it("requires a branch in managed Continue mode", () => {
+    expect(
+      resolveRootComposeThreadEnvironment({
+        defaultBranch: "main",
+        defaultWorktreeBaseBranch: "origin/main",
+        environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "continue",
+        projectId,
+        selectedBranch: null,
+      }),
+    ).toBeNull();
   });
 });

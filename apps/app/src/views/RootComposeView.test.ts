@@ -5,6 +5,7 @@ import {
 } from "@bb/domain";
 import type {
   ProjectBranchesResponse,
+  ProjectWorktree,
   ProjectWithThreadsResponse,
   SidebarBootstrapResponse,
   TerminalSession,
@@ -37,6 +38,7 @@ import {
   shouldNavigateAfterThreadCreate,
 } from "./RootComposeView";
 import {
+  buildReuseThreadOptions,
   resolveProjectSourceWorktreeDisabledReason,
   resolveComposeHostId,
   resolveRootComposeEffectiveEnvironmentValue,
@@ -150,7 +152,9 @@ function makeProjectSource(hostId = "host_1"): ProjectSource {
 
 function makeReuseThreadOption(environmentId: string): ReuseThreadOption {
   return {
+    value: `reuse:${environmentId}`,
     environmentId,
+    path: `/workspace/${environmentId}`,
     branchName: "feature",
     name: null,
     threads: [{ id: "thr_1", title: "Thread" }],
@@ -762,6 +766,59 @@ describe("resolveComposeHostId", () => {
   });
 });
 
+describe("buildReuseThreadOptions", () => {
+  it("keeps discovered paths and environment-backed worktrees", () => {
+    const worktrees: ProjectWorktree[] = [
+      {
+        hostId: "host_1",
+        path: "/repo/bb-managed",
+        branchName: "bb/managed",
+        environmentId: "env_managed",
+        environmentName: "Managed",
+      },
+      {
+        hostId: "host_2",
+        path: "/repo/bb-personal",
+        branchName: "personal",
+        environmentId: null,
+        environmentName: null,
+      },
+    ];
+
+    const options = buildReuseThreadOptions(
+      [],
+      worktrees,
+      new Map([
+        ["host_1", "Laptop"],
+        ["host_2", "Builder"],
+      ]),
+    );
+
+    expect(options).toEqual([
+      expect.objectContaining({
+        value: "reuse:env_managed",
+        environmentId: "env_managed",
+        hostName: "Laptop",
+        path: "/repo/bb-managed",
+      }),
+      expect.objectContaining({
+        environmentId: null,
+        hostName: "Builder",
+        path: "/repo/bb-personal",
+      }),
+    ]);
+    expect(parseEnvironmentValue(options[1]?.value ?? "")).toEqual({
+      type: "worktree-path",
+      hostId: "host_2",
+      path: "/repo/bb-personal",
+    });
+  });
+
+  it("rejects malformed discovered worktree values", () => {
+    expect(parseEnvironmentValue("worktree-path:host_1:%ZZ")).toBeNull();
+  });
+});
+
 describe("resolveRootComposeProjectRouting", () => {
   it("propagates the selected host or environment to project workspace calls", () => {
     expect(
@@ -1037,13 +1094,17 @@ describe("resolveRootComposePanelThreadId", () => {
         environmentId: "env_b",
         reuseThreadOptions: [
           {
+            value: "reuse:env_a",
             environmentId: "env_a",
+            path: "/workspace/a",
             branchName: "main",
             name: null,
             threads: [{ id: "thr_a", title: "Thread A" }],
           },
           {
+            value: "reuse:env_b",
             environmentId: "env_b",
+            path: "/workspace/b",
             branchName: "feature",
             name: "Feature worktree",
             threads: [
@@ -1062,7 +1123,9 @@ describe("resolveRootComposePanelThreadId", () => {
         environmentId: null,
         reuseThreadOptions: [
           {
+            value: "reuse:env_a",
             environmentId: "env_a",
+            path: "/workspace/a",
             branchName: "main",
             name: null,
             threads: [{ id: "thr_a", title: "Thread A" }],

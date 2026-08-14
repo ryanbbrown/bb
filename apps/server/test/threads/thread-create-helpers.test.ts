@@ -11,7 +11,6 @@ import {
 } from "@bb/db";
 import { ApiError } from "../../src/errors.js";
 import {
-  baseBranchSpecToStoredName,
   buildManagedBranchName,
   createThreadRecord,
 } from "../../src/services/threads/thread-create-helpers.js";
@@ -68,18 +67,6 @@ describe("buildManagedBranchName", () => {
       threadId: "thr_abc123xyz789",
     });
     expect(a).not.toBe(b);
-  });
-});
-
-describe("baseBranchSpecToStoredName", () => {
-  it("stores named base branches as their branch name", () => {
-    expect(
-      baseBranchSpecToStoredName({ kind: "named", name: "release/1.2" }),
-    ).toBe("release/1.2");
-  });
-
-  it("stores default base branches as null", () => {
-    expect(baseBranchSpecToStoredName({ kind: "default" })).toBeNull();
   });
 });
 

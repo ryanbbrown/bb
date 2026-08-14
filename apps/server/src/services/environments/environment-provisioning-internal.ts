@@ -33,7 +33,6 @@ import {
   buildManagedBranchName,
   SETUP_TIMEOUT_MS,
   requireSourceForHost,
-  storedBaseBranchNameToSpec,
 } from "../threads/thread-create-helpers.js";
 import {
   resolveManagedTargetPath,
@@ -1101,12 +1100,21 @@ export async function dispatchManagedEnvironmentReprovision(
           const branchName =
             args.environment.branchName ??
             buildManagedBranchName({ threadId: args.threadId });
-          const baseBranch = storedBaseBranchNameToSpec(
-            args.environment.baseBranch,
-          );
+          const checkout =
+            args.environment.baseBranch === null
+              ? {
+                  kind: "existing-branch" as const,
+                  branchName,
+                  startPoint: branchName,
+                  upstream: null,
+                }
+              : {
+                  kind: "new-branch" as const,
+                  branchName,
+                  baseBranch: args.environment.baseBranch,
+                };
           return buildEnvironmentProvisionCommand({
-            branchName,
-            baseBranch,
+            checkout,
             environmentId: args.environment.id,
             hostId: args.environment.hostId,
             initiator,

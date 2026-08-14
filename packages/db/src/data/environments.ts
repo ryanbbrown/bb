@@ -1,4 +1,4 @@
-import { and, eq, inArray, ne, sql, lt } from "drizzle-orm";
+import { and, eq, inArray, isNotNull, ne, sql, lt } from "drizzle-orm";
 import type {
   DiscoveredWorkspaceProperties,
   EnvironmentChangeKind,
@@ -136,6 +136,23 @@ export function listEnvironments(db: DbConnection, projectId?: string) {
       .all();
   }
   return db.select().from(environments).all();
+}
+
+export function listActiveEnvironmentsWithPathsOnHost(
+  db: DbConnection,
+  hostId: string,
+) {
+  return db
+    .select()
+    .from(environments)
+    .where(
+      and(
+        eq(environments.hostId, hostId),
+        isNotNull(environments.path),
+        ne(environments.status, "destroyed"),
+      ),
+    )
+    .all();
 }
 
 export function listEnvironmentsByIds(
