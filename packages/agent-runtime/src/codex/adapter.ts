@@ -665,9 +665,10 @@ function toCodexReasoningEffort(
 ): CodexReasoningEffort {
   const codexEffort = mapBbReasoningLevelToCodex(reasoningLevel);
   if (codexEffort == null) {
-    // "none" is Cursor-only; "ultracode" is Claude-specific. Codex models
-    // never expose either, so model-switch reconciliation maps them away
-    // before here — but fail closed if something slips through.
+    // "none" is exposed by Cursor and some Pi models; "ultracode" is
+    // Claude-specific. Codex models never expose either, so model-switch
+    // reconciliation maps them away before here — but fail closed if
+    // something slips through.
     throw new Error(
       `Codex does not support the ${reasoningLevel} reasoning level.`,
     );
@@ -2227,6 +2228,21 @@ export function createCodexProviderAdapter(
 
   return {
     ...standardAdapterMembers,
+    // Codex reports native subagents as toolCall items rather than as BB
+    // background tasks, so the shared background-work state cannot see them.
+    // Report them here; a session release must not stop the parent process
+    // while a child agent still runs or still owes a followup turn.
+    hasOpenThreadWork({ providerThreadId }: { providerThreadId: string }) {
+      for (const tracked of trackedSubAgentsByCallId.values()) {
+        if (tracked.parentProviderThreadId !== providerThreadId) {
+          continue;
+        }
+        if (!tracked.terminal || tracked.pendingFollowups > 0) {
+          return true;
+        }
+      }
+      return false;
+    },
     buildPostInitializeRequests,
     decodeInteractiveRequest(request: ProviderInboundRequest) {
       return decodeCodexInteractiveRequest(request);

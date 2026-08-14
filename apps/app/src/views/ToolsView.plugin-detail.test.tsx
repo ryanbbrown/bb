@@ -28,10 +28,8 @@ import {
   pluginDetailBannerKind,
   pluginFrontendDiagnosticRequiresFailureBanner,
 } from "@/components/tools/PluginDetail";
-import {
-  pluginSourceQueryKey,
-  type PluginCatalogSearchEntry,
-} from "@/hooks/queries/plugin-catalog-queries";
+import type { PluginCatalogSearchEntry } from "@/hooks/queries/plugin-catalog-queries";
+import { pluginSourceQueryKey } from "@/hooks/queries/query-keys";
 import type { PluginFrontendDiagnostic } from "@/lib/plugin-frontend";
 
 const GITHUB_PLUGIN = {
@@ -64,12 +62,17 @@ const GITHUB_PLUGIN = {
 
 const GITHUB_CATALOG_ENTRY = {
   entryId: "github",
+  marketplace: "bb-official",
   pluginId: "github",
   displayName: "GitHub",
   description: "Browse GitHub issues and pull requests in BB.",
   icon: "Github",
+  iconUrl: null,
   category: "Developer tools",
   source: "builtin:github",
+  marketplaceDisplayName: "BB Official",
+  official: true,
+  author: null,
   installed: false,
   compatible: true,
   incompatibleReason: null,
@@ -83,17 +86,22 @@ afterEach(() => {
 });
 
 describe("ToolsScrollPage layout", () => {
-  it("gives bounded collection pages a definite viewport height", () => {
+  it("gives bounded collection pages a definite, full-pane viewport", () => {
     render(
       <ToolsScrollPage fillViewport>
         <div>Skills collection</div>
       </ToolsScrollPage>,
     );
 
+    // The child owns the scrolling, so the page must hand it the full pane:
+    // a definite height for the inner viewport to bound itself against, and
+    // no width cap — the centered column would leave the gutters wheel-dead.
     const content = screen.getByText("Skills collection").parentElement;
     const classes = content?.className.split(/\s+/) ?? [];
     expect(classes).toContain("h-full");
-    expect(classes).toContain("min-h-full");
+    expect(classes).toContain("w-full");
+    expect(classes).not.toContain("max-w-5xl");
+    expect(classes).not.toContain("overflow-y-auto");
   });
 
   it("keeps bottom padding after detail content that exceeds the viewport", () => {
@@ -224,10 +232,10 @@ describe("PluginDetail official catalog lifecycle", () => {
       </MemoryRouter>,
     );
 
-    // Provenance is a passive label beside the name, not a control. It used to
-    // be a button that swapped to a red Uninstall on hover — a status that
-    // deleted on click.
-    expect(screen.getByText("BB Official")).toBeTruthy();
+    // Only builtin plugins wear the BB Official pill: a catalog install can
+    // come from any marketplace, so this catalog-provenance plugin shows no
+    // provenance label — and no uninstall-on-hover control either.
+    expect(screen.queryByText("BB Official")).toBeNull();
     expect(
       screen.queryByRole("button", { name: "Uninstall GitHub" }),
     ).toBeNull();
@@ -564,9 +572,9 @@ describe("BB Official plugin detail routing", () => {
 
     const { wrapper: QueryClientWrapper } = createQueryClientTestHarness();
     render(
-      <MemoryRouter initialEntries={["/tools/plugins/github"]}>
+      <MemoryRouter initialEntries={["/extensions/plugins/github"]}>
         <Routes>
-          <Route path="/tools/plugins/:pluginId" element={<ToolsView />} />
+          <Route path="/extensions/plugins/:pluginId" element={<ToolsView />} />
         </Routes>
       </MemoryRouter>,
       { wrapper: QueryClientWrapper },
@@ -893,7 +901,7 @@ describe("PluginDetail runtime health", () => {
     const alert = screen.getByRole("alert");
     expect(alert.textContent).toContain("An API token is required.");
     expect(alert.textContent).toContain(
-      "Complete the Settings section; bb reloads the plugin after you save.",
+      "Complete the Configuration section; bb reloads the plugin after you save.",
     );
     expect(screen.queryByRole("button", { name: "Reload" })).toBeNull();
   });

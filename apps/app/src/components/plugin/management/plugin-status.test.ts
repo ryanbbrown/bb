@@ -66,6 +66,23 @@ describe("pluginRowSignal (the one-signal rule)", () => {
     expect(pluginRowSignal(plugin())).toBeNull();
   });
 
+  it("surfaces an update-source security refusal", () => {
+    expect(
+      pluginRowSignal(
+        plugin({
+          outcome: "unavailable",
+          detail: "The cached checkout does not prove that this ref was a branch.",
+        }),
+      ),
+    ).toEqual({
+      kind: "status",
+      icon: "AlertTriangle",
+      label: "Needs attention",
+      tone: "warning",
+      detail: "The cached checkout does not prove that this ref was a branch.",
+    });
+  });
+
   it("names a rolled-back update and lets it outrank an available update", () => {
     expect(
       pluginRowSignal(
@@ -187,7 +204,7 @@ describe("pluginRuntimeStatusPresentation", () => {
       label: "Needs configuration",
       condition: "Required settings are incomplete.",
       recovery:
-        "Complete the Settings section; bb reloads the plugin after you save.",
+        "Complete the Configuration section; bb reloads the plugin after you save.",
     });
   });
 });

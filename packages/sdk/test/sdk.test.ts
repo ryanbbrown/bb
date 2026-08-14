@@ -192,6 +192,11 @@ describe("@bb/sdk", () => {
       themeId: "nord",
       customCss: null,
       faviconColor: "teal" as const,
+      resolvedCodeTheme: {
+        dark: "nord",
+        light: "nord",
+        files: {},
+      },
     };
     const queue = createFetchQueue([{ body: appearance }]);
     const sdk = createBbSdk({
@@ -220,12 +225,22 @@ describe("@bb/sdk", () => {
         themeId: "dracula",
         customCss: null,
         faviconColor: "purple" as const,
+        resolvedCodeTheme: {
+          dark: "dracula",
+          light: "dracula",
+          files: {},
+        },
       },
     };
     const updated = {
       themeId: "nord",
       customCss: null,
       faviconColor: "purple" as const,
+      resolvedCodeTheme: {
+        dark: "nord",
+        light: "nord",
+        files: {},
+      },
     };
     const queue = createFetchQueue([{ body: current }, { body: updated }]);
     const sdk = createBbSdk({
@@ -1347,8 +1362,13 @@ describe("@bb/sdk", () => {
               displayName: "Notes",
               description: "Notes",
               icon: null,
+              iconUrl: null,
               category: "Productivity",
               source: "npm:@bb/notes@^1",
+              marketplace: "acme-plugins",
+              marketplaceDisplayName: "Acme Plugins",
+              official: false,
+              author: { name: "Acme", url: null },
               installed: true,
               compatible: true,
               incompatibleReason: null,
@@ -1390,7 +1410,6 @@ describe("@bb/sdk", () => {
     ).resolves.toMatchObject([
       { entryId: "notes", pluginId: "notes", compatible: true },
     ]);
-
     expect(queue.requests).toEqual([
       {
         bodyText: undefined,
@@ -1398,7 +1417,10 @@ describe("@bb/sdk", () => {
         url: "http://bb.test/api/v1/plugins",
       },
       {
-        bodyText: JSON.stringify({ source: "npm:@bb/notes@^1" }),
+        bodyText: JSON.stringify({
+          source: "npm:@bb/notes@^1",
+          selection: { kind: "root" },
+        }),
         method: "POST",
         url: "http://bb.test/api/v1/plugins/install",
       },
@@ -1440,6 +1462,49 @@ describe("@bb/sdk", () => {
         url: "http://bb.test/api/v1/plugin-catalog/search?q=notes",
       },
     ]);
+  });
+
+  it("sends a nested-plugin selection and refuses two selectors at once", async () => {
+    const plugin = { id: "notes" };
+    const queue = createFetchQueue([
+      { body: { ok: true, plugin } },
+      { body: { ok: true, plugin } },
+    ]);
+    const sdk = createBbSdk({
+      transport: createHttpTransport({
+        baseUrl: "http://bb.test",
+        fetch: queue.fetch,
+        runtime: "node",
+      }),
+    });
+
+    await sdk.plugins
+      .install({ source: "git:github.com/acme/repo@main", plugin: "notes" })
+      .catch(() => undefined);
+    await sdk.plugins
+      .install({
+        source: "path:/work/repo",
+        subdirectory: "plugins/notes",
+      })
+      .catch(() => undefined);
+
+    expect(queue.requests.map((request) => request.bodyText)).toEqual([
+      JSON.stringify({
+        source: "git:github.com/acme/repo@main",
+        selection: { kind: "entry", name: "notes" },
+      }),
+      JSON.stringify({
+        source: "path:/work/repo",
+        selection: { kind: "subdirectory", path: "plugins/notes" },
+      }),
+    ]);
+    await expect(
+      sdk.plugins.install({
+        source: "path:/work/repo",
+        plugin: "notes",
+        subdirectory: "plugins/notes",
+      }),
+    ).rejects.toThrow(/not both/);
   });
 
   it("surfaces typed plugin update failures as HTTP errors", async () => {
@@ -1574,6 +1639,7 @@ describe("@bb/sdk", () => {
         body: {
           skills: [registrySkill],
           pagination: { page: 0, perPage: 24, total: 1, hasMore: false },
+          ranking: "trending",
         },
       },
       { body: { stars: 27_053 } },

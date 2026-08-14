@@ -992,6 +992,29 @@ describe("timeline CLI rendering snapshots", () => {
     expect(timeline.text).not.toContain("Worked for");
   });
 
+  it("shows a context clear as its own completed timeline row", () => {
+    const event = createTimelineEventFactory({ threadId: "thread-1" });
+    const timeline = renderTimelineFixture({
+      events: [
+        event.turnStarted(),
+        event.threadContextCleared(),
+        event.turnCompleted(),
+      ],
+      includeNestedRows: false,
+      projectionOptions: {
+        threadStatus: "idle",
+        turnMessageDetail: "summary",
+      },
+    });
+
+    expect(messageKinds(timeline.messages)).toEqual(["operation"]);
+    expect(timeline.turnRows).toHaveLength(0);
+    expect(timeline.text).toMatchInlineSnapshot(`
+      "── Context cleared ─────────────────────────────────────────"
+    `);
+    expect(timeline.text).not.toContain("Worked for");
+  });
+
   it("unwraps failed context compaction from a singleton turn summary", () => {
     const event = createTimelineEventFactory({ threadId: "thread-1" });
     const timeline = renderTimelineFixture({
@@ -1306,6 +1329,97 @@ describe("timeline CLI rendering snapshots", () => {
         delegation.childRows.some((row) => row.kind === "turn"),
       ),
     ).toBe(false);
+  });
+
+  it("preserves a root assistant stream when a nested turn completes first", () => {
+    const event = createTimelineEventFactory({
+      providerThreadId: "root-provider",
+      threadId: "thread-1",
+      turnId: "root-turn",
+    });
+    const timeline = renderIdleTimeline([
+      event.turnStarted(),
+      event.toolCallStarted({
+        itemId: "delegation-1",
+        tool: "spawnAgent",
+        arguments: {
+          prompt: "Research the issue",
+          receiverThreadIds: ["child-provider"],
+        },
+      }),
+      event.turnStarted({
+        parentToolCallId: "delegation-1",
+        turnId: "child-turn",
+      }),
+      event.assistantDelta({
+        delta: "I",
+        itemId: "root-assistant",
+      }),
+      event.assistantCompleted({
+        itemId: "child-assistant",
+        text: "Child research complete.",
+        turnId: "child-turn",
+      }),
+      event.turnCompleted({ turnId: "child-turn" }),
+      event.toolCallCompleted({
+        itemId: "delegation-1",
+        tool: "spawnAgent",
+        arguments: {
+          prompt: "Research the issue",
+          receiverThreadIds: ["child-provider"],
+        },
+      }),
+      event.assistantCompleted({
+        itemId: "root-assistant",
+        text: "I recommend applying the focused fix.",
+      }),
+      event.turnCompleted(),
+    ]);
+
+    const rootAssistantRows = timeline.rows.filter(
+      (row) =>
+        row.kind === "conversation" &&
+        row.role === "assistant" &&
+        row.turnId === "root-turn",
+    );
+    expect(rootAssistantRows).toEqual([
+      expect.objectContaining({
+        text: "I recommend applying the focused fix.",
+      }),
+    ]);
+  });
+
+  it("keeps root reasoning active when a nested turn completes first", () => {
+    const event = createTimelineEventFactory({
+      providerThreadId: "root-provider",
+      threadId: "thread-1",
+      turnId: "root-turn",
+    });
+    const timeline = renderActiveTimeline([
+      event.turnStarted(),
+      event.toolCallStarted({
+        itemId: "delegation-1",
+        tool: "spawnAgent",
+        arguments: {
+          prompt: "Research the issue",
+          receiverThreadIds: ["child-provider"],
+        },
+      }),
+      event.turnStarted({
+        parentToolCallId: "delegation-1",
+        turnId: "child-turn",
+      }),
+      event.reasoningDelta({
+        delta: "Root is still thinking.\n",
+        itemId: "root-reasoning",
+      }),
+      event.turnCompleted({ turnId: "child-turn" }),
+    ]);
+
+    expect(timeline.projection.state.activeThinking).toMatchObject({
+      id: "root-reasoning",
+      text: "Root is still thinking.\n",
+    });
   });
 
   it("does not attach later root turns to Claude receiver-thread delegations", () => {

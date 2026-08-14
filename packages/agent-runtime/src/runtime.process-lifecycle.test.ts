@@ -72,6 +72,7 @@ describe("createAgentRuntime process lifecycle", () => {
       bridgeBundleDir: undefined,
       captureThreadExitState: (threadId) => ({
         activeTurnId: null,
+        pendingTurnStart: false,
         providerThreadId:
           identityRegistry.getProviderThreadId(threadId) ?? null,
         threadId,
@@ -324,6 +325,14 @@ rl.on("line", (line) => {
   if (message.method === "thread/stop") {
     const threadId = messageParams.threadId;
     fs.appendFileSync(logPath, "thread-stop:" + processId + ":" + threadId + "\\n");
+    if (threadId.includes("stopfail")) {
+      send({
+        jsonrpc: "2.0",
+        id: message.id,
+        error: { code: -32000, message: "stop refused for " + threadId },
+      });
+      return;
+    }
     threads.delete(threadId);
     send({ jsonrpc: "2.0", id: message.id, result: { ok: true } });
   }
@@ -1075,6 +1084,7 @@ rl.on("line", (line) => {
       const result = await runtime.reapIdleProviderSessions({
         idleForMs: 0,
         nowMs: Date.now(),
+        providerSessionReapingEnabled: false,
       });
 
       expect(result.reapedSessions).toEqual([
@@ -1155,6 +1165,7 @@ rl.on("line", (line) => {
       const belowThresholdResult = await runtime.reapIdleProviderSessions({
         idleForMs: 30 * 60 * 1000,
         nowMs: Date.now() + 29 * 60 * 1000,
+        providerSessionReapingEnabled: false,
       });
       expect(belowThresholdResult.reapedSessions).toEqual([]);
       expect(runtime.hasThread("t1")).toBe(true);
@@ -1165,6 +1176,7 @@ rl.on("line", (line) => {
       const result = await runtime.reapIdleProviderSessions({
         idleForMs: 30 * 60 * 1000,
         nowMs: Date.now() + 31 * 60 * 1000,
+        providerSessionReapingEnabled: false,
       });
       const reapedSession = result.reapedSessions[0];
       if (!reapedSession) {
@@ -1280,10 +1292,12 @@ rl.on("line", (line) => {
       const firstResult = await runtime.reapIdleProviderSessions({
         idleForMs: 0,
         nowMs: Date.now() + 60 * 60 * 1000,
+        providerSessionReapingEnabled: false,
       });
       const secondResult = await runtime.reapIdleProviderSessions({
         idleForMs: 0,
         nowMs: Date.now() + 60 * 60 * 1000,
+        providerSessionReapingEnabled: false,
       });
 
       expect(firstResult.reapedSessions).toEqual([]);
@@ -1293,6 +1307,109 @@ rl.on("line", (line) => {
         readLogLines(processLogPath).filter((line) => line.startsWith("exit:")),
       ).toHaveLength(0);
       await runtime.stopThread({ threadId: "t1" });
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("reaps a restorable non-Codex session only when the experiment is on", async () => {
+    const providerScript = join(tmpDir, "claude-idle-reaper-provider.cjs");
+    writeThreadScopedProviderScript({
+      logPath: join(tmpDir, "claude-idle-reaper-provider.log"),
+      scriptPath: providerScript,
+    });
+    const runtime = createAgentRuntimeWithAdapters({
+      workspacePath: tmpDir,
+      onEvent: () => {},
+      onToolCall: async () => ({
+        contentItems: [{ type: "inputText", text: "ok" }],
+        success: true,
+      }),
+      adapterFactory: () => ({
+        ...createFakeAdapter(providerScript),
+        displayName: "Claude Code",
+        id: "claude-code",
+      }),
+    });
+
+    try {
+      await runtime.startThread({
+        environmentId: "env-1",
+        threadId: "t1",
+        projectId: "p1",
+        providerId: "claude-code",
+        options: fullRuntimeOptions,
+      });
+
+      await expect(
+        runtime.reapIdleProviderSessions({
+          idleForMs: 0,
+          nowMs: Date.now(),
+          providerSessionReapingEnabled: false,
+        }),
+      ).resolves.toEqual({ reapedSessions: [] });
+      expect(runtime.hasThread("t1")).toBe(true);
+
+      const result = await runtime.reapIdleProviderSessions({
+        idleForMs: 0,
+        nowMs: Date.now(),
+        providerSessionReapingEnabled: true,
+      });
+      expect(result.reapedSessions).toEqual([
+        expect.objectContaining({
+          providerId: "claude-code",
+          threadId: "t1",
+        }),
+      ]);
+      expect(runtime.hasThread("t1")).toBe(false);
+    } finally {
+      await runtime.shutdown();
+    }
+  });
+
+  it("keeps releasing later sessions after one release fails", async () => {
+    const providerScript = join(tmpDir, "claude-stop-failure-provider.cjs");
+    writeThreadScopedProviderScript({
+      logPath: join(tmpDir, "claude-stop-failure-provider.log"),
+      scriptPath: providerScript,
+    });
+    const runtime = createAgentRuntimeWithAdapters({
+      workspacePath: tmpDir,
+      onEvent: () => {},
+      onToolCall: async () => ({
+        contentItems: [{ type: "inputText", text: "ok" }],
+        success: true,
+      }),
+      adapterFactory: () => ({
+        ...createFakeAdapter(providerScript),
+        displayName: "Claude Code",
+        id: "claude-code",
+      }),
+    });
+
+    try {
+      // The provider refuses a stop for any thread whose id says "stopfail".
+      for (const threadId of ["t-stopfail-1", "t2"]) {
+        await runtime.startThread({
+          environmentId: "env-1",
+          threadId,
+          projectId: "p1",
+          providerId: "claude-code",
+          options: fullRuntimeOptions,
+        });
+      }
+
+      const result = await runtime.reapIdleProviderSessions({
+        idleForMs: 0,
+        nowMs: Date.now(),
+        providerSessionReapingEnabled: true,
+      });
+
+      expect(result.reapedSessions).toEqual([
+        expect.objectContaining({ threadId: "t2" }),
+      ]);
+      expect(runtime.hasThread("t-stopfail-1")).toBe(true);
+      expect(runtime.hasThread("t2")).toBe(false);
     } finally {
       await runtime.shutdown();
     }
@@ -1845,7 +1962,7 @@ rl.on("line", (line) => {
     await runtime.shutdown();
   });
 
-  it("rejects pending sendRequest when provider dies mid-turn", async () => {
+  it("reports a pending turn when the provider exits after acknowledging turn/start", async () => {
     const crashDuringTurnScript = join(tmpDir, "crash-during-turn.cjs");
     writeFileSync(
       crashDuringTurnScript,
@@ -1864,12 +1981,14 @@ rl.on("line", (line) => {
             params: { threadId: msg.params?.threadId, providerThreadId: "prov-mid" }
           }) + "\\n");
         } else if (msg.method === "turn/start") {
-          // Don't respond — just crash
+          process.stdout.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: {} }) + "\\n");
+          // Acknowledge the request, then exit before emitting turn/started.
           setTimeout(() => process.exit(77), 50);
         }
       });`,
     );
 
+    const exitInfo = vi.fn<NonNullable<AgentRuntimeOptions["onProcessExit"]>>();
     const runtime = createAgentRuntimeWithAdapters({
       workspacePath: tmpDir,
       onEvent: () => {},
@@ -1877,6 +1996,7 @@ rl.on("line", (line) => {
         contentItems: [{ type: "inputText", text: "ok" }],
         success: true,
       }),
+      onProcessExit: exitInfo,
       adapterFactory: () => createFakeAdapter(crashDuringTurnScript),
     });
 
@@ -1888,15 +2008,28 @@ rl.on("line", (line) => {
       options: fullRuntimeOptions,
     });
 
-    // runTurn sends the request but the provider crashes without responding
-    await expect(
-      runtime.runTurn({
-        clientRequestId: "creq_222222224y",
-        threadId: "t1",
-        input: [promptTextInput({ text: "hi" })],
-        options: fullRuntimeOptions,
+    await runtime.runTurn({
+      clientRequestId: "creq_222222224y",
+      threadId: "t1",
+      input: [promptTextInput({ text: "hi" })],
+      options: fullRuntimeOptions,
+    });
+    await waitForRuntimeState({
+      label: "provider process exit callback",
+      predicate: () => exitInfo.mock.calls.length === 1,
+    });
+    expect(exitInfo).toHaveBeenCalledWith(
+      expect.objectContaining({
+        threads: [
+          expect.objectContaining({
+            activeTurnId: null,
+            pendingTurnStart: true,
+            providerThreadId: "prov-mid",
+            threadId: "t1",
+          }),
+        ],
       }),
-    ).rejects.toThrow(/exited unexpectedly/i);
+    );
     await runtime.shutdown();
   });
 

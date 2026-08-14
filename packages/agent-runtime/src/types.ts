@@ -56,11 +56,13 @@ export type AgentRuntimeSkillRoot =
 
 /**
  * Final per-thread state snapshot taken when a provider process exits,
- * captured before the runtime clears the thread's state. This is the only
- * way consumers can see which turn a crashed thread was running.
+ * captured before the runtime clears the thread's state. This is the only way
+ * consumers can distinguish an idle session from a crashed active turn or a
+ * turn request awaiting its first provider lifecycle event.
  */
 export interface AgentRuntimeProcessExitThreadState {
   activeTurnId: string | null;
+  pendingTurnStart: boolean;
   providerThreadId: string | null;
   threadId: string;
 }
@@ -264,6 +266,11 @@ export interface WaitForActiveTurnArgs {
 export interface ReapIdleProviderSessionsArgs {
   idleForMs: number;
   nowMs: number;
+  providerSessionReapingEnabled: boolean;
+  runThreadExclusive?: (
+    threadId: string,
+    work: () => Promise<ReapedIdleProviderSession | null>,
+  ) => Promise<ReapedIdleProviderSession | null>;
 }
 
 export interface ReapedIdleProviderSession {

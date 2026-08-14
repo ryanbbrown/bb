@@ -1,5 +1,5 @@
 import { collectOptionalFieldPaths } from "@bb/test-helpers";
-import { threadScope, type JsonObject } from "@bb/domain";
+import { threadScope, turnScope, type JsonObject } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import * as contract from "../src/index.js";
 import {
@@ -33,6 +33,7 @@ import {
   hostDaemonSessionOpenResponseSchema,
   hostDaemonTerminalOutputChunkSchema,
   normalizeHostDaemonAcpLaunchSpec,
+  threadStopCommandSchema,
   type HostDaemonAcpLaunchSpec,
   type HostDaemonSettledCommandType,
 } from "../src/index.js";
@@ -110,6 +111,7 @@ const WORKSPACE_STATUS_AVAILABLE_RESULT: JsonObject = {
     workingTree: {
       insertions: 3,
       deletions: 1,
+      lineStatsComplete: true,
       files: [
         {
           path: "src/index.ts",
@@ -133,6 +135,7 @@ const WORKSPACE_STATUS_AVAILABLE_RESULT: JsonObject = {
     mergeBase: {
       insertions: 5,
       deletions: 0,
+      lineStatsComplete: true,
       files: [
         {
           path: "README.md",
@@ -560,6 +563,7 @@ const WORKSPACE_DIFF_FILES_AVAILABLE_RESULT: JsonObject = {
   ],
   shortstat: "1 file changed, 3 insertions(+), 1 deletion(-)",
   mergeBaseRef: "abc123",
+  truncated: false,
 };
 
 const WORKSPACE_DIFF_PATCH_AVAILABLE_RESULT: JsonObject = {
@@ -1056,11 +1060,55 @@ describe("host-daemon local schemas", () => {
 });
 
 describe("host-daemon command schemas", () => {
-  // Version 112 makes ACP stale-steer results trigger a safe new-turn retry.
-  // Version 111 restores parentToolCallId on a resumed Codex child turn.
-  // Version 110 waits for a late full-output record before command completion.
-  it("uses protocol version 112 for stale ACP steer recovery", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(112);
+  // Version 123 adds required status-enrichment budgets and a required
+  // diff-files truncation marker. Older daemons cannot safely enforce or
+  // interpret the new bounded workspace response contract.
+  // Version 122 adds the daemon runtime-policy read for provider session
+  // release. Older daemons do not read the experiment before maintenance.
+  // Version 122 also covers two other changes that ship with it: the host PTY
+  // now answers terminal device-attribute queries and strips them from replay,
+  // and the server can route an ACP thread fork to the daemon. An older daemon
+  // has neither behavior.
+  // Version 121 adds the required thread.stop intent. Older daemons reject the
+  // field, and they wait for an active turn that a release never has.
+  // Version 120 makes thread.stop idempotent and releases idle runtimes. Older
+  // daemons reject a stop when no environment runtime is loaded.
+  // Version 119 carries required workspace diff limits and line-stat
+  // completeness over the host wire. Older daemons cannot safely enforce or
+  // interpret those fields, so enrolled machines must update before serving
+  // workspace status and diff requests.
+  // Version 118 rejects successful provider update results when the daemon
+  // cannot verify a version change. Older daemons can report a no-op Claude
+  // update as successful, so enrolled machines must update for honest results.
+  // Version 117 adds thread/context/cleared to the provider event wire model.
+  // Version 116 reports provider exits that happen while a turn start is
+  // pending. Older daemons can leave the server thread active until the live
+  // command timeout, so enrolled machines must update before handling turns.
+  // Version 115 settles zero-work provider prompts with a complete synthetic
+  // turn lifecycle. Older daemons can leave locally handled prompts active
+  // indefinitely, so enrolled machines must update for reliable completion.
+  // Version 114 lets the daemon report `none` in Pi model reasoning efforts.
+  // A version 113 server accepts that value on the wire but rejects it later
+  // against its Pi provider ladder, so enrolled machines must not run that
+  // mixed version. Version 113 carried the Devin Desktop open target rename
+  // and remains part of the protocol lineage.
+  it("uses the current host-daemon protocol version", () => {
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(123);
+  });
+
+  it("requires an explicit intent on a thread stop command", () => {
+    const base = {
+      environmentId: "env_1",
+      threadId: "thr_1",
+      type: "thread.stop" as const,
+    };
+    expect(threadStopCommandSchema.safeParse(base).success).toBe(false);
+    expect(
+      threadStopCommandSchema.safeParse({ ...base, intent: "release" }).success,
+    ).toBe(true);
+    expect(
+      threadStopCommandSchema.safeParse({ ...base, intent: "pause" }).success,
+    ).toBe(false);
   });
 
   it("binds Plan cancellation to a required turn id and typed result", () => {
@@ -1632,6 +1680,8 @@ describe("host-daemon command schemas", () => {
       {
         type: "workspace.status",
         environmentId: "env_123",
+        maxUntrackedLineStatFiles: 50,
+        maxUntrackedLineStatBytes: 8 * 1024 * 1024,
         workspaceContext: {
           workspacePath: "/tmp/workspace",
           workspaceProvisionType: "managed-worktree",
@@ -1647,6 +1697,7 @@ describe("host-daemon command schemas", () => {
         target: { type: "uncommitted" },
         maxDiffBytes: 1000,
         maxFileListBytes: 1000,
+        maxUntrackedFiles: 5000,
       },
     ];
 
@@ -2561,6 +2612,8 @@ describe("host-daemon command schemas", () => {
         type: "workspace.status",
         environmentId: "env_123",
         environmentStatus: "ready",
+        maxUntrackedLineStatFiles: 50,
+        maxUntrackedLineStatBytes: 8 * 1024 * 1024,
         workspaceContext: {
           workspacePath: "/tmp/workspace",
           workspaceProvisionType: "unmanaged",
@@ -2790,6 +2843,7 @@ describe("host-daemon command schemas", () => {
           workingTree: {
             insertions: 0,
             deletions: 0,
+            lineStatsComplete: true,
             files: [],
             hasUncommittedChanges: false,
             state: "clean",
@@ -3024,6 +3078,31 @@ describe("host-daemon session schemas", () => {
       eventGroups: [
         {
           threadId: "thr_123",
+        },
+      ],
+    });
+
+    expect(
+      hostDaemonEventBatchRequestSchema.parse({
+        sessionId: "session_123",
+        eventGroups: [
+          {
+            threadId: "thr_123",
+            events: [
+              {
+                type: "thread/context/cleared",
+                threadId: "thr_123",
+                providerThreadId: "provider-thread-123",
+                scope: turnScope("turn_123"),
+              },
+            ],
+          },
+        ],
+      }),
+    ).toMatchObject({
+      eventGroups: [
+        {
+          events: [{ type: "thread/context/cleared" }],
         },
       ],
     });

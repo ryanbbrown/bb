@@ -1,6 +1,7 @@
-import { useState, useSyncExternalStore } from "react";
+import { useSyncExternalStore } from "react";
 import {
   ResourceActivitySection,
+  ResourceDetailConfigurationSection,
   ResourceDetailOverviewSection,
   ResourceDetailPage,
   ResourceDetailReleaseSection,
@@ -19,13 +20,15 @@ import {
 } from "@bb/shared-ui/tooltip";
 import { formatHomePathForDisplay } from "@bb/shared-ui/lib/utils";
 import { Icon } from "@bb/shared-ui/icon";
-import { PluginIcon } from "@/components/plugin/PluginIcon";
+import { Link } from "react-router-dom";
+import { getPluginConfigurationRoutePath } from "@/lib/route-paths";
 import {
   PluginDetailReleaseControl,
   PluginDetailReleaseStatus,
   pluginHasUpdateSurfaces,
 } from "@/components/plugin/management/PluginUpdatesCard";
 import {
+  CatalogEntryIcon,
   formatAbsoluteDate,
   PluginLogo,
 } from "@/components/plugin/management/plugin-ui";
@@ -42,7 +45,6 @@ import {
 } from "@/components/tools/plugin-detail-table";
 import { PluginBannerBar } from "@/components/tools/plugin-detail-banner";
 import { ProvenancePill } from "@/components/tools/ProvenancePill";
-import { appToast } from "@/components/ui/app-toast";
 import {
   usePluginSource,
   type PluginCatalogSearchEntry,
@@ -53,11 +55,14 @@ import {
   subscribePluginFrontendDiagnostics,
   type PluginFrontendDiagnostic,
 } from "@/lib/plugin-frontend";
+import { usePluginSlots } from "@/lib/plugin-slots";
+import { useClipboardCopy } from "@/lib/clipboard";
 
 function pluginSourceLabel(plugin: PluginListItem): string | null {
-  return plugin.provenance === "builtin" || plugin.provenance === "catalog"
-    ? "BB Official"
-    : null;
+  // Only plugins that ship inside the app wear the pill. A catalog install
+  // can come from any marketplace, and the list DTO does not say which, so
+  // claiming BB Official for all of them would be a wrong trust signal.
+  return plugin.provenance === "builtin" ? "BB Official" : null;
 }
 
 /** Passive provenance shown beside an installed plugin's name. */
@@ -75,17 +80,10 @@ export function pluginRemovalLabel(plugin: PluginListItem): string {
 }
 
 function PluginPath({ path }: { path: string }) {
-  const [copied, setCopied] = useState(false);
-
-  async function copyPath() {
-    try {
-      await navigator.clipboard.writeText(path);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 1200);
-    } catch {
-      appToast.error("Failed to copy path.");
-    }
-  }
+  const { copied, copy } = useClipboardCopy({
+    text: path,
+    errorMessage: "Failed to copy path.",
+  });
 
   return (
     <TooltipProvider delayDuration={250}>
@@ -94,7 +92,7 @@ function PluginPath({ path }: { path: string }) {
           <button
             type="button"
             aria-label={`Copy plugin path: ${path}`}
-            onClick={copyPath}
+            onClick={() => void copy()}
             className="group -ml-1.5 mt-0.5 inline-flex max-w-full cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 text-xs text-subtle-foreground transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
           >
             <span className="min-w-0 truncate text-left font-mono">
@@ -130,16 +128,31 @@ export function CatalogPluginDetail({
   return (
     <ResourceDetailPage
       maxWidthClassName="max-w-5xl"
-      leading={
-        <PluginIcon
-          pluginId={entry.pluginId}
-          icon={entry.icon}
-          className="size-full"
-        />
-      }
+      leading={<CatalogEntryIcon entry={entry} className="size-full" />}
       title={entry.displayName}
-      titleMeta={<ProvenancePill label="BB Official" />}
-      metadata={<span>{entry.category}</span>}
+      titleMeta={<ProvenancePill label={entry.marketplaceDisplayName} />}
+      metadata={
+        <>
+          <span>{entry.category}</span>
+          {entry.author === null ? null : (
+            <span>
+              {" · By: "}
+              {entry.author.url === null ? (
+                entry.author.name
+              ) : (
+                <a
+                  href={entry.author.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline underline-offset-2"
+                >
+                  {entry.author.name}
+                </a>
+              )}
+            </span>
+          )}
+        </>
+      }
       actions={
         <ResourceInstallControl
           accessibleLabel={`Install ${entry.displayName}`}
@@ -272,6 +285,7 @@ export function PluginDetail({
   onOpenSource: (plugin: PluginListItem) => void;
   onDelete: (plugin: PluginListItem) => void;
 }) {
+  const { settingsSections } = usePluginSlots();
   // Hooks run before the loading and not-found returns below, so this has to
   // tolerate a null plugin rather than read `plugin.id` unconditionally.
   const sourceQuery = usePluginSource(plugin?.id ?? "", {
@@ -320,6 +334,9 @@ export function PluginDetail({
     (plugin.updateState.availableVersion !== null ||
       plugin.updateState.blockedVersion !== null ||
       plugin.updateState.lastFailure !== null);
+  const hasConfiguration =
+    plugin.hasSettings ||
+    settingsSections.some((section) => section.pluginId === plugin.id);
 
   const pluginName = plugin.name ?? plugin.id;
   // Uninstall is destructive and irreversible-ish, so it belongs with the other
@@ -392,6 +409,30 @@ export function PluginDetail({
             {plugin.description ?? "This plugin does not describe itself."}
           </p>
         </ResourceDetailOverviewSection>
+        {hasConfiguration ? (
+          <ResourceDetailConfigurationSection
+            id="configuration"
+            className="scroll-mt-4"
+            label="Configuration"
+          >
+            {/* Configuration lives on the Settings page; the detail page
+                only points there so one surface owns the form. */}
+            <p className="max-w-none text-sm leading-relaxed text-muted-foreground">
+              This plugin is configured from{" "}
+              <Link
+                to={getPluginConfigurationRoutePath({ pluginId: plugin.id })}
+                className="inline-flex items-center gap-0.5 rounded-sm underline underline-offset-2 hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              >
+                its Settings page
+                <Icon
+                  name="ChevronRight"
+                  className="size-3.5 no-underline"
+                  aria-hidden
+                />
+              </Link>
+            </p>
+          </ResourceDetailConfigurationSection>
+        ) : null}
         <ResourceDetailReleaseSection
           label="Release"
           actions={
@@ -407,10 +448,7 @@ export function PluginDetail({
             >
               {installedValue}
             </PluginDetailFieldRow>
-            <PluginDetailFieldRow
-              label="Version"
-              labelClassName="font-medium"
-            >
+            <PluginDetailFieldRow label="Version" labelClassName="font-medium">
               <span className="font-mono text-xs">{plugin.version}</span>
             </PluginDetailFieldRow>
             {hasReleaseUpdate ? (

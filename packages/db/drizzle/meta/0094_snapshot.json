@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "4ec4b484-eee6-4c39-9b66-df6bdeeaec7b",
+  "id": "6e59c435-2f76-4e3e-84ae-82c2a0832cdc",
   "prevId": "5f50d425-a9c4-4b80-830b-029598ab3347",
   "tables": {
     "app_settings": {
@@ -29,14 +29,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
-        },
-        "show_sidebar_thread_numbers": {
-          "name": "show_sidebar_thread_numbers",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "steer_active_thread_on_enter": {
           "name": "steer_active_thread_on_enter",
@@ -1636,6 +1628,13 @@
         },
         "git_resolved_commit": {
           "name": "git_resolved_commit",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
+        "git_checkout_root": {
+          "name": "git_checkout_root",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

@@ -85,8 +85,10 @@ function countChangedLines(diff: string | undefined): {
 }
 
 describe("acp adapter command plans", () => {
-  it("advertises accept-edits and full without automatic review", () => {
-    expect(createAdapter().capabilities.supportedPermissionModes).toEqual([
+  it("advertises fork plus accept-edits and full without automatic review", () => {
+    const capabilities = createAdapter().capabilities;
+    expect(capabilities.supportsFork).toBe(true);
+    expect(capabilities.supportedPermissionModes).toEqual([
       "accept-edits",
       "full",
     ]);
@@ -282,6 +284,28 @@ describe("acp adapter command plans", () => {
         "Available bb skills:",
         "- debugging: Use when debugging runtime state. (SKILL.md: /tmp/bb/runtime/global-skills/def456/skills/debugging/SKILL.md)",
       ].join("\n"),
+    });
+  });
+
+  it("builds thread/fork with the source provider session", () => {
+    const adapter = createAdapter();
+    const plan = adapter.buildCommandPlan({
+      type: "thread/fork",
+      threadId: "thread-fork",
+      sourceProviderThreadId: "sess-source",
+      cwd: "/fork-workspace",
+      options: fullProviderExecutionContext,
+      instructionMode: "append",
+    });
+
+    expect(plan).toMatchObject({
+      kind: "request",
+      method: "thread/fork",
+      params: {
+        threadId: "thread-fork",
+        sourceProviderThreadId: "sess-source",
+        cwd: "/fork-workspace",
+      },
     });
   });
 
@@ -772,6 +796,40 @@ describe("acp adapter event translation", () => {
         status: "completed",
       },
     ]);
+  });
+
+  it("settles accepted input when completion arrives before an update", () => {
+    const adapter = createAdapter();
+    adapter.translateAcceptedCommand({
+      command: {
+        type: "turn/start",
+        clientRequestId: "creq_222222228e",
+        input: [promptTextInput({ text: "/agent-local-command" })],
+        options: fullProviderExecutionContext,
+        providerThreadId: "sess-1",
+        threadId: "thread-1",
+      },
+    });
+
+    const events = adapter.translateEvent(
+      {
+        jsonrpc: "2.0",
+        method: "acp/turn/completed",
+        params: { threadId: "thread-1", stopReason: "end_turn" },
+      },
+      THREAD_CONTEXT,
+    );
+
+    expect(events.map((event) => event.type)).toEqual([
+      "turn/started",
+      "turn/input/accepted",
+      "turn/completed",
+    ]);
+    expect(events.at(-1)).toMatchObject({
+      type: "turn/completed",
+      scope: turnScope("turn-1"),
+      status: "completed",
+    });
   });
 
   it("translates ACP usage updates into exact context-window usage", () => {
