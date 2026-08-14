@@ -106,9 +106,11 @@ import {
   sidebarCollapsedThreadSectionsAtom,
   sidebarCollapsedMachinesAtom,
   sidebarOrganizationModeAtom,
+  sidebarProjectOrderAtom,
   type SidebarChronologicalSort,
   type CollapsibleSidebarSectionId,
   type SidebarOrganizationMode,
+  type SidebarProjectOrder,
   type SidebarSectionId,
 } from "./sidebarCollapsedAtoms";
 import { sectionKeyForThreadSection } from "./sectionKeys";
@@ -151,6 +153,7 @@ import {
 } from "./BuiltInSidebarSection";
 import { ReorderableSidebarSectionOrderList } from "./ReorderableSidebarSectionOrderList";
 import { useSidebarModeSectionOrder } from "./useSidebarModeSectionOrder";
+import { getProjectModeSectionOrder } from "./projectActivityOrder";
 import {
   resolveThreadTitleDisplayText,
   type ThreadTitleMentionResources,
@@ -632,6 +635,14 @@ const SIDEBAR_SORT_OPTIONS = [
   sort: SidebarChronologicalSort;
 }[];
 
+const SIDEBAR_PROJECT_ORDER_OPTIONS = [
+  { label: "Recent activity", order: "recent" },
+  { label: "Drag order", order: "manual" },
+] as const satisfies readonly {
+  label: string;
+  order: SidebarProjectOrder;
+}[];
+
 function SidebarDisplayMenuTrigger({
   ariaLabel,
   iconName,
@@ -671,9 +682,8 @@ function SidebarDisplayMenuTrigger({
   );
 }
 
-// Single combined display-options menu (organize + sort) rendered on every
-// section header. Both the organization mode and the sort field are
-// global, so any header's menu drives the whole sidebar.
+// This menu controls global sidebar organization and thread sorting. Project
+// organization also exposes its browser-local top-level section order.
 export function SidebarDisplayOptionsMenu({
   open,
   onOpenChange,
@@ -684,6 +694,7 @@ export function SidebarDisplayOptionsMenu({
   const [chronologicalSort, setChronologicalSort] = useAtom(
     sidebarChronologicalSortAtom,
   );
+  const [projectOrder, setProjectOrder] = useAtom(sidebarProjectOrderAtom);
   const selectedSort: SidebarChronologicalSort =
     chronologicalSort === "none" ? "updated" : chronologicalSort;
 
@@ -714,6 +725,25 @@ export function SidebarDisplayOptionsMenu({
             </DropdownMenuCheckboxItem>
           ))}
         </DropdownMenuGroup>
+        {organizationMode === "project" ? (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuLabel className={CHROME_SECTION_LABEL_CLASS}>
+              Section order
+            </DropdownMenuLabel>
+            <DropdownMenuGroup aria-label="Section order">
+              {SIDEBAR_PROJECT_ORDER_OPTIONS.map((option) => (
+                <DropdownMenuCheckboxItem
+                  key={option.order}
+                  checked={projectOrder === option.order}
+                  onCheckedChange={() => setProjectOrder(option.order)}
+                >
+                  {option.label}
+                </DropdownMenuCheckboxItem>
+              ))}
+            </DropdownMenuGroup>
+          </>
+        ) : null}
         <DropdownMenuSeparator />
         <DropdownMenuLabel className={CHROME_SECTION_LABEL_CLASS}>
           Sort by
@@ -997,7 +1027,7 @@ interface ProjectModeSectionsProps extends BuiltInSectionRenderState {
   threadsSection: Omit<BuiltInSidebarSectionOptions, "content">;
 }
 
-function ProjectModeSections({
+export function ProjectModeSections({
   collapsedEnvironmentIds,
   collapsedSectionIds,
   collapsedThreadIds,
@@ -1064,18 +1094,28 @@ function ProjectModeSections({
     [localSourceTargets],
   );
   const pathExistence = useHostPathExistence(workHostId, localPaths);
-  const threadsByProject = useMemo(() => {
-    const grouped = new Map<string, ThreadListEntry[]>();
+  const { activityThreadsByProject, threadsByProject } = useMemo(() => {
+    const activityGroups = new Map<string, ThreadListEntry[]>();
+    const displayGroups = new Map<string, ThreadListEntry[]>();
     for (const thread of threads) {
-      if (effectivePinnedThreadIds.has(thread.id)) continue;
-      const existing = grouped.get(thread.projectId);
-      if (existing) {
-        existing.push(thread);
+      const activityGroup = activityGroups.get(thread.projectId);
+      if (activityGroup) {
+        activityGroup.push(thread);
       } else {
-        grouped.set(thread.projectId, [thread]);
+        activityGroups.set(thread.projectId, [thread]);
+      }
+      if (effectivePinnedThreadIds.has(thread.id)) continue;
+      const displayGroup = displayGroups.get(thread.projectId);
+      if (displayGroup) {
+        displayGroup.push(thread);
+      } else {
+        displayGroups.set(thread.projectId, [thread]);
       }
     }
-    return grouped;
+    return {
+      activityThreadsByProject: activityGroups,
+      threadsByProject: displayGroups,
+    };
   }, [effectivePinnedThreadIds, threads]);
   const projectRows = useMemo<ProjectListRowModel[]>(
     () =>
@@ -1119,7 +1159,38 @@ function ProjectModeSections({
     showPinnedSection,
     isReady,
   });
-  const reorderDisabled = order.length < 2;
+  const projectOrder = useAtomValue(sidebarProjectOrderAtom);
+  const activityGroups = useMemo(
+    () => [
+      ...projectRows.map((row) => ({
+        id: buildSidebarEntitySectionId("project", row.project.id),
+        threads: activityThreadsByProject.get(row.project.id) ?? [],
+      })),
+      {
+        id: "threads" as const,
+        threads: activityThreadsByProject.get(PERSONAL_PROJECT_ID) ?? [],
+      },
+    ],
+    [activityThreadsByProject, projectRows],
+  );
+  const displayOrder = useMemo(
+    () =>
+      getProjectModeSectionOrder({
+        effectivePinnedThreadIds,
+        groups: activityGroups,
+        manualOrder: order,
+        orderMode: projectOrder,
+        showPinnedSection,
+      }),
+    [
+      activityGroups,
+      effectivePinnedThreadIds,
+      order,
+      projectOrder,
+      showPinnedSection,
+    ],
+  );
+  const reorderDisabled = projectOrder === "recent" || displayOrder.length < 2;
   const personalThreads =
     threadsByProject.get(PERSONAL_PROJECT_ID)?.filter(isSidebarProjectThread) ??
     [];
@@ -1151,7 +1222,7 @@ function ProjectModeSections({
 
   return (
     <ReorderableSidebarSectionOrderList
-      order={order}
+      order={displayOrder}
       reorderOrder={persistedOrder}
       onOrderChange={onOrderChange}
     >

@@ -1,5 +1,6 @@
 import { atomWithStorage } from "jotai/utils";
 import {
+  createLocalStorageEnumStorage,
   createJsonLocalStorage,
   type SyncStorage,
 } from "@/lib/browser-storage";
@@ -18,6 +19,7 @@ const SIDEBAR_MACHINE_SECTION_ORDER_STORAGE_KEY =
 export const SIDEBAR_ORGANIZATION_MODE_STORAGE_KEY =
   "bb.sidebar.organizationMode";
 const CHRONOLOGICAL_SORT_STORAGE_KEY = "bb.sidebar.chronologicalSort";
+export const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = "bb.sidebar.projectOrder";
 const COLLAPSED_THREAD_SECTIONS_STORAGE_KEY =
   "bb.sidebar.collapsedThreadSections";
 const LEGACY_COLLAPSED_FOLDERS_STORAGE_KEY = "bb.sidebar.collapsedFolders";
@@ -39,6 +41,7 @@ export type SidebarOrganizationMode = "project" | "chronological" | "machine";
 // sorts show newest first and alphabetical sorts A→Z. "none" is a legacy value
 // that the runtime normalizes back to "updated".
 export type SidebarChronologicalSort = "updated" | "created" | "alpha" | "none";
+export type SidebarProjectOrder = "recent" | "manual";
 
 export const DEFAULT_SIDEBAR_SECTION_ORDER: readonly string[] = [
   "pinned",
@@ -174,6 +177,17 @@ export const sidebarChronologicalSortAtom =
     createJsonLocalStorage<SidebarChronologicalSort>(),
     { getOnInit: true },
   );
+
+function isSidebarProjectOrder(value: string): value is SidebarProjectOrder {
+  return value === "recent" || value === "manual";
+}
+
+export const sidebarProjectOrderAtom = atomWithStorage<SidebarProjectOrder>(
+  SIDEBAR_PROJECT_ORDER_STORAGE_KEY,
+  "manual",
+  createLocalStorageEnumStorage(isSidebarProjectOrder),
+  { getOnInit: true },
+);
 
 // Collapsed section keys (see buildSectionKey in sectionKeys.ts). A plain string[],
 // matching collapsedThreadIds / collapsedProjectIds.
