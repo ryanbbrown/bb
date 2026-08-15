@@ -260,7 +260,9 @@ const piAssistantMessageSchema = z
 const piConversationMessageSchema = z
   .object({
     role: z.string(),
-    content: z.array(piMessageContentBlockSchema).optional(),
+    content: z
+      .union([z.string(), z.array(piMessageContentBlockSchema)])
+      .optional(),
     stopReason: z.string().optional(),
     errorMessage: z.string().optional(),
     provider: z.string().optional(),
