@@ -229,6 +229,24 @@ const piIgnoredEventSchema = z
   .passthrough()
   .refine((event) => PI_IGNORED_EVENT_TYPES.has(event.type));
 
+const piProcessNotificationEventSchema = z
+  .object({
+    type: z.enum(["message_start", "message_end"]),
+    message: z
+      .object({
+        role: z.literal("custom"),
+        customType: z.literal("ad-process:notification"),
+        content: z.string(),
+        details: z
+          .object({
+            attention: z.enum(["turn", "context", "ignore"]),
+          })
+          .passthrough(),
+      })
+      .passthrough(),
+  })
+  .passthrough();
+
 const piMessageContentBlockSchema = z
   .object({
     type: z.string(),
@@ -260,14 +278,6 @@ const piAssistantMessageSchema = z
 const piConversationMessageSchema = z
   .object({
     role: z.string(),
-    content: z
-      .union([z.string(), z.array(piMessageContentBlockSchema)])
-      .optional(),
-    stopReason: z.string().optional(),
-    errorMessage: z.string().optional(),
-    provider: z.string().optional(),
-    model: z.string().optional(),
-    usage: piAssistantUsageSchema.optional(),
   })
   .passthrough();
 
@@ -577,6 +587,8 @@ interface PiTurnState {
   openAssistantMessageIdsByScope: Map<string, string>;
   openReasoningItemIdsByScope: Map<string, string>;
   pendingAcceptedUserMessages: AcceptedUserMessageState["pendingAcceptedUserMessages"];
+  processNotificationCounter: number;
+  processNotificationTurnId: string | undefined;
   reasoningItemCounter: number;
   toolItemsByCallId: Map<string, ThreadEventItem>;
 }
@@ -616,9 +628,14 @@ export function createPiProviderAdapter(
       openAssistantMessageIdsByScope: new Map(),
       openReasoningItemIdsByScope: new Map(),
       pendingAcceptedUserMessages: [],
+      processNotificationCounter: 0,
+      processNotificationTurnId: undefined,
       reasoningItemCounter: 0,
       toolItemsByCallId: new Map(),
     }),
+    onTurnFinish: ({ state }) => {
+      state.processNotificationTurnId = undefined;
+    },
     onTurnStart: ({ events, state, threadId, turnId }) => {
       resetPiCommandOutputSnapshots(state);
       drainAcceptedUserMessages({
@@ -654,6 +671,9 @@ export function createPiProviderAdapter(
       ) {
         return [];
       }
+      const isProcessNotification = piProcessNotificationEventSchema.safeParse(
+        sdkEnvelope.data.params.message,
+      ).success;
       const parentToolCallId =
         sdkEnvelope.data.params.parent_tool_use_id ?? context?.parentToolCallId;
       const translated = translatePiEvent(sdkEnvelope.data.params.message, {
@@ -661,7 +681,7 @@ export function createPiProviderAdapter(
         ...(parentToolCallId ? { parentToolCallId } : {}),
       });
       const fallbackTurnId = resolvePiActiveTurnId(context);
-      return translated.length > 0
+      return translated.length > 0 || isProcessNotification
         ? translated
         : buildUnhandledPiEvent({
             rawEvent: {
@@ -761,6 +781,48 @@ export function createPiProviderAdapter(
     }
 
     const eventType = piEventTypeSchema.safeParse(event);
+    const processNotification =
+      piProcessNotificationEventSchema.safeParse(event);
+    if (processNotification.success) {
+      if (processNotification.data.type === "message_end") {
+        return [];
+      }
+
+      const stateKey = context?.threadId ?? "";
+      const state = turnState.getOrCreate({ threadId: stateKey });
+      if (
+        state.currentTurnId === undefined &&
+        processNotification.data.message.details.attention !== "turn"
+      ) {
+        return [];
+      }
+
+      const events: ThreadEvent[] = [];
+      const turnId = turnState.ensureTurnStarted({
+        events,
+        state,
+        threadId: UNSTAMPED_THREAD_ID,
+      });
+      state.processNotificationCounter += 1;
+      state.processNotificationTurnId = turnId;
+      events.push({
+        type: "item/completed",
+        threadId: UNSTAMPED_THREAD_ID,
+        providerThreadId: "",
+        scope: turnScope(turnId),
+        item: {
+          type: "userMessage",
+          id: `pi-process-notification-${state.processNotificationCounter}`,
+          content: [
+            {
+              type: "text",
+              text: processNotification.data.message.content,
+            },
+          ],
+        },
+      });
+      return events;
+    }
     if (!eventType.success) {
       return [];
     }
@@ -906,22 +968,36 @@ export function createPiProviderAdapter(
             }),
           ];
         }
-        if (lastAssistant) {
-          const text = extractAssistantText(lastAssistant);
-          if (text) {
-            const itemId = turnState.resolveCompletedAssistantMessageId({
-              assistantIdPrefix: "pi-assistant",
-              parentToolCallId: context?.parentToolCallId,
-              state,
-            });
-            events.push({
-              type: "item/completed",
-              threadId,
-              providerThreadId: "",
-              scope: turnScope(currentTurnId),
-              item: { type: "agentMessage", id: itemId, text },
-            });
-          }
+        const assistantText = lastAssistant
+          ? extractAssistantText(lastAssistant)
+          : undefined;
+        if (assistantText) {
+          const itemId = turnState.resolveCompletedAssistantMessageId({
+            assistantIdPrefix: "pi-assistant",
+            parentToolCallId: context?.parentToolCallId,
+            state,
+          });
+          events.push({
+            type: "item/completed",
+            threadId,
+            providerThreadId: "",
+            scope: turnScope(currentTurnId),
+            item: {
+              type: "agentMessage",
+              id: itemId,
+              text: assistantText,
+            },
+          });
+        } else if (state.processNotificationTurnId === currentTurnId) {
+          events.push({
+            type: "provider/warning",
+            threadId,
+            providerThreadId: "",
+            scope: turnScope(currentTurnId),
+            category: "general",
+            summary:
+              "Pi completed the process notification turn without a text response",
+          });
         }
         const tokenUsage = extractPiTokenUsage(
           lastAssistant,
