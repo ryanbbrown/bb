@@ -72,6 +72,9 @@
     },
     "overrides": {
       "zod": "4.3.6"
+    },
+    "patchedDependencies": {
+      "@earendil-works/pi-agent-core@0.84.2": "patches/@earendil-works__pi-agent-core@0.84.2.patch"
     }
   }
 }
