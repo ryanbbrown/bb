@@ -90,9 +90,6 @@ message agents, or inspect projects, providers, and environments.
   keyboard keeps Return as a newline; iPadOS WebKit preserves the Enter
   shortcuts for a connected Magic Keyboard. Update the preference with
   `bb settings general steerActiveThreadOnEnter <true|false>`.
-- The `showSidebarThreadNumbers` General preference defaults to false. Enable
-  it to show `1` through `9` beside the first nine sidebar threads. Update it
-  with `bb settings general showSidebarThreadNumbers <true|false>`.
 - Settings → Keyboard records server-backed per-command shortcut overrides.
   The `showKeyboardHints` preference controls the delayed badges shown while
   holding Command or Control and defaults to true; update it with
@@ -181,11 +178,6 @@ message agents, or inspect projects, providers, and environments.
   context variables. Omitted execution flags use remembered project defaults;
   without a remembered model, bb uses the explicitly requested provider or
   Codex and resolves its provider-reported default model on the target machine.
-- Use `bb project worktrees <project-id>` to list Git worktrees on every project
-  source machine. The list includes user-managed worktrees with no active thread.
-- Run `bb thread spawn --new-environment worktree --continue-branch <branch>`
-  to reopen a local or remote branch in a temporary managed worktree.
-  A normal push updates the selected remote branch.
 - Add repeatable `--file <path>` / `--image <path>` flags for structured prompt
   attachments, and `--section <id>` to add the new thread to a section. These
   flags pass host-readable absolute paths (or relative server-upload tokens)
@@ -474,10 +466,9 @@ For review or fix pipelines, get the environment ID from
   not scheduled. Each reported reset window is attempted automatically at most
   once during that process. A later failed turn that omits a fresh rate-limit
   update can still inherit the last blocked window.
-- Use `bb thread retry [id] [--request-id <id>]` for the same core
-  continuation when no plugin timer remains. It sends agent-only “Please
-  continue.” on the existing provider conversation, records the continuation
-  as manually requested, and declines when input was not accepted, execution
+- Use `bb provider-retry retry <thread-id>` for a manual provider retry when no
+  plugin timer remains. It sends agent-only “Please continue.” on the existing
+  provider conversation and declines when input was not accepted, execution
   settings are unavailable, a newer request exists, or the provider still owns
   the retry.
 - For interrupted or stopped threads, inspect first. If the user stopped the

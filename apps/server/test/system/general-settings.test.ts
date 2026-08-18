@@ -25,7 +25,6 @@ describe("general settings", () => {
         body: JSON.stringify({
           ...defaultAppSettings,
           showKeyboardHints: false,
-          showSidebarThreadNumbers: true,
           steerActiveThreadOnEnter: true,
           codexMemoryEnabled: false,
         }),
@@ -34,14 +33,12 @@ describe("general settings", () => {
       expect(appSettingsSchema.parse(await readJson(put))).toEqual({
         ...defaultAppSettings,
         showKeyboardHints: false,
-        showSidebarThreadNumbers: true,
         steerActiveThreadOnEnter: true,
         codexMemoryEnabled: false,
       });
       expect(getAppSettings(harness.db)).toEqual({
         ...defaultAppSettings,
         showKeyboardHints: false,
-        showSidebarThreadNumbers: true,
         steerActiveThreadOnEnter: true,
         codexMemoryEnabled: false,
       });
@@ -53,7 +50,6 @@ describe("general settings", () => {
       expect(parsedConfig.generalSettings).toEqual({
         ...defaultAppSettings,
         showKeyboardHints: false,
-        showSidebarThreadNumbers: true,
         steerActiveThreadOnEnter: true,
         codexMemoryEnabled: false,
       });

@@ -73,33 +73,47 @@ describe("sidebar thread shortcuts", () => {
     ).toEqual(["thr_a", "thr_d"]);
   });
 
-  it("reports assignments when rendered rows mount, reorder, and unmount", async () => {
+  it("reports rendered rows when they mount, reorder, and unmount", async () => {
     const root = document.createElement("aside");
-    const assignments: string[][] = [];
+    const reports: string[][] = [];
     const stopObserving = observeSidebarThreadShortcutTargets(
       root,
-      (targets) => {
-        assignments.push(targets.map((target) => target.threadId));
-      },
+      true,
+      (targets) => reports.push(targets.map((target) => target.threadId)),
     );
 
     const first = appendShortcutTarget(root, "thr_1");
     const second = appendShortcutTarget(root, "thr_2");
-    await waitFor(() => {
-      expect(assignments.at(-1)).toEqual(["thr_1", "thr_2"]);
-    });
+    await waitFor(() => expect(reports.at(-1)).toEqual(["thr_1", "thr_2"]));
 
     root.prepend(second);
-    await waitFor(() => {
-      expect(assignments.at(-1)).toEqual(["thr_2", "thr_1"]);
-    });
+    await waitFor(() => expect(reports.at(-1)).toEqual(["thr_2", "thr_1"]));
 
     second.remove();
-    await waitFor(() => {
-      expect(assignments.at(-1)).toEqual(["thr_1"]);
-    });
+    await waitFor(() => expect(reports.at(-1)).toEqual(["thr_1"]));
 
     first.remove();
+    await waitFor(() => expect(reports.at(-1)).toEqual([]));
+
+    stopObserving();
+    appendShortcutTarget(root, "thr_3");
+    await Promise.resolve();
+    expect(reports.at(-1)).toEqual([]);
+  });
+
+  it("does not observe rows when shortcut assignments are hidden", async () => {
+    const root = document.createElement("aside");
+    const reports: string[][] = [];
+    const stopObserving = observeSidebarThreadShortcutTargets(
+      root,
+      false,
+      (targets) => reports.push(targets.map((target) => target.threadId)),
+    );
+
+    appendShortcutTarget(root, "thr_1");
+    await Promise.resolve();
+
+    expect(reports).toEqual([]);
     stopObserving();
   });
 });

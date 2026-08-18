@@ -14,7 +14,6 @@ export function getAppSettings(db: DbConnection): AppSettings {
   const row = db
     .select({
       showKeyboardHints: appSettings.showKeyboardHints,
-      showSidebarThreadNumbers: appSettings.showSidebarThreadNumbers,
       steerActiveThreadOnEnter: appSettings.steerActiveThreadOnEnter,
       showUnhandledProviderEvents: appSettings.showUnhandledProviderEvents,
       codexMemoryEnabled: appSettings.codexMemoryEnabled,
@@ -40,7 +39,6 @@ export function setAppSettings(
     .values({
       id: APP_SETTINGS_ROW_ID,
       showKeyboardHints: settings.showKeyboardHints,
-      showSidebarThreadNumbers: settings.showSidebarThreadNumbers,
       steerActiveThreadOnEnter: settings.steerActiveThreadOnEnter,
       showUnhandledProviderEvents: settings.showUnhandledProviderEvents,
       codexMemoryEnabled: settings.codexMemoryEnabled,
@@ -55,7 +53,6 @@ export function setAppSettings(
       target: appSettings.id,
       set: {
         showKeyboardHints: settings.showKeyboardHints,
-        showSidebarThreadNumbers: settings.showSidebarThreadNumbers,
         steerActiveThreadOnEnter: settings.steerActiveThreadOnEnter,
         showUnhandledProviderEvents: settings.showUnhandledProviderEvents,
         codexMemoryEnabled: settings.codexMemoryEnabled,

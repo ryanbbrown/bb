@@ -8,8 +8,6 @@ export const appSettingsSchema = z
   .object({
     /** Show shortcut hints after holding Command or Control. */
     showKeyboardHints: z.boolean(),
-    /** Show navigation numbers beside the first nine sidebar threads. */
-    showSidebarThreadNumbers: z.boolean(),
     /**
      * While a thread is running, make Enter steer the active turn and use
      * Command+Enter to queue a follow-up.
@@ -43,7 +41,6 @@ export type AppSettings = z.infer<typeof appSettingsSchema>;
 
 export const defaultAppSettings: AppSettings = {
   showKeyboardHints: true,
-  showSidebarThreadNumbers: false,
   steerActiveThreadOnEnter: false,
   showUnhandledProviderEvents: false,
   codexMemoryEnabled: true,

@@ -304,7 +304,6 @@ function dropRewindAddedTables(db: DbConnection): void {
     .run();
   dropHostMaxPermissionModeColumn(db);
   dropEnvironmentRetireRequestedAtColumn(db);
-  dropShowSidebarThreadNumbersColumn(db);
   dropPluginArtifactGitCheckoutRootColumn(db);
   dropThreadSectionSchema(db);
   restoreWideExperimentsTable(db);
@@ -666,6 +665,8 @@ function dropEnvironmentDestroyAttemptIdColumn(db: DbConnection): void {
     .run();
 }
 
+// Migration 0091 adds the dedicated archive-grace clock. Rewind scenarios
+// that clear its journal row must remove the column before replaying the ADD.
 // Migration 0094 records the git checkout root on each artifact. Rewind
 // scenarios that clear its journal row must remove the column before replaying
 // the ADD.
@@ -680,8 +681,6 @@ function dropPluginArtifactGitCheckoutRootColumn(db: DbConnection): void {
   }
 }
 
-// Migration 0091 adds the dedicated archive-grace clock. Rewind scenarios
-// that clear its journal row must remove the column before replaying the ADD.
 function dropEnvironmentRetireRequestedAtColumn(db: DbConnection): void {
   const columns = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(environments)")
@@ -689,19 +688,6 @@ function dropEnvironmentRetireRequestedAtColumn(db: DbConnection): void {
   if (columns.some((column) => column.name === "retire_requested_at")) {
     db.$client
       .prepare("ALTER TABLE environments DROP COLUMN retire_requested_at")
-      .run();
-  }
-}
-
-function dropShowSidebarThreadNumbersColumn(db: DbConnection): void {
-  const columns = db.$client
-    .prepare<[], TableInfoRow>("PRAGMA table_info(app_settings)")
-    .all();
-  if (columns.some((column) => column.name === "show_sidebar_thread_numbers")) {
-    db.$client
-      .prepare(
-        "ALTER TABLE app_settings DROP COLUMN show_sidebar_thread_numbers",
-      )
       .run();
   }
 }
@@ -762,7 +748,6 @@ function dropQueuedMessageSenderThreadIdColumn(db: DbConnection): void {
 /** Tables created by migrations after 0023, dropped so migrate() re-applies. */
 function dropPost0023Tables(db: DbConnection): void {
   dropEnvironmentRetireRequestedAtColumn(db);
-  dropShowSidebarThreadNumbersColumn(db);
   dropPluginArtifactGitCheckoutRootColumn(db);
   dropProjectGitRemoteUrlColumn(db);
   db.$client.prepare("DROP TABLE IF EXISTS thread_tabs").run();
@@ -1534,7 +1519,6 @@ describe("migrate", () => {
     dropOnboardingCompletedAtColumn(db);
     dropNewOnboardingExperimentColumn(db);
     dropEnvironmentRetireRequestedAtColumn(db);
-    dropShowSidebarThreadNumbersColumn(db);
     dropPluginArtifactGitCheckoutRootColumn(db);
     dropMarketplaceCatalogSchema(db);
     // Delete by the journal timestamp, not a hash substring: migration hashes
@@ -1828,7 +1812,6 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
-      dropShowSidebarThreadNumbersColumn(db);
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
 
@@ -2231,7 +2214,6 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
-      dropShowSidebarThreadNumbersColumn(db);
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
 
@@ -2331,7 +2313,6 @@ describe("migrate", () => {
       dropNewOnboardingExperimentColumn(db);
       dropHostMaxPermissionModeColumn(db);
       dropEnvironmentRetireRequestedAtColumn(db);
-      dropShowSidebarThreadNumbersColumn(db);
       dropPluginArtifactGitCheckoutRootColumn(db);
       dropMarketplaceCatalogSchema(db);
 
@@ -3874,6 +3855,7 @@ describe("migrate", () => {
         "events_completed_item_truncation_idx",
         "events_environment_idx",
         "events_goal_thread_sequence_idx",
+        "events_item_lifecycle_thread_item_sequence_idx",
         "events_thread_sequence_idx",
         "events_thread_turn_type_item_sequence_idx",
         "events_thread_type_item_kind_sequence_idx",

@@ -1,6 +1,7 @@
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useAtomValue } from "jotai";
 import { cn } from "@bb/shared-ui/lib/utils";
-import { defaultAppSettings, THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
+import { THREAD_JUMP_APP_COMMAND_IDS } from "@bb/domain";
 import { Link, useNavigate } from "react-router-dom";
 import { Icon } from "@bb/shared-ui/icon";
 import { COARSE_POINTER_CHILD_ICON_BUTTON_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
@@ -54,7 +55,8 @@ import {
   useIndexedAppCommandHandlers,
 } from "@/components/commands/AppCommandProvider";
 import { useRouteState } from "@/hooks/useRouteState";
-import { useSystemConfig } from "@/hooks/queries/system-queries";
+import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
+import { sidebarShowThreadNumbersAtom } from "./sidebarCollapsedAtoms";
 
 const NEW_THREAD_PANE_CONTENT = { kind: "new-thread" } as const;
 
@@ -105,8 +107,9 @@ export function AppSidebar({
   // replaces the chrome around it: the New-thread button, search field,
   // the plugin nav rows, and the footer stay host-rendered in every sidebar.
   const threadListReplacement = useThreadListReplacement();
-  const { threadId: activeThreadId } = useRouteState();
+  const { projectId, threadId: activeThreadId } = useRouteState();
   const navigate = useNavigate();
+  const setRootComposeProjectId = useSetRootComposeProjectId();
   const threadSplitsEnabled = useThreadSplitsEnabled();
   const newThreadSplit = usePaneContentSplitDrag({
     content: NEW_THREAD_PANE_CONTENT,
@@ -130,11 +133,10 @@ export function AppSidebar({
     THREAD_JUMP_APP_COMMAND_IDS,
   );
   const isAppCommandModifierHeld = useIsAppCommandModifierHeld();
+  const showSidebarThreadNumbers = useAtomValue(sidebarShowThreadNumbersAtom);
+  const assignSidebarThreadShortcuts =
+    showSidebarThreadNumbers || isAppCommandModifierHeld;
   const settingsShortcut = useAppCommandShortcut("settings.open");
-  const systemConfigQuery = useSystemConfig();
-  const showSidebarThreadNumbers =
-    systemConfigQuery.data?.generalSettings.showSidebarThreadNumbers ??
-    defaultAppSettings.showSidebarThreadNumbers;
 
   const openSidebarForThreadSearch = useCallback(() => {
     if (isCompactViewport) {
@@ -175,11 +177,14 @@ export function AppSidebar({
   });
 
   const handleNewChat = useCallback(() => {
+    if (projectId !== undefined) {
+      setRootComposeProjectId(projectId);
+    }
     closeOnMobile();
     void navigate(getRootComposeRoutePath(), {
       state: { focusPrompt: true },
     });
-  }, [closeOnMobile, navigate]);
+  }, [closeOnMobile, navigate, projectId, setRootComposeProjectId]);
 
   const refreshThreadShortcutAssignments = useCallback(
     (targets: readonly SidebarThreadShortcutTarget[]) => {
@@ -267,11 +272,19 @@ export function AppSidebar({
   useLayoutEffect(() => {
     const sidebar = sidebarRef.current;
     if (!sidebar) return;
+    if (!assignSidebarThreadShortcuts) {
+      threadShortcutTargetsRef.current = [];
+    }
     return observeSidebarThreadShortcutTargets(
       sidebar,
+      assignSidebarThreadShortcuts,
       refreshThreadShortcutAssignments,
     );
-  }, [refreshThreadShortcutAssignments]);
+  }, [
+    assignSidebarThreadShortcuts,
+    isCompactViewport,
+    refreshThreadShortcutAssignments,
+  ]);
 
   // Keep this object identity stable across unrelated re-renders (opening
   // the mobile drawer flips useSidebar context and re-renders AppSidebar):
@@ -311,7 +324,11 @@ export function AppSidebar({
 
   return (
     <SidebarThreadShortcutAssignmentsContext.Provider
-      value={threadShortcutAssignmentsById}
+      value={
+        assignSidebarThreadShortcuts
+          ? threadShortcutAssignmentsById
+          : EMPTY_SIDEBAR_THREAD_SHORTCUT_ASSIGNMENTS
+      }
     >
       <Sidebar ref={sidebarRef} onKeyDown={threadSearch.onKeyDown}>
         {showTopReserve ? (

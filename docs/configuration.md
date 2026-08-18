@@ -178,10 +178,6 @@ software-keyboard Return path inserts a newline and the submit button sends.
 iPadOS WebKit additionally preserves the Enter and Command+Enter shortcuts
 above for a connected Magic Keyboard.
 
-The "Show thread numbers" toggle in Settings → General shows `1` through `9`
-beside the first nine sidebar threads. It defaults to off. Set it with
-`bb settings general showSidebarThreadNumbers <true|false>`.
-
 ## Keyboard Shortcuts
 
 Settings → Keyboard edits app command shortcuts. Overrides are stored in the
@@ -773,10 +769,9 @@ disabling it clears the timers without changing the original failed thread. A
 later 429 without a fresh provider rate-limit update can still inherit the last
 blocked window during that process.
 Inspect them with `bb provider-retry status`, or cancel one from its composer
-banner or with `bb provider-retry cancel <thread-id>`. `bb thread retry`
-remains the manual recovery path and is labeled as manually requested in the
-timeline rather than claiming the reset occurred. Credit or spend-control
-exhaustion without a reset time is ignored by the plugin.
+banner or with `bb provider-retry cancel <thread-id>`. Run
+`bb provider-retry retry <thread-id>` for a manual recovery, including credit
+or spend-control limits that do not report a reset time.
 
 ### Workflows plugin
 

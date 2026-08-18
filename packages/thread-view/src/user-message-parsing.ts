@@ -516,6 +516,54 @@ export function parseRejectedUsersFromClientRequest(
   return messages;
 }
 
+export function parseProviderUserMessage(
+  decoded: ThreadEvent,
+  meta: EventMeta,
+): EventProjectionUserMessage | null {
+  if (
+    decoded.type !== "item/completed" ||
+    decoded.item.type !== "userMessage" ||
+    decoded.item.clientRequestId !== undefined
+  ) {
+    return null;
+  }
+
+  const parsedInput = parsePromptInput(
+    decoded.item.content.map((part): PromptInput =>
+      part.type === "text" ? { ...part, mentions: [] } : part,
+    ),
+  );
+  if (!parsedInput) {
+    return null;
+  }
+
+  return {
+    kind: "user",
+    id: messageId(
+      decoded.threadId,
+      "provider-user",
+      `${meta.seq}:${decoded.item.id}`,
+    ),
+    threadId: decoded.threadId,
+    sourceSeqStart: meta.seq,
+    sourceSeqEnd: meta.seq,
+    createdAt: meta.createdAt,
+    scope: decoded.scope,
+    initiator: "system",
+    senderThreadId: null,
+    systemMessageKind: "unlabeled",
+    systemMessageSubject: null,
+    turnRequest: {
+      isGrouped: false,
+      kind: "message",
+      status: "accepted",
+    },
+    text: parsedInput.text,
+    mentions: [],
+    attachments: buildAttachments(parsedInput),
+  };
+}
+
 export function parseLegacyUserMessage(
   decoded: ThreadEvent,
   meta: EventMeta,

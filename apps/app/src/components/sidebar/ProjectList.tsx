@@ -107,6 +107,7 @@ import {
   sidebarCollapsedMachinesAtom,
   sidebarOrganizationModeAtom,
   sidebarProjectOrderAtom,
+  sidebarShowThreadNumbersAtom,
   type SidebarChronologicalSort,
   type CollapsibleSidebarSectionId,
   type SidebarOrganizationMode,
@@ -682,8 +683,8 @@ function SidebarDisplayMenuTrigger({
   );
 }
 
-// This menu controls global sidebar organization and thread sorting. Project
-// organization also exposes its browser-local top-level section order.
+// This global menu is available from every section header. Project mode also
+// includes its browser-local top-level section order.
 export function SidebarDisplayOptionsMenu({
   open,
   onOpenChange,
@@ -695,6 +696,9 @@ export function SidebarDisplayOptionsMenu({
     sidebarChronologicalSortAtom,
   );
   const [projectOrder, setProjectOrder] = useAtom(sidebarProjectOrderAtom);
+  const [showThreadNumbers, setShowThreadNumbers] = useAtom(
+    sidebarShowThreadNumbersAtom,
+  );
   const selectedSort: SidebarChronologicalSort =
     chronologicalSort === "none" ? "updated" : chronologicalSort;
 
@@ -758,6 +762,18 @@ export function SidebarDisplayOptionsMenu({
               {option.label}
             </DropdownMenuCheckboxItem>
           ))}
+        </DropdownMenuGroup>
+        <DropdownMenuSeparator />
+        <DropdownMenuLabel className={CHROME_SECTION_LABEL_CLASS}>
+          Show
+        </DropdownMenuLabel>
+        <DropdownMenuGroup aria-label="Show">
+          <DropdownMenuCheckboxItem
+            checked={showThreadNumbers}
+            onCheckedChange={setShowThreadNumbers}
+          >
+            Thread numbers
+          </DropdownMenuCheckboxItem>
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>

@@ -161,11 +161,6 @@ export const appSettings = sqliteTable("app_settings", {
   showKeyboardHints: integer("show_keyboard_hints", { mode: "boolean" })
     .notNull()
     .default(true),
-  showSidebarThreadNumbers: integer("show_sidebar_thread_numbers", {
-    mode: "boolean",
-  })
-    .notNull()
-    .default(false),
   steerActiveThreadOnEnter: integer("steer_active_thread_on_enter", {
     mode: "boolean",
   })
@@ -763,6 +758,11 @@ export const events = sqliteTable(
       table.itemId,
       table.sequence,
     ),
+    index("events_item_lifecycle_thread_item_sequence_idx")
+      .on(table.threadId, table.itemId, table.sequence)
+      .where(
+        sql`${table.type} IN ('item/started', 'item/completed', 'item/backgroundTask/completed')`,
+      ),
     index("events_environment_idx").on(table.environmentId),
     index("events_completed_item_truncation_idx")
       .on(table.itemKind, table.createdAt, table.id)

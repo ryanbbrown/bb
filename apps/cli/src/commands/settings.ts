@@ -61,7 +61,6 @@ function updateGeneralSetting(
 ): AppSettings {
   switch (key) {
     case "showKeyboardHints":
-    case "showSidebarThreadNumbers":
     case "steerActiveThreadOnEnter":
     case "showUnhandledProviderEvents":
     case "codexMemoryEnabled":

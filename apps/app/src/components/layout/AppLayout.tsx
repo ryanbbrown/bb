@@ -91,7 +91,6 @@ import { splitLayoutAtom } from "@/lib/split-layout/atoms";
 import { findPaneByThread } from "@/lib/split-layout";
 import { applyThreadOpenToLayout } from "@/views/thread-detail/splitThreadNavigation";
 import { useThreadSplitsEnabled } from "@/hooks/useThreadSplitsEnabled";
-import { useSplitWorkspaceActive } from "@/hooks/useSplitWorkspaceActive";
 import { useAppSettingsRouteMemory } from "@/hooks/useAppSettingsRouteMemory";
 import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
 
@@ -402,7 +401,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const quickCreateProject = useQuickCreateProjectController();
   const isCompactViewport = useIsCompactViewport();
   const threadSplitsEnabled = useThreadSplitsEnabled();
-  const splitWorkspaceActive = useSplitWorkspaceActive();
   const store = useStore();
   const contentShellRef = useRef<HTMLDivElement>(null);
   const providerRef = useRef<HTMLDivElement>(null);
@@ -529,6 +527,7 @@ export function AppLayout({ children }: AppLayoutProps) {
           candidate.path === pluginPanelMatch.params.panelPath,
       )
     : undefined;
+  const pluginPanelSubPath = pluginPanelMatch?.params["*"] ?? "";
   const sidebarNavigationQuery = useSidebarNavigation();
   const projects = useMemo(
     () => sidebarNavigationQuery.data?.projects.map(stripProjectThreads),
@@ -577,14 +576,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   const startWidthRef = useRef(0);
   const liveWidthRef = useRef(sidebarWidth);
   const animationFrameRef = useRef<number | null>(null);
-  // Plugin panel routes hand their header to the split workspace, which draws a
-  // pane header per pane. When the workspace is inactive it draws none, so the
-  // shared header must come back — it reserves the sidebar trigger footprint,
-  // and without it the trigger overlays the panel body.
-  const showHeader =
-    !isThreadView &&
-    !isRootView &&
-    !(splitWorkspaceActive && pluginPanelMatch !== null);
+  // Plugin pages own the same page header + secondary-panel frame whether they
+  // render alone or in a split. Avoid drawing the global header above it.
+  const showHeader = !isThreadView && !isRootView && pluginPanelMatch === null;
   const [desktopInfo] = useState(getBbDesktopInfo);
   const desktopWindowState = useDesktopWindowState();
   const usesDesktopChrome = shouldUseMacosDesktopChrome(desktopInfo);
@@ -871,7 +865,7 @@ export function AppLayout({ children }: AppLayoutProps) {
                       projectId={projectId}
                       project={project}
                       pluginPanel={pluginPanel}
-                      pluginPanelSubPath={pluginPanelMatch?.params["*"] ?? ""}
+                      pluginPanelSubPath={pluginPanelSubPath}
                       meta={meta}
                     />
                   ) : null}

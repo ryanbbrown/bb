@@ -127,8 +127,11 @@ export function getSidebarThreadNavigationTargets(
 
 export function observeSidebarThreadShortcutTargets(
   root: HTMLElement,
+  enabled: boolean,
   onChange: (targets: readonly SidebarThreadShortcutTarget[]) => void,
 ): () => void {
+  if (!enabled) return () => {};
+
   const refresh = () => onChange(getSidebarThreadShortcutTargets(root));
   const observer = new MutationObserver(refresh);
 

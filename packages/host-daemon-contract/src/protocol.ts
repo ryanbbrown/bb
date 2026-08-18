@@ -1,6 +1,28 @@
-// Version 131 adds worktree discovery, canonical host path resolution, and
+// Version 136 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
+//
+// Version 135 adds the `compaction-skipped` provider warning category. The Pi
+// bridge now reports a refused manual compaction ("Nothing to compact") as
+// that warning plus a completed turn instead of a failed turn. An older daemon
+// still sends the failed turn, so the server would move the thread to error.
+//
+// Version 134 keeps replayed Codex usage snapshots off unknown turn ids: the
+// Codex bridge drops the turn-only token usage that codex replays on
+// thread/resume and thread/fork and emits the replayed context-window usage
+// thread-scoped, instead of naming a turn id bb never stored a turn/started
+// for. Older daemons still send those orphan snapshots and the server drops
+// them, so enrolled machines must update for the replayed context usage to
+// land.
+//
+// Version 133 carries Claude's terminal-failure drain suppression through the
+// provider bridge. Older daemons can otherwise keep translating trailing SDK
+// output under the prior event semantics after the server has accepted the
+// failed turn as retryable.
+//
+// Version 132 prevents exact duplicate Codex terminal-item notifications from
+// crossing the daemon boundary as duplicate lifecycle events. Version 131
+// preserves Pi's provider identity when a bridge resumes a persisted session.
 //
 // Version 130 makes every provider plugin-declared on the wire. Two changes,
 // both of which an older daemon rejects outright:
@@ -26,7 +48,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 131 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 136 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

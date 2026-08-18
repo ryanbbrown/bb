@@ -6,10 +6,11 @@ import {
   sidebarChronologicalSortAtom,
   sidebarOrganizationModeAtom,
   sidebarProjectOrderAtom,
+  sidebarShowThreadNumbersAtom,
 } from "./sidebarCollapsedAtoms";
 
 export default {
-  title: "sidebar/View options menu",
+  title: "sidebar/Display options menu",
 };
 
 // Live readout of the atoms the menu drives, so the effect of each click is
@@ -18,6 +19,7 @@ function StateReadout() {
   const organizationMode = useAtomValue(sidebarOrganizationModeAtom);
   const sort = useAtomValue(sidebarChronologicalSortAtom);
   const projectOrder = useAtomValue(sidebarProjectOrderAtom);
+  const showThreadNumbers = useAtomValue(sidebarShowThreadNumbersAtom);
   return (
     <dl className="grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-xs">
       <dt className="text-muted-foreground">organize</dt>
@@ -26,6 +28,8 @@ function StateReadout() {
       <dd className="font-mono">{sort}</dd>
       <dt className="text-muted-foreground">project order</dt>
       <dd className="font-mono">{projectOrder}</dd>
+      <dt className="text-muted-foreground">thread numbers</dt>
+      <dd className="font-mono">{String(showThreadNumbers)}</dd>
     </dl>
   );
 }
@@ -39,6 +43,7 @@ function InteractiveMenu() {
     next.set(sidebarOrganizationModeAtom, "project");
     next.set(sidebarChronologicalSortAtom, "updated");
     next.set(sidebarProjectOrderAtom, "manual");
+    next.set(sidebarShowThreadNumbersAtom, false);
     return next;
   }, []);
 
@@ -64,7 +69,7 @@ export function Overview() {
     <StoryCard>
       <StoryRow
         label="interactive"
-        hint="open the menu · choose project section order · pick a thread sort field"
+        hint="open the menu · change organization, project order, sort, or thread numbers"
       >
         <InteractiveMenu />
       </StoryRow>

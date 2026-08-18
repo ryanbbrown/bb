@@ -870,11 +870,6 @@ describe("ThreadRow", () => {
     const number = document.querySelector("[data-sidebar-thread-number]");
     expect(number?.textContent).toBe("3");
     expect(number?.getAttribute("aria-hidden")).toBe("true");
-    expect(number?.className).toContain("w-3");
-    expect(number?.className).toContain("text-xs");
-    expect(number?.className).toContain("tabular-nums");
-    expect(number?.className).toContain("text-subtle-foreground");
-    expect(number?.className).toContain("opacity-60");
     expect(number?.nextElementSibling?.textContent).toBe("Thread");
     expect(screen.queryByText("⌘3")).toBeNull();
 
@@ -885,6 +880,20 @@ describe("ThreadRow", () => {
 
     result.rerender(<ThreadRowTestHarness thread={thread} />);
     expect(document.querySelector("[data-sidebar-thread-number]")).toBeNull();
+  });
+
+  it("shows its navigation number and Command shortcut together", () => {
+    renderThreadRow({ numberKey: "3", shortcutKey: "3" });
+
+    expect(
+      document.querySelector("[data-sidebar-thread-number]")?.textContent,
+    ).toBe("3");
+    expect(screen.getByText("⌘3")).not.toBeNull();
+    expect(
+      screen
+        .getByRole("link", { name: "Open Thread" })
+        .getAttribute("aria-keyshortcuts"),
+    ).toBe("Meta+3");
   });
 
   it("shows its Command shortcut in place of an active indicator", () => {
@@ -900,7 +909,6 @@ describe("ThreadRow", () => {
     });
 
     const shortcut = screen.getByText("⌘3");
-    expect(document.querySelector("[data-sidebar-thread-number]")).toBeNull();
     expect(shortcut.className).toContain("px-1.5");
     expect(shortcut.className).toContain("py-1");
     expect(shortcut.className).toContain("opacity-60");

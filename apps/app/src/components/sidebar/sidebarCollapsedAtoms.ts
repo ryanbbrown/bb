@@ -20,6 +20,8 @@ export const SIDEBAR_ORGANIZATION_MODE_STORAGE_KEY =
   "bb.sidebar.organizationMode";
 const CHRONOLOGICAL_SORT_STORAGE_KEY = "bb.sidebar.chronologicalSort";
 export const SIDEBAR_PROJECT_ORDER_STORAGE_KEY = "bb.sidebar.projectOrder";
+export const SIDEBAR_SHOW_THREAD_NUMBERS_STORAGE_KEY =
+  "bb.sidebar.showThreadNumbers";
 const COLLAPSED_THREAD_SECTIONS_STORAGE_KEY =
   "bb.sidebar.collapsedThreadSections";
 const LEGACY_COLLAPSED_FOLDERS_STORAGE_KEY = "bb.sidebar.collapsedFolders";
@@ -186,6 +188,13 @@ export const sidebarProjectOrderAtom = atomWithStorage<SidebarProjectOrder>(
   SIDEBAR_PROJECT_ORDER_STORAGE_KEY,
   "manual",
   createLocalStorageEnumStorage(isSidebarProjectOrder),
+  { getOnInit: true },
+);
+
+export const sidebarShowThreadNumbersAtom = atomWithStorage<boolean>(
+  SIDEBAR_SHOW_THREAD_NUMBERS_STORAGE_KEY,
+  false,
+  createJsonLocalStorage<boolean>(),
   { getOnInit: true },
 );
 

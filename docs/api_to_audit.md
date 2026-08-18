@@ -76,6 +76,30 @@ unexpected-exit recovery without feature-specific core hooks.
     limits without pretending to model process startup, crashes, native watcher
     recovery, or reconnect behavior.
 
+## `PluginNavPanelRegistration.experimental_fixedTabs`
+
+**What it does.** Lets a nav panel declare ordered, non-closable tabs in the
+host-owned right panel. The host owns tab selection, persistence, chrome,
+Browser and Terminal tools, and only mounts the active plugin component while
+the panel is open. A fixed tab receives the nav page's current `subPath`; `layout: "padded"` uses
+host padding and scrolling, while `layout: "flush"` gives the component the
+whole content region. On the first visit the first declared fixed tab opens on
+wide layouts. A later user close remains closed.
+
+**Audit before stabilizing.**
+
+1. Confirm first-visit opening and subsequent close persistence across plugin
+   reloads, app upgrades, wide/compact transitions, and page deep links.
+2. Exercise multiple fixed tabs and dynamic registration changes; selection
+   must remain stable when possible and fall back without mounting inactive
+   components.
+3. Confirm `subPath` is sufficient context and that fixed tabs should remain
+   page-scoped rather than gaining independent routes or plugin-owned state.
+4. Audit padded versus flush layout against Tasks, Docs, accessibility zoom,
+   and nested scrolling before freezing the presentation contract.
+5. Confirm named icon hints and the non-closable tab treatment remain the right
+   amount of plugin-controlled chrome.
+
 ## `PluginNavPanelRegistration.experimental_sidebarAccessory`
 
 **What it does.** Lets a nav panel register a no-props, presentational React
@@ -199,7 +223,7 @@ registration record so fields without a registry consumer yet
    (`experimental_providerBridge`), built into `dist/host.js`, recorded in the
    one live-host-artifact registry, served by the one host artifact route, and
    cached once per plugin on the daemon. Thread commands carry `bridgeLaunch
-   {pluginId, source: {kind: "artifact", digest, byteLength}}`. Pi is the one
+{pluginId, source: {kind: "artifact", digest, byteLength}}`. Pi is the one
    provider whose bridge stays daemon-bundled
    (`DAEMON_BUNDLED_PROVIDER_BRIDGE_IDS`); every other provider, first-party or
    not, arrives as an artifact. Before stabilizing: confirm one artifact per
@@ -267,6 +291,18 @@ build inlines the SDK's published, self-contained bundle.
    `decodeToolCallResponsePayload` are used inside the kit itself. The
    surface is still large; any further shrink is a per-name product decision,
    not a mechanical move.
+   A follow-up de-overfitting pass (Aug 2026) then unwound the kit's
+   over-general helpers: `buildToolUseItem`'s parser-callback router became
+   per-provider switches over plain constructors (`buildFileChangeItem`,
+   `buildGenericToolCallItem`); the generic session registry was split into
+   `createPendingToolCallTracker` plus consumer-owned session maps;
+   claude-code stopped borrowing codex's `shell_environment_policy` namespace
+   (`buildShellEnvironmentPolicyConfig` now lives in provider-codex,
+   `diffCumulativeText` in pi); the zero-consumer native tool-call decoder,
+   the `finishOpenProviderTurn` wrapper, and the per-consumer flags
+   (`completeWebItems`, `preserveUndefinedToolCallFields`) came off the
+   surface; and the shared accepted-user-message drain folded into the
+   turn-state registry core.
 3. **The ACP launch spec.** `hostDaemonAcpLaunchSpecSchema` is a
    server↔daemon wire shape a bridge parses out of its provider-scoped static
    options. It is the one core contract leaking into the published surface;
@@ -389,6 +425,14 @@ Implementation: the shared workflow is
    `new-thread-environment-seed.test.ts` and
    `PluginNewThreadComposer.test.tsx` guard this) and re-decide whether the
    re-seed-on-change rule should instead be an explicit reset nonce.
+
+6. **Projectless contract.** The picker always offers "Don't work in a
+   project", including when a plugin seeds a specific project. That choice
+   submits the personal-project id (not `null`) with a `personal` workspace;
+   plugin authors forward both fields unchanged and must opt into personal
+   project metadata with `projects.list({ includePersonal: true })`. Before
+   stabilizing, confirm unconditional project switching is right for embedded
+   plugin workflows, rather than adding an explicit project-locking policy.
 
 ## `app.slots.experimental_newThreadPanelAction` (`@get-bb/plugin-sdk/app`)
 

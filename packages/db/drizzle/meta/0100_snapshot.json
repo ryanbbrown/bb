@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "e8bd9c42-107f-4f99-b6d1-12de78b158f9",
+  "id": "22808b50-d8d8-42a4-a341-ece2b35aabea",
   "prevId": "cbf5d14d-1d4e-41d8-bed1-a89f14f3b10f",
   "tables": {
     "app_settings": {
@@ -29,14 +29,6 @@
           "notNull": true,
           "autoincrement": false,
           "default": true
-        },
-        "show_sidebar_thread_numbers": {
-          "name": "show_sidebar_thread_numbers",
-          "type": "integer",
-          "primaryKey": false,
-          "notNull": true,
-          "autoincrement": false,
-          "default": false
         },
         "steer_active_thread_on_enter": {
           "name": "steer_active_thread_on_enter",
@@ -776,6 +768,16 @@
             "sequence"
           ],
           "isUnique": false
+        },
+        "events_item_lifecycle_thread_item_sequence_idx": {
+          "name": "events_item_lifecycle_thread_item_sequence_idx",
+          "columns": [
+            "thread_id",
+            "item_id",
+            "sequence"
+          ],
+          "isUnique": false,
+          "where": "\"events\".\"type\" IN ('item/started', 'item/completed', 'item/backgroundTask/completed')"
         },
         "events_environment_idx": {
           "name": "events_environment_idx",
