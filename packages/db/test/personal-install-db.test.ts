@@ -53,6 +53,7 @@ function writeMigrations(
 function createHistoricalPersonalDatabase(
   databasePath: string,
   personalHash: string,
+  staleTimestamps: readonly number[] = [150],
 ): void {
   const database = new Database(databasePath);
   database.exec(`
@@ -66,11 +67,12 @@ function createHistoricalPersonalDatabase(
       created_at numeric
     );
   `);
-  database
-    .prepare(
-      "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
-    )
-    .run(personalHash, 150);
+  const insert = database.prepare(
+    "INSERT INTO __drizzle_migrations (hash, created_at) VALUES (?, ?)",
+  );
+  for (const timestamp of staleTimestamps) {
+    insert.run(personalHash, timestamp);
+  }
   database.close();
 }
 
@@ -120,7 +122,46 @@ describe("personal install database reconciliation", () => {
       "main_setting",
     ]);
     expect(applied).toEqual([
-      { createdAt: 150, hash: migrations[1].hash },
+      { createdAt: 200, hash: migrations[0].hash },
+      { createdAt: 300, hash: migrations[1].hash },
+    ]);
+  });
+
+  it("collapses stale rows left by an earlier relocation", () => {
+    const tempDir = createTempDir();
+    const migrationsFolder = path.join(tempDir, "drizzle");
+    const databasePath = path.join(tempDir, "bb.db");
+    writeMigrations(migrationsFolder, [
+      {
+        tag: "0093_main",
+        when: 200,
+        sql: "ALTER TABLE app_settings ADD COLUMN main_setting integer DEFAULT false NOT NULL;",
+      },
+      {
+        tag: "0094_personal",
+        when: 300,
+        sql: "ALTER TABLE app_settings ADD COLUMN show_sidebar_thread_numbers integer DEFAULT false NOT NULL;",
+      },
+    ]);
+    const migrations = readMigrationFiles({ migrationsFolder });
+    createHistoricalPersonalDatabase(databasePath, migrations[1].hash, [
+      150, 175,
+    ]);
+
+    const database = new Database(databasePath);
+    const result = reconcilePersonalMigrationHistory(
+      database,
+      migrationsFolder,
+    );
+    const applied = database
+      .prepare(
+        "SELECT hash, created_at AS createdAt FROM __drizzle_migrations ORDER BY created_at",
+      )
+      .all() as AppliedMigrationRow[];
+    database.close();
+
+    expect(result.relocated).toEqual(["0094_personal"]);
+    expect(applied).toEqual([
       { createdAt: 200, hash: migrations[0].hash },
       { createdAt: 300, hash: migrations[1].hash },
     ]);

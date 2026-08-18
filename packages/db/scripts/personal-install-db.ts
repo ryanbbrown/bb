@@ -106,6 +106,18 @@ function insertAppliedMigration(
     .run(migration.hash, migration.when);
 }
 
+// A renumbered personal migration keeps its SQL hash, so move its rows to the
+// new timestamp instead of leaving stale copies that later read as ambiguous.
+function relocateAppliedMigration(
+  database: Database.Database,
+  migration: ExpectedMigration,
+): void {
+  database
+    .prepare("DELETE FROM __drizzle_migrations WHERE hash = ?")
+    .run(migration.hash);
+  insertAppliedMigration(database, migration);
+}
+
 export function reconcilePersonalMigrationHistory(
   database: Database.Database,
   migrationsFolder: string,
@@ -123,9 +135,10 @@ export function reconcilePersonalMigrationHistory(
       (expectedHashCounts.get(migration.hash) ?? 0) + 1,
     );
   }
+  const expectedTimestamps = new Set(expected.map((migration) => migration.when));
 
   const reconcile = database.transaction(() => {
-    const applied = [...existing];
+    let applied = [...existing];
     const result: PersonalMigrationReconciliationResult = {
       applied: [],
       relocated: [],
@@ -142,12 +155,16 @@ export function reconcilePersonalMigrationHistory(
       const hashRows = applied.filter((row) => row.hash === migration.hash);
       if (hashRows.length > 0) {
         const expectedHashCount = expectedHashCounts.get(migration.hash) ?? 0;
-        if (hashRows.length !== 1 || expectedHashCount !== 1) {
+        const staleRows = hashRows.filter(
+          (row) => row.createdAt === null || !expectedTimestamps.has(row.createdAt),
+        );
+        if (expectedHashCount !== 1 || staleRows.length !== hashRows.length) {
           throw new Error(
             `Ambiguous migration hash for ${migration.tag}: ${migration.hash}`,
           );
         }
-        insertAppliedMigration(database, migration);
+        relocateAppliedMigration(database, migration);
+        applied = applied.filter((row) => row.hash !== migration.hash);
         applied.push({ createdAt: migration.when, hash: migration.hash });
         result.relocated.push(migration.tag);
         continue;
