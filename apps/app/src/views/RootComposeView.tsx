@@ -6,6 +6,8 @@ import {
   type ReactNode,
 } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { useQueryClient } from "@tanstack/react-query";
+import { findCachedProviderInfo } from "@/hooks/queries/system-queries";
 import {
   findLocalPathProjectSourceForHost,
   type EnvironmentStatus,
@@ -583,6 +585,7 @@ export function RootComposeView() {
     useRootComposeProjectId();
   const location = useLocation();
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const createThread = useCreateThread();
   const [rootComposeSectionId, setRootComposeSectionId] = useState<
     string | null
@@ -625,6 +628,9 @@ export function RootComposeView() {
               input: request.input,
               model: request.model,
               permissionMode: request.permissionMode,
+              providerSupportsFork:
+                findCachedProviderInfo(queryClient, forkSeed.providerId)
+                  ?.capabilities.supportsFork ?? false,
               reasoningLevel: request.reasoningLevel,
               serviceTier: request.serviceTier,
             });
@@ -645,6 +651,7 @@ export function RootComposeView() {
     [
       createThread,
       forkSeed,
+      queryClient,
       navigate,
       navigateToThreadAfterCreate,
       rootComposeSectionId,
@@ -788,6 +795,14 @@ function RootComposeSurface({
     [promptBoxRef, promptDraft, setStartedComposing],
   );
 
+  // Both location-state effects below write the draft store and then clear
+  // the state through a router transition. The store write re-renders this
+  // view synchronously with a new `promptDraft` object, before the transition
+  // commits, so an effect that depends on `promptDraft` itself would re-run
+  // against the same location state, write again, and starve the transition
+  // until React aborts the loop. Depend on the stable setters instead.
+  const setPromptDraft = promptDraft.setDraft;
+  const restorePromptDraftIfEmpty = promptDraft.restoreIfEmpty;
   useEffect(() => {
     const sectionTarget = readRootComposeSectionTargetFromLocationState(
       location.state,
@@ -834,7 +849,7 @@ function RootComposeSurface({
           encodeReuseValue(nextHandoffSeed.environmentId),
         );
       }
-      promptDraft.setDraft(buildThreadHandoffPromptDraft(nextHandoffSeed));
+      setPromptDraft(buildThreadHandoffPromptDraft(nextHandoffSeed));
     }
     navigate(getRootComposeRoutePath() + location.search, {
       replace: true,
@@ -844,10 +859,10 @@ function RootComposeSurface({
     location.search,
     location.state,
     navigate,
-    promptDraft,
     seedEnvironmentSelectionValue,
     setForkSeed,
     setPermissionMode,
+    setPromptDraft,
     setProviderModelReasoning,
     setRootComposeProjectId,
     setRootComposeSectionId,
@@ -859,15 +874,21 @@ function RootComposeSurface({
     if (initialPrompt === null) return;
     const nextDraft = { text: initialPrompt, mentions: [], attachments: [] };
     if (shouldReplaceInitialPromptFromLocationState(location.state)) {
-      promptDraft.setDraft(nextDraft);
+      setPromptDraft(nextDraft);
     } else {
-      promptDraft.restoreIfEmpty(nextDraft);
+      restorePromptDraftIfEmpty(nextDraft);
     }
     navigate(getRootComposeRoutePath() + location.search, {
       replace: true,
       state: { focusPrompt: true },
     });
-  }, [location.search, location.state, navigate, promptDraft]);
+  }, [
+    location.search,
+    location.state,
+    navigate,
+    restorePromptDraftIfEmpty,
+    setPromptDraft,
+  ]);
   const shouldFocusPrompt =
     typeof location.state === "object" &&
     location.state !== null &&
@@ -1115,6 +1136,7 @@ function RootComposeSurface({
     usePluginSlots();
   const {
     activePluginPanelTab,
+    activeFileOpenerOwner,
     activeHostFileEnvironmentId,
     activeHostFileLineRange,
     activeHostFilePath,
@@ -1960,6 +1982,19 @@ function RootComposeSurface({
     activeTabId: activeFixedSecondaryTabId,
     tabs: syncedOrderedSecondaryFileTabs,
   });
+  const renderFileOpenerReplacement = (original: ReactNode): ReactNode =>
+    activeFileOpenerOwner !== null && activePluginPanelTab !== null ? (
+      <PluginPanelTabContent
+        tab={activePluginPanelTab}
+        context={{
+          kind: "new-thread",
+          projectId: isProjectless ? null : projectId,
+        }}
+        fileOpenerOriginal={original}
+      />
+    ) : (
+      original
+    );
   const fileTabContent: ReactNode =
     activeTerminalId && rootPanelTerminalTarget ? (
       <ThreadTerminalPanel
@@ -1992,65 +2027,73 @@ function RootComposeSurface({
       />
     ) : activeWorkspaceFilePath !== null &&
       activeWorkspaceFileEnvironmentId !== null ? (
-      <WorkspaceFilePreviewTabContent
-        activePath={activeWorkspaceFilePath}
-        copyPath={workspaceFileCopyPath}
-        environmentId={activeWorkspaceFileEnvironmentId}
-        lineRange={activeWorkspaceFileLineRange}
-        onOpenInEditor={handleOpenWorkspaceFileInEditor}
-        onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-        source={activeWorkspaceFileSource}
-        statusLabel={activeWorkspaceFileStatusLabel}
-        threadId={rootPanelThreadId}
-      />
+      renderFileOpenerReplacement(
+        <WorkspaceFilePreviewTabContent
+          activePath={activeWorkspaceFilePath}
+          copyPath={workspaceFileCopyPath}
+          environmentId={activeWorkspaceFileEnvironmentId}
+          lineRange={activeWorkspaceFileLineRange}
+          onOpenInEditor={handleOpenWorkspaceFileInEditor}
+          onSelectionAddToChat={handleRootPanelSelectionAddToChat}
+          source={activeWorkspaceFileSource}
+          statusLabel={activeWorkspaceFileStatusLabel}
+          threadId={rootPanelThreadId}
+        />,
+      )
     ) : activeWorkspaceFilePath !== null &&
       activeWorkspaceFileProjectPreviewId !== null ? (
-      <ProjectFilePreviewTabContent
-        activePath={activeWorkspaceFilePath}
-        copyPath={projectFileCopyPath}
-        environmentId={rootPanelEnvironmentId}
-        hostId={rootProjectHostId}
-        lineRange={activeWorkspaceFileLineRange}
-        onOpenInEditor={handleOpenProjectFileInEditor}
-        onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-        projectId={activeWorkspaceFileProjectPreviewId}
-      />
-    ) : activeHostFilePath !== null ? (
-      activeRootHostFileThreadId && activeRootHostFileEnvironmentId ? (
-        <HostFilePreviewTabContent
-          activePath={activeHostFilePath}
-          copyPath={activeHostFilePath}
-          environmentId={activeRootHostFileEnvironmentId}
-          lineRange={activeHostFileLineRange}
-          onOpenInEditor={handleOpenHostFileInEditor}
+      renderFileOpenerReplacement(
+        <ProjectFilePreviewTabContent
+          activePath={activeWorkspaceFilePath}
+          copyPath={projectFileCopyPath}
+          environmentId={rootPanelEnvironmentId}
+          hostId={rootProjectHostId}
+          lineRange={activeWorkspaceFileLineRange}
+          onOpenInEditor={handleOpenProjectFileInEditor}
           onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-          threadId={activeRootHostFileThreadId}
-        />
-      ) : (
-        <FilePreview
-          path={activeHostFilePath}
-          copyPath={activeHostFilePath}
-          onOpenInEditor={handleOpenHostFileInEditor}
-          state={{ kind: "loading" }}
-        />
+          projectId={activeWorkspaceFileProjectPreviewId}
+        />,
+      )
+    ) : activeHostFilePath !== null ? (
+      renderFileOpenerReplacement(
+        activeRootHostFileThreadId && activeRootHostFileEnvironmentId ? (
+          <HostFilePreviewTabContent
+            activePath={activeHostFilePath}
+            copyPath={activeHostFilePath}
+            environmentId={activeRootHostFileEnvironmentId}
+            lineRange={activeHostFileLineRange}
+            onOpenInEditor={handleOpenHostFileInEditor}
+            onSelectionAddToChat={handleRootPanelSelectionAddToChat}
+            threadId={activeRootHostFileThreadId}
+          />
+        ) : (
+          <FilePreview
+            path={activeHostFilePath}
+            copyPath={activeHostFilePath}
+            onOpenInEditor={handleOpenHostFileInEditor}
+            state={{ kind: "loading" }}
+          />
+        ),
       )
     ) : activeStorageFilePath !== null ? (
-      activeRootStorageFileThreadId ? (
-        <ThreadStorageFilePreviewTabContent
-          activePath={activeStorageFilePath}
-          copyPath={storageFileCopyPath}
-          lineRange={activeStorageFileLineRange}
-          onOpenInEditor={handleOpenStorageFileInEditor}
-          onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-          threadId={activeRootStorageFileThreadId}
-        />
-      ) : (
-        <FilePreview
-          path={activeStorageFilePath}
-          copyPath={storageFileCopyPath}
-          onOpenInEditor={handleOpenStorageFileInEditor}
-          state={{ kind: "loading" }}
-        />
+      renderFileOpenerReplacement(
+        activeRootStorageFileThreadId ? (
+          <ThreadStorageFilePreviewTabContent
+            activePath={activeStorageFilePath}
+            copyPath={storageFileCopyPath}
+            lineRange={activeStorageFileLineRange}
+            onOpenInEditor={handleOpenStorageFileInEditor}
+            onSelectionAddToChat={handleRootPanelSelectionAddToChat}
+            threadId={activeRootStorageFileThreadId}
+          />
+        ) : (
+          <FilePreview
+            path={activeStorageFilePath}
+            copyPath={storageFileCopyPath}
+            onOpenInEditor={handleOpenStorageFileInEditor}
+            state={{ kind: "loading" }}
+          />
+        ),
       )
     ) : activePluginPanelTab ? (
       <PluginPanelTabContent

@@ -13,7 +13,6 @@ const APP_SETTINGS_ROW_ID = "current";
 export function getAppSettings(db: DbConnection): AppSettings {
   const row = db
     .select({
-      caffeinate: appSettings.caffeinate,
       showKeyboardHints: appSettings.showKeyboardHints,
       showSidebarThreadNumbers: appSettings.showSidebarThreadNumbers,
       steerActiveThreadOnEnter: appSettings.steerActiveThreadOnEnter,
@@ -40,7 +39,6 @@ export function setAppSettings(
   db.insert(appSettings)
     .values({
       id: APP_SETTINGS_ROW_ID,
-      caffeinate: settings.caffeinate,
       showKeyboardHints: settings.showKeyboardHints,
       showSidebarThreadNumbers: settings.showSidebarThreadNumbers,
       steerActiveThreadOnEnter: settings.steerActiveThreadOnEnter,
@@ -56,7 +54,6 @@ export function setAppSettings(
     .onConflictDoUpdate({
       target: appSettings.id,
       set: {
-        caffeinate: settings.caffeinate,
         showKeyboardHints: settings.showKeyboardHints,
         showSidebarThreadNumbers: settings.showSidebarThreadNumbers,
         steerActiveThreadOnEnter: settings.steerActiveThreadOnEnter,

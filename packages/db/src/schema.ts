@@ -153,6 +153,8 @@ export const systemExperiments = sqliteTable("system_experiments", {
 
 export const appSettings = sqliteTable("app_settings", {
   id: text("id").primaryKey(),
+  // Retained internally until the Keep Awake plugin migration has shipped
+  // long enough to remove the legacy preference safely.
   caffeinate: integer("caffeinate", { mode: "boolean" })
     .notNull()
     .default(false),
@@ -731,6 +733,13 @@ export const events = sqliteTable(
       table.threadId,
       table.sequence,
     ),
+    // Timeline in-turn pagination checks whether a delegated child above a
+    // candidate cut belongs to a tool call below it. Keep that parent probe on
+    // the small tool-call subset rather than walking the thread/sequence index
+    // and fetching scattered event payload rows.
+    index("events_tool_call_parent_lookup_idx")
+      .on(table.threadId, table.itemId, table.sequence)
+      .where(sql`${table.itemKind} = 'toolCall'`),
     index("events_thread_type_item_kind_sequence_idx").on(
       table.threadId,
       table.type,

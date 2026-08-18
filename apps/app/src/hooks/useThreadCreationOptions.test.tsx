@@ -57,12 +57,13 @@ function executionOptionsResponse(): SystemExecutionOptionsResponse {
           },
         ],
         capabilities: {
-          supportsArchive: true,
-          supportsRename: true,
+          supportsThreadArchive: true,
+          supportsThreadRename: true,
           supportsServiceTier: true,
-          supportsUserQuestion: true,
+          supportsNativeUserQuestion: true,
           supportsFork: true,
-          supportedPermissionModes: ["accept-edits", "auto", "full"],
+          supportsSessionRewind: true,
+          permissionModes: ["accept-edits", "auto", "full"],
         },
       },
       {
@@ -72,12 +73,13 @@ function executionOptionsResponse(): SystemExecutionOptionsResponse {
         available: true,
         composerActions: [{ kind: "skills", trigger: "/" }],
         capabilities: {
-          supportsArchive: true,
-          supportsRename: true,
+          supportsThreadArchive: true,
+          supportsThreadRename: true,
           supportsServiceTier: true,
-          supportsUserQuestion: true,
+          supportsNativeUserQuestion: true,
           supportsFork: true,
-          supportedPermissionModes: ["accept-edits", "auto", "full"],
+          supportsSessionRewind: true,
+          permissionModes: ["accept-edits", "auto", "full"],
         },
       },
     ],
@@ -161,12 +163,13 @@ function claudeExecutionOptionsResponse(): SystemExecutionOptionsResponse {
         available: true,
         composerActions: [],
         capabilities: {
-          supportsArchive: true,
-          supportsRename: true,
+          supportsThreadArchive: true,
+          supportsThreadRename: true,
           supportsServiceTier: true,
-          supportsUserQuestion: true,
+          supportsNativeUserQuestion: true,
           supportsFork: true,
-          supportedPermissionModes: ["accept-edits", "auto", "full"],
+          supportsSessionRewind: true,
+          permissionModes: ["accept-edits", "auto", "full"],
         },
       },
     ],
@@ -234,6 +237,25 @@ afterEach(() => {
 });
 
 describe("useThreadCreationOptions", () => {
+  it("keeps the selected built-in provider branded while models load", () => {
+    window.localStorage.setItem("bb.promptbox.provider", "codex");
+    vi.mocked(sdk.system.executionOptions).mockImplementation(
+      () => new Promise(() => undefined),
+    );
+
+    const { result } = renderHook(
+      () => useThreadCreationOptions({ scope: "new-thread" }),
+      { wrapper: createQueryClientTestHarness().wrapper },
+    );
+
+    expect(result.current.isLoadingModels).toBe(true);
+    expect(result.current.selectedProviderId).toBe("codex");
+    expect(
+      result.current.providerOptions.find((option) => option.value === "codex")
+        ?.icon,
+    ).toBeDefined();
+  });
+
   it("uses the medium product default for providers without reasoning history", async () => {
     vi.mocked(sdk.system.executionOptions).mockImplementation(async (args) =>
       providerExecutionOptionsResponse(args?.providerId),

@@ -26,10 +26,15 @@ import {
   PLUGIN_AGENT_SELECTION_MAX_IDS,
   PLUGIN_AGENT_TOOL_PARAMETERS_MAX_BYTES,
   RESERVED_AGENT_TOOL_NAMES,
+  adoptHttpRouteResponse,
 } from "@get-bb/plugin-sdk/internal/host-policy";
 // The build engine's natives (esbuild, Tailwind oxide) are dynamically
 // imported inside buildPluginApp — importing this loads nothing heavy.
-import { buildPluginApp, createPluginDevLoop } from "@bb/plugin-build";
+import {
+  buildPluginApp,
+  buildPluginHost,
+  createPluginDevLoop,
+} from "@bb/plugin-build";
 import { getPluginBuildToolchain } from "./build-toolchain.js";
 import {
   marketplacePublisherLabels,
@@ -259,6 +264,25 @@ export interface PluginService {
     id: string,
     variant: PluginBrandingAssetVariant,
   ): { bytes: Uint8Array; contentType: string; hash: string } | undefined;
+  /** Active generations a reconnecting daemon uses to retire stale workers. */
+  listHostArtifactGenerations(): Array<{
+    pluginId: string;
+    generation: string;
+  }>;
+  /** Dispatch an unexpected worker exit from an active host generation. */
+  handleHostWorkerExit(args: {
+    authenticatedHostId: string;
+    pluginId: string;
+    generation: string;
+  }): void;
+  /** Dispatch one validated ephemeral signal from an active host generation. */
+  handleHostSignal(args: {
+    authenticatedHostId: string;
+    pluginId: string;
+    generation: string;
+    signal: string;
+    payload: JsonValue;
+  }): void;
   /**
    * Declared settings schema + current values for a loaded plugin
    * (secrets render as `{ set: boolean }`). Undefined when the plugin is not
@@ -957,6 +981,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
     emitThreadEvent,
     handlerStats,
     hungServices,
+    hostArtifacts,
     identities,
     invokeWrapped,
     isBuiltinPluginId,
@@ -1470,6 +1495,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
           const loop = createPluginDevLoop({
             pluginId: row.id,
             hasApp: manifest.appEntry !== undefined,
+            hasHost: manifest.hostEntry !== undefined,
             buildApp: async () => {
               try {
                 await buildPluginApp(
@@ -1477,11 +1503,31 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
                   deps.appVersion,
                   await getPluginBuildToolchain(deps),
                 );
-                setDevBuildProblem(row.id, null);
+                setDevBuildProblem(row.id, "frontend", null);
                 notifyPluginsChanged();
               } catch (error) {
                 setDevBuildProblem(
                   row.id,
+                  "frontend",
+                  error instanceof Error ? error.message : String(error),
+                );
+                notifyPluginsChanged();
+                throw error;
+              }
+            },
+            buildHost: async () => {
+              try {
+                await buildPluginHost(
+                  bundled.rootDir,
+                  deps.appVersion,
+                  await getPluginBuildToolchain(deps),
+                );
+                setDevBuildProblem(row.id, "host", null);
+                notifyPluginsChanged();
+              } catch (error) {
+                setDevBuildProblem(
+                  row.id,
+                  "host",
                   error instanceof Error ? error.message : String(error),
                 );
                 notifyPluginsChanged();
@@ -1743,6 +1789,70 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
       };
     },
 
+    listHostArtifactGenerations() {
+      return [...hostArtifacts.entries()]
+        .filter(([id]) => loaded.has(id))
+        .map(([pluginId, artifact]) => ({
+          pluginId,
+          generation: artifact.generation,
+        }))
+        .sort((a, b) => a.pluginId.localeCompare(b.pluginId));
+    },
+
+    handleHostWorkerExit(args) {
+      const plugin = loaded.get(args.pluginId);
+      const artifact = hostArtifacts.get(args.pluginId);
+      if (
+        plugin === undefined ||
+        artifact === undefined ||
+        artifact.generation !== args.generation
+      ) {
+        return;
+      }
+      for (const handler of [...plugin.handle.hostWorkerExitHandlers]) {
+        void invokeWrapped(args.pluginId, "host worker exit", async () =>
+          handler({ hostId: args.authenticatedHostId }),
+        );
+      }
+    },
+
+    handleHostSignal(args) {
+      const plugin = loaded.get(args.pluginId);
+      const artifact = hostArtifacts.get(args.pluginId);
+      if (
+        plugin === undefined ||
+        artifact === undefined ||
+        artifact.generation !== args.generation
+      ) {
+        return;
+      }
+      const subscriptions = plugin.handle.hostSignalHandlers.filter(
+        (subscription) => subscription.signal === args.signal,
+      );
+      for (const subscription of subscriptions) {
+        void invokeWrapped(
+          args.pluginId,
+          `host signal ${args.signal}`,
+          async () => {
+            const result = await subscription.payloadSchema[
+              "~standard"
+            ].validate(args.payload);
+            if (result.issues !== undefined) {
+              throw new Error(
+                `host signal payload validation failed: ${result.issues
+                  .map((issue) => issue.message)
+                  .join("; ")}`,
+              );
+            }
+            await subscription.handler({
+              hostId: args.authenticatedHostId,
+              payload: result.value,
+            });
+          },
+        );
+      }
+    },
+
     async getSettings(id) {
       const plugin = loaded.get(id);
       if (!plugin) return undefined;
@@ -1826,10 +1936,7 @@ export function createPluginService(deps: PluginServiceDeps): PluginService {
         `http ${route.method} ${route.path}`,
         async () => {
           const response = await route.handler(context);
-          if (!(response instanceof Response)) {
-            throw new Error("http route handler must return a Response");
-          }
-          return response;
+          return adoptHttpRouteResponse(response);
         },
       );
       if (outcome.ok) return outcome.value;

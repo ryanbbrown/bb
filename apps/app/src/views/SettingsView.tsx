@@ -135,12 +135,6 @@ export interface RootComposeBehaviorSettingsControlProps {
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
 }
 
-export interface CaffeinateSettingsControlProps {
-  disabled: boolean;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
 export interface SteerActiveThreadOnEnterSettingsControlProps {
   disabled: boolean;
   enabled: boolean;
@@ -184,12 +178,8 @@ export interface AppearanceSettingsSectionProps {
 }
 
 export interface GeneralSettingsSectionProps {
-  caffeinateAvailable: boolean;
-  caffeinateDisabled: boolean;
-  caffeinateEnabled: boolean;
   onReplayOnboarding: () => void;
   desktopBrowserAvailable: boolean;
-  onCaffeinateChange: (enabled: boolean) => void;
   navigateToThreadAfterCreate: boolean;
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
   onOpenLinksInAppBrowserChange: (enabled: boolean) => void;
@@ -576,7 +566,6 @@ const NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL =
 const RICH_TEXT_EDITING_SETTING_LABEL = "Markdown formatting in prompt box";
 const UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL =
   "Show unhandled provider events";
-const CAFFEINATE_SETTING_LABEL = "Caffeinate";
 const STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL =
   "Steer running threads on Enter";
 const SIDEBAR_THREAD_NUMBERS_SETTING_LABEL = "Show thread numbers";
@@ -591,26 +580,6 @@ export function RootComposeBehaviorSettingsControl({
         checked={navigateToThreadAfterCreate}
         onCheckedChange={onNavigateToThreadAfterCreateChange}
         aria-label={NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function CaffeinateSettingsControl({
-  disabled,
-  enabled,
-  onEnabledChange,
-}: CaffeinateSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={CAFFEINATE_SETTING_LABEL}
-      description="Prevent system idle sleep while bb is running. Closing the lid or choosing Sleep still sleeps the Mac."
-    >
-      <Switch
-        checked={enabled}
-        disabled={disabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={CAFFEINATE_SETTING_LABEL}
       />
     </SettingsWithControl>
   );
@@ -881,12 +850,8 @@ export function AppearanceSettingsSection({
 }
 
 export function GeneralSettingsSection({
-  caffeinateAvailable,
-  caffeinateDisabled,
-  caffeinateEnabled,
   desktopBrowserAvailable,
   navigateToThreadAfterCreate,
-  onCaffeinateChange,
   onNavigateToThreadAfterCreateChange,
   onOpenLinksInAppBrowserChange,
   onRewriteLocalhostLinksChange,
@@ -929,14 +894,6 @@ export function GeneralSettingsSection({
           enabled={showSidebarThreadNumbers}
           onEnabledChange={onShowSidebarThreadNumbersChange}
         />
-
-        {caffeinateAvailable ? (
-          <CaffeinateSettingsControl
-            disabled={caffeinateDisabled}
-            enabled={caffeinateEnabled}
-            onEnabledChange={onCaffeinateChange}
-          />
-        ) : null}
 
         {desktopBrowserAvailable ? (
           <InAppBrowserLinkSettingsControl
@@ -1336,14 +1293,6 @@ export function SettingsView() {
     content = (
       <>
         <GeneralSettingsSection
-          caffeinateAvailable={
-            systemConfigQuery.data?.primaryHostPlatform === "darwin"
-          }
-          caffeinateDisabled={
-            systemConfigQuery.data === undefined ||
-            updateGeneralSettingsMutation.isPending
-          }
-          caffeinateEnabled={generalSettings.caffeinate}
           desktopBrowserAvailable={desktopBrowserAvailable}
           navigateToThreadAfterCreate={navigateToThreadAfterCreate}
           openLinksInAppBrowser={openLinksInAppBrowser}
@@ -1359,12 +1308,6 @@ export function SettingsView() {
           steerActiveThreadOnEnterDisabled={
             systemConfigQuery.data === undefined ||
             updateGeneralSettingsMutation.isPending
-          }
-          onCaffeinateChange={(enabled) =>
-            updateGeneralSettingsMutation.mutate({
-              ...generalSettings,
-              caffeinate: enabled,
-            })
           }
           onNavigateToThreadAfterCreateChange={setNavigateToThreadAfterCreate}
           onOpenLinksInAppBrowserChange={setOpenLinksInAppBrowser}

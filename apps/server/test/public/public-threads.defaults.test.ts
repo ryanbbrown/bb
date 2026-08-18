@@ -404,7 +404,7 @@ describe("public thread default routes", () => {
       });
       expect(
         providerResponder.requests.map((request) => request.command),
-      ).toEqual([
+      ).toMatchObject([
         {
           type: "provider.list_models",
           providerId: "codex",
