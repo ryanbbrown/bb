@@ -100,13 +100,17 @@ describe("resolveRootComposeThreadEnvironment", () => {
         defaultBranch: undefined,
         defaultWorktreeBaseBranch: undefined,
         environmentValue: hostWorktreeEnvironmentValue,
+        managedMode: "new",
         projectId,
         selectedBranch: null,
       }),
     ).toMatchObject({
       workspace: {
         type: "managed-worktree",
-        baseBranch: { kind: "default" },
+        checkout: {
+          kind: "new-branch",
+          baseBranch: { kind: "default" },
+        },
       },
     });
   });
