@@ -482,6 +482,91 @@ describe("BoundSidebarThreadProjection", () => {
     expect(screen.getAllByText("No threads")).toHaveLength(1);
   });
 
+  it("renders native region hierarchy and dividers around Firstmate-style sections", () => {
+    const manager = makeThread("manager", "project-a", { title: "Manager" });
+    const managed = makeThread("managed", "project-a", {
+      title: "Managed session",
+    });
+    const independent = makeThread("independent", "project-a", {
+      title: "Independent thread",
+    });
+    setNavigation([
+      makeProject("project-a", "Project A", [manager, managed, independent]),
+    ]);
+    renderProjection({
+      regions: [
+        region("manager", ["manager"], {
+          label: null,
+          placement: "sticky",
+          dividerAfter: true,
+        }),
+        region("managed-sessions", ["managed"], {
+          label: "Managed sessions",
+          dividerAfter: true,
+          grouping: projectGrouping(["project-a"]),
+        }),
+        region("independent-threads", ["independent"], {
+          label: "Independent threads",
+          grouping: projectGrouping(["project-a"]),
+        }),
+      ],
+      excludedThreadIds: [],
+    });
+
+    const managedHeading = screen.getByRole("heading", {
+      level: 2,
+      name: "Managed sessions",
+    });
+    const independentHeading = screen.getByRole("heading", {
+      level: 2,
+      name: "Independent threads",
+    });
+    const projectHeadings = screen.getAllByRole("heading", {
+      level: 3,
+      name: "Project A",
+    });
+    const managedTier = managedHeading.closest("[data-sidebar-sticky-tier]");
+    const independentTier = independentHeading.closest(
+      "[data-sidebar-sticky-tier]",
+    );
+    for (const className of [
+      "text-2xs",
+      "font-semibold",
+      "uppercase",
+      "tracking-wide",
+    ]) {
+      expect(managedTier?.classList.contains(className)).toBe(true);
+      expect(independentTier?.classList.contains(className)).toBe(true);
+    }
+    expect(projectHeadings).toHaveLength(2);
+    expect(
+      projectHeadings[0]?.closest("[data-sidebar-sticky-tier]")?.className,
+    ).toContain("text-xs");
+    expect(
+      projectHeadings[0]?.closest("[data-sidebar-sticky-tier]")?.className,
+    ).not.toContain("uppercase");
+
+    const managerRegion = document.querySelector(
+      '[data-sidebar-projection-region="manager"]',
+    );
+    const managedRegion = document.querySelector(
+      '[data-sidebar-projection-region="managed-sessions"]',
+    );
+    const independentRegion = document.querySelector(
+      '[data-sidebar-projection-region="independent-threads"]',
+    );
+    expect(
+      managerRegion?.querySelectorAll(":scope > [role=separator]"),
+    ).toHaveLength(1);
+    expect(
+      managedRegion?.querySelectorAll(":scope > [role=separator]"),
+    ).toHaveLength(1);
+    expect(
+      independentRegion?.querySelectorAll(":scope > [role=separator]"),
+    ).toHaveLength(0);
+    expect(screen.getAllByRole("separator")).toHaveLength(2);
+  });
+
   it("uses native sticky ownership and reserves multiple-region height for flow tiers", () => {
     const third = makeThread("thread-c", "project-a", { title: "Flow" });
     const current = testState.navigation as {

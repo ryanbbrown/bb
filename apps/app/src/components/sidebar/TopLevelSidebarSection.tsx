@@ -36,6 +36,9 @@ import { COARSE_POINTER_ROW_ACTION_SIZE_CLASS } from "@bb/shared-ui/coarse-point
 
 const EMPTY_SPLIT_INDICATOR_THREADS: readonly ThreadSplitIndicatorTarget[] = [];
 
+const SIDEBAR_REGION_SECTION_HEADING_CLASS =
+  "text-2xs font-semibold uppercase tracking-wide text-subtle-foreground/80";
+
 export interface TopLevelSidebarSectionCollapseControl {
   isCollapsed: boolean;
   onToggleCollapsed: () => void;
@@ -60,6 +63,10 @@ export interface TopLevelSidebarSectionProps {
   isDropTargetActive?: boolean;
   /** Project groups nested under a region use the native project sticky tier. */
   stickyTier?: "label" | "project";
+  /** Semantic level for host-owned projected region and project headings. */
+  headingLevel?: 2 | 3;
+  /** Projected regions use the native sidebar's stronger section hierarchy. */
+  labelHierarchy?: "default" | "region";
 }
 
 /**
@@ -83,6 +90,8 @@ export function TopLevelSidebarSection({
   consumeClickSuppression,
   isDropTargetActive = false,
   stickyTier = "label",
+  headingLevel,
+  labelHierarchy = "default",
 }: TopLevelSidebarSectionProps) {
   const threadSplitsEnabled = useThreadSplitsEnabled();
   const collapsedSplitIndicator = useThreadGroupSplitIndicator(
@@ -143,7 +152,9 @@ export function TopLevelSidebarSection({
         className={cn(
           "flex shrink-0 items-center outline-hidden ring-sidebar-ring focus-visible:ring-2",
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
-          CHROME_SECTION_LABEL_CLASS,
+          labelHierarchy === "region"
+            ? SIDEBAR_REGION_SECTION_HEADING_CLASS
+            : CHROME_SECTION_LABEL_CLASS,
           SIDEBAR_STANDARD_ROW_PADDING_CLASS,
           "rounded-md pr-0 transition-colors",
           dragBindings && !dragBindings.disabled && "select-none",
@@ -152,7 +163,12 @@ export function TopLevelSidebarSection({
         {...(dragBindings?.listeners ?? {})}
       >
         <span className="relative z-10 flex min-w-0 flex-1 items-center gap-1 text-left">
-          <span className="min-w-0 truncate" title={label}>
+          <span
+            className="min-w-0 truncate"
+            title={label}
+            role={headingLevel === undefined ? undefined : "heading"}
+            aria-level={headingLevel}
+          >
             {label}
           </span>
           {collapseControl ? (

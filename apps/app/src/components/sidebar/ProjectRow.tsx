@@ -2471,6 +2471,7 @@ function ProjectRowComponent({
           sectionRef={projectRowRef}
           sectionStyle={projectRowStyle}
           stickyTier={headingTier}
+          {...(headingTier === "project" ? { headingLevel: 3 as const } : {})}
         >
           <ProjectThreadTree
             projectId={project.id}

@@ -722,6 +722,8 @@ function CollapsibleProjectionRegion(props: ProjectionRegionProps) {
   return (
     <TopLevelSidebarSection
       label={region.label!}
+      headingLevel={2}
+      labelHierarchy="region"
       collapseControl={{
         isCollapsed: collapsedKeys.has(regionCollapseKey),
         onToggleCollapsed: toggleRegion,
@@ -743,7 +745,11 @@ function ProjectionRegion(props: ProjectionRegionProps) {
     content = <CollapsibleProjectionRegion {...props} />;
   } else {
     content = (
-      <TopLevelSidebarSection label={region.label}>
+      <TopLevelSidebarSection
+        label={region.label}
+        headingLevel={2}
+        labelHierarchy="region"
+      >
         <ProjectionRegionContent {...props} />
       </TopLevelSidebarSection>
     );

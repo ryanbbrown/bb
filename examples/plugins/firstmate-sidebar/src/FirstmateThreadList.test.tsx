@@ -147,7 +147,7 @@ describe("Firstmate ID projection", () => {
           id: "managed-sessions",
           label: "Managed sessions",
           placement: "flow",
-          dividerAfter: false,
+          dividerAfter: true,
           collapsible: false,
           nesting: "flat",
           grouping: {
