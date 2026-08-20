@@ -1,3 +1,7 @@
+// Version 145 closes Pi's prior assistant stream at each assistant
+// `message_start`, so later assistant output uses a new canonical item id.
+// Older daemons can merge separate assistant outputs and prune visible text.
+//
 // Version 144 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
@@ -94,7 +98,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 144 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 145 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —
