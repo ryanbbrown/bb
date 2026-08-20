@@ -66,6 +66,7 @@ import {
 import {
   didThreadDetailBootstrapRefreshAfterMount,
   getLatestPendingInteraction,
+  useChildThreads,
   useProjectThreadSubset,
   useThread,
   useThreadDetailBootstrap,
@@ -78,6 +79,7 @@ import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
 import { subscribeComposerFocusRequests } from "@/lib/composer-focus-requests";
 import { ThreadGitActionDialog } from "@/components/dialogs/ThreadGitActionDialog";
 import { PageShell } from "@/components/ui/page-shell.js";
+import { RouteLoadingSkeleton } from "@/components/ui/route-loading-skeleton";
 import { HEADER_ICON_BUTTON_CLASS } from "@/components/layout/AppPageHeader";
 import {
   ThreadActionsMenu,
@@ -149,20 +151,24 @@ import {
   type ThreadSecondaryPanelFileOpenOptions,
 } from "./useThreadSecondaryPanelVisibility";
 import type { HostConnectionNotice } from "./ThreadTimelinePane";
-import { useThreadStorageViewer } from "@/components/secondary-panel/useThreadStorageViewer";
+import {
+  shouldLoadThreadStorageFileList,
+  useThreadStorageViewer,
+} from "@/components/secondary-panel/useThreadStorageViewer";
 import { getThreadConversationCollapsedAtom } from "@/components/secondary-panel/threadSecondaryPanelAtoms";
 import {
-  HostFilePreviewTabContent,
-  ThreadStorageFilePreviewTabContent,
-  WorkspaceFilePreviewTabContent,
-} from "@/components/secondary-panel/ThreadSecondaryPanelTabContent";
-import { BrowserTabDeck } from "@/components/secondary-panel/BrowserTabDeck";
+  LazyBrowserTabDeck,
+  LazyHostFilePreviewTabContent,
+  LazyNewTabPage,
+  LazyThreadStorageFilePreviewTabContent,
+  LazyThreadTerminalPanel,
+  LazyWorkspaceFilePreviewTabContent,
+} from "@/components/secondary-panel/lazySecondaryPanelComponents";
 import type { BrowserAddressFocusRequest } from "@/components/secondary-panel/BrowserTabContent";
 import {
   SIDE_CHAT_PLUGIN_ID,
   SIDE_CHAT_PLUGIN_PANEL_ACTION_ID,
 } from "@/lib/side-chat-plugin";
-import { NewTabPage } from "@/components/secondary-panel/NewTabPage";
 import { resolveRightPanelFileVisual } from "@/components/secondary-panel/rightPanelFileVisuals";
 import { COARSE_POINTER_COMPACT_ICON_SIZE_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
@@ -245,7 +251,6 @@ import {
 import { resolveGitDiffTabStatus } from "@/components/secondary-panel/gitDiffTabEligibility";
 import { isRootThread } from "./threadParentSelectorOptions";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
-import { ThreadTerminalPanel } from "@/components/thread/terminal/ThreadTerminalPanel";
 import {
   DEFAULT_TERMINAL_COLS,
   DEFAULT_TERMINAL_ROWS,
@@ -512,7 +517,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
   const { isFocused, navigateInPane, onRequestClose, isBoundedPane } =
     usePaneContext();
   const navigate = useNavigate();
-  useFixedPanelTabsStorageMaintenance(threadId);
+  useFixedPanelTabsStorageMaintenance();
   const systemConfigQuery = useSystemConfig();
   const threadDetailBootstrapQuery = useThreadDetailBootstrap(threadId ?? "");
   const hasThreadDetailBootstrapSettled =
@@ -666,7 +671,11 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
   );
   const [browserAddressFocusRequest, setBrowserAddressFocusRequest] =
     useState<BrowserAddressFocusRequest | null>(null);
-  const shouldLoadThreadStorageFiles = thread !== undefined;
+  const shouldLoadThreadStorageFiles = shouldLoadThreadStorageFileList({
+    hasThread: thread !== undefined,
+    isSecondaryPanelOpen,
+    secondaryTabs: fixedPanelTabsState.secondary.tabs,
+  });
   const {
     isThreadStorageFilesLoading,
     refetchThreadStorageFiles,
@@ -748,7 +757,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
         return null;
       }
       return (
-        <BrowserTabDeck
+        <LazyBrowserTabDeck
           browserTabs={browserTabs}
           activeBrowserTabId={activeBrowserTab?.id ?? null}
           addressFocusRequest={browserAddressFocusRequest}
@@ -829,16 +838,10 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
     filters: EMPTY_PROJECT_THREAD_SUBSET_FILTERS,
     projectId,
   });
-  const childThreadSubsetFilters = useMemo<ProjectThreadSubsetFilters>(() => {
-    if (!thread?.id) {
-      return EMPTY_PROJECT_THREAD_SUBSET_FILTERS;
-    }
-    return { parentThreadId: thread.id };
-  }, [thread?.id]);
-  const childThreadSubsetQuery = useProjectThreadSubset({
+  // Children may live in other projects, so the list is keyed by parent only.
+  const childThreadSubsetQuery = useChildThreads({
     enabled: threadQueryState.status === "ready" && Boolean(thread?.id),
-    filters: childThreadSubsetFilters,
-    projectId,
+    parentThreadId: thread?.id,
   });
   const parentThreads = useMemo(
     () =>
@@ -1931,10 +1934,6 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
           ? threadSourceThreadId
           : thread?.parentThreadId;
       if (!thread || !relatedThreadId) return null;
-      const href = getThreadRoutePath({
-        projectId: thread.projectId,
-        threadId: relatedThreadId,
-      });
       // A side chat is a fork too, so it is tested first.
       const relationship = isSideChatThread
         ? "side-chat"
@@ -1943,6 +1942,12 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
           : "parent";
       const relatedThread =
         relationship === "parent" ? parentThread : sourceThread;
+      // A hierarchy parent may live in another project, so the link routes
+      // through the parent's own project once it is loaded.
+      const href = getThreadRoutePath({
+        projectId: relatedThread?.projectId ?? thread.projectId,
+        threadId: relatedThreadId,
+      });
       if (relatedThread === undefined) {
         // Related record not yet loaded — show id-based fallback so the user
         // doesn't get a flicker of "no related thread" before resolution.
@@ -1957,7 +1962,8 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
       if (
         relatedThread.archivedAt !== null ||
         relatedThread.deletedAt !== null ||
-        relatedThread.projectId !== thread.projectId
+        (relationship !== "parent" &&
+          relatedThread.projectId !== thread.projectId)
       ) {
         return null;
       }
@@ -2460,13 +2466,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
   );
 
   if (threadQueryState.status === "loading") {
-    return (
-      <PageShell contentClassName="min-h-full items-center justify-center">
-        <p className="py-12 text-center text-sm text-muted-foreground">
-          Loading...
-        </p>
-      </PageShell>
-    );
+    return <RouteLoadingSkeleton />;
   }
   if (!thread || thread.projectId !== projectId) {
     return (
@@ -2644,6 +2644,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
           : undefined
       }
       environmentGoneStatus={threadEnvironmentGoneStatus}
+      environmentHostId={environment?.hostId}
       isEnvironmentActionPending={requestEnvironmentAction.isPending}
       onCreateNewThreadInWorktree={onCreateNewThreadInWorktree}
       onEscapeEmptyPrompt={undefined}
@@ -2720,7 +2721,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
       original
     );
   const fileTabContent = activeTerminalId ? (
-    <ThreadTerminalPanel
+    <LazyThreadTerminalPanel
       autoFocus={shouldAutoFocusTerminal}
       canCreateTerminal={canCreateTerminal}
       isPanelOpen={isSecondaryPanelOpen}
@@ -2732,7 +2733,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
       target={{ kind: "thread", threadId: thread.id }}
     />
   ) : isNewTabActive ? (
-    <NewTabPage
+    <LazyNewTabPage
       autoFocus={shouldAutoFocusNewTab}
       projectId={projectId ?? undefined}
       environmentId={thread.environmentId ?? null}
@@ -2745,10 +2746,11 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
     />
   ) : activeWorkspaceFilePath ? (
     renderFileOpenerReplacement(
-      <WorkspaceFilePreviewTabContent
+      <LazyWorkspaceFilePreviewTabContent
         activePath={activeWorkspaceFilePath}
         copyPath={workspaceFileCopyPath}
         environmentId={thread.environmentId}
+        isPanelOpen={isSecondaryPanelOpen}
         lineRange={activeWorkspaceFileLineRange}
         markdownLinkRouting={workspaceMarkdownLinkRouting}
         onOpenInEditor={handleOpenFileInEditor}
@@ -2760,10 +2762,11 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
     )
   ) : activeHostFilePath ? (
     renderFileOpenerReplacement(
-      <HostFilePreviewTabContent
+      <LazyHostFilePreviewTabContent
         activePath={activeHostFilePath}
         copyPath={activeHostFilePath}
         environmentId={thread.environmentId}
+        isPanelOpen={isSecondaryPanelOpen}
         lineRange={activeHostFileLineRange}
         markdownLinkRouting={hostMarkdownLinkRouting}
         onOpenInEditor={handleOpenHostFileInEditor}
@@ -2773,9 +2776,10 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
     )
   ) : activeStorageFilePath ? (
     renderFileOpenerReplacement(
-      <ThreadStorageFilePreviewTabContent
+      <LazyThreadStorageFilePreviewTabContent
         activePath={activeStorageFilePath}
         copyPath={storageFileCopyPath}
+        isPanelOpen={isSecondaryPanelOpen}
         lineRange={activeStorageFileLineRange}
         markdownLinkRouting={storageMarkdownLinkRouting}
         onOpenInEditor={handleOpenStorageFileInEditor}
@@ -2832,6 +2836,7 @@ function ThreadDetailViewInternal(props: ThreadDetailViewInternalProps) {
           metadata={{
             thread,
             projectId,
+            parentThreadProjectId: parentThread?.projectId ?? null,
             parentThreadDisplayName: parentThreadDisplayName ?? null,
             parentThreads,
             canAssignToParent,

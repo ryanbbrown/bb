@@ -483,8 +483,7 @@ async function resolveMetadataIfNeeded(
           if (
             !titledThread ||
             !environment ||
-            (titledThread.status !== "active" &&
-              titledThread.status !== "idle")
+            (titledThread.status !== "active" && titledThread.status !== "idle")
           ) {
             return;
           }
@@ -700,14 +699,10 @@ function createPreparedProvisioningEnvironment(
         );
       }
 
-      const environment = createEnvironment(
-        tx,
-        deps.hub,
-        {
-          ...args.environmentInput,
-          status: "ready",
-        },
-      );
+      const environment = createEnvironment(tx, deps.hub, {
+        ...args.environmentInput,
+        status: "ready",
+      });
       if (args.thread.environmentId !== environment.id) {
         updateThread(tx, deps.hub, args.thread.id, {
           environmentId: environment.id,
@@ -1002,13 +997,14 @@ function requestCheckoutUnmanagedEnvironmentProvision(
         threadId: args.thread.id,
         context,
       });
-      const requestedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
-        { db: tx, logger: deps.logger },
-        {
-          environmentId: args.environment.id,
-          event: { type: "provision.requested" },
-        },
-      );
+      const requestedOutcome =
+        applyLoggedEnvironmentLifecycleEventInTransaction(
+          { db: tx, logger: deps.logger },
+          {
+            environmentId: args.environment.id,
+            event: { type: "provision.requested" },
+          },
+        );
       if (requestedOutcome.applied) {
         deps.hub.notifyEnvironment(
           args.environment.id,
@@ -1110,13 +1106,14 @@ async function requestPreparedEnvironmentProvision(
         context,
         environment,
       });
-      const requestedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
-        { db: tx, logger: deps.logger },
-        {
-          environmentId: environment.id,
-          event: { type: "provision.requested" },
-        },
-      );
+      const requestedOutcome =
+        applyLoggedEnvironmentLifecycleEventInTransaction(
+          { db: tx, logger: deps.logger },
+          {
+            environmentId: environment.id,
+            event: { type: "provision.requested" },
+          },
+        );
       if (requestedOutcome.applied) {
         deps.hub.notifyEnvironment(environment.id, requestedOutcome.changes);
       }

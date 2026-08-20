@@ -1,9 +1,4 @@
-import {
-  forwardRef,
-  useState,
-  type ButtonHTMLAttributes,
-  type ReactNode,
-} from "react";
+import { forwardRef, type ButtonHTMLAttributes, type ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import type {
   EnvironmentStatus,
@@ -41,6 +36,7 @@ import {
   PULL_REQUEST_STATE_DISPLAY,
 } from "@/lib/pull-request-display";
 import { PullRequestStatusPill } from "@/components/pull-request/PullRequestStatusPill";
+import { AnimatedBody } from "@/components/promptbox/banner/AnimatedBody";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -638,7 +634,9 @@ function PullRequestBannerLink({
       className={cn(
         "flex items-center gap-1.5 text-xs text-muted-foreground no-underline transition-colors hover:bg-state-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
         PROMPT_STACK_INLAY_SEGMENT_CLASS,
-        SEGMENT_SHRINK_CLASS,
+        // Preserve the checked status pill (min-w-9) plus the inlay's px-2.
+        // Labels may still truncate, but the two status glyphs must not clip.
+        "min-w-13 overflow-hidden",
       )}
     >
       <PullRequestStatusPill pullRequest={pullRequest} className="h-4" />
@@ -659,46 +657,6 @@ function PullRequestBannerLink({
         </span>
       ) : null}
     </a>
-  );
-}
-
-function AnimatedBody({
-  id,
-  labelledBy,
-  isExpanded,
-  children,
-}: {
-  id: string;
-  labelledBy: string;
-  isExpanded: boolean;
-  children: ReactNode;
-}) {
-  // Realize the body only after the first expand, then retain it. A collapsed
-  // body still costs layout for every node inside it, and the changed-files
-  // list can be large, so the DOM must not carry it before anyone opens it.
-  const [hasRealizedBody, setHasRealizedBody] = useState(isExpanded);
-  if (isExpanded && !hasRealizedBody) {
-    setHasRealizedBody(true);
-  }
-  const isBodyRealized = hasRealizedBody || isExpanded;
-
-  return (
-    <section
-      id={id}
-      role="region"
-      aria-labelledby={labelledBy}
-      aria-hidden={!isExpanded}
-      className={cn(
-        "grid overflow-hidden transition-[grid-template-rows,opacity,border-color] duration-200 ease-out",
-        isExpanded
-          ? "grid-rows-[1fr] border-t border-border opacity-100"
-          : "pointer-events-none grid-rows-[0fr] border-t border-transparent opacity-0",
-      )}
-    >
-      <div className="overflow-hidden bg-popover">
-        {isBodyRealized ? children : null}
-      </div>
-    </section>
   );
 }
 
@@ -797,6 +755,7 @@ function ActiveChildThreadsCard({
         </button>
       </div>
       <AnimatedBody
+        collapsedBorder="reserve"
         id={SECTION_IDS.childThreads.body}
         labelledBy={SECTION_IDS.childThreads.toggle}
         isExpanded={isExpanded}
@@ -882,6 +841,7 @@ function ReadOnlyContextBanner({
       </div>
       {parentThreadSection ? (
         <AnimatedBody
+          collapsedBorder="reserve"
           id={SECTION_IDS.parentThread.body}
           labelledBy={SECTION_IDS.parentThread.toggle}
           isExpanded={isParentThreadExpanded}
@@ -1142,6 +1102,7 @@ export function ThreadPromptContextBanner({
         </div>
         {showParentThread && parentThreadSection && !isParentThreadOnly ? (
           <AnimatedBody
+            collapsedBorder="reserve"
             id={SECTION_IDS.parentThread.body}
             labelledBy={SECTION_IDS.parentThread.toggle}
             isExpanded={isParentThreadExpanded}
@@ -1155,6 +1116,7 @@ export function ThreadPromptContextBanner({
         ) : null}
         {showGit ? (
           <AnimatedBody
+            collapsedBorder="reserve"
             id={SECTION_IDS.git.body}
             labelledBy={SECTION_IDS.git.toggle}
             isExpanded={isGitExpanded}
@@ -1176,7 +1138,7 @@ export function ThreadPromptContextBanner({
 
   if (activeChildThreadsCard && compactContextBanner) {
     return (
-      <div className="space-y-2">
+      <div className="min-w-0 space-y-2">
         {activeChildThreadsCard}
         {compactContextBanner}
       </div>

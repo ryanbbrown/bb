@@ -44,11 +44,7 @@ import {
   DropdownMenuTrigger,
 } from "@bb/shared-ui/dropdown-menu";
 import { Icon } from "@bb/shared-ui/icon";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@bb/shared-ui/tooltip";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@bb/shared-ui/tooltip";
 import {
   BranchPicker,
   getMergeBaseBranchCandidateGroups,
@@ -86,14 +82,12 @@ import { useUrlAnchorClickHandler } from "@/lib/url-open-routing";
 // without bypassing the production rendering path.
 // ---------------------------------------------------------------------------
 
-const GITHUB_FAVICON_URL =
-  "https://github.githubassets.com/favicons/favicon.png";
-const GITHUB_DARK_FAVICON_URL =
-  "https://github.githubassets.com/favicons/favicon-dark.png";
-
 export interface ParentSelectorRowProps {
   thread: Thread;
   projectId: string;
+  // Project of the current parent thread. A parent may live in another project,
+  // so the link routes through it. Null until the parent record loads.
+  parentThreadProjectId: string | null;
   parentThreadDisplayName: string | null;
   parentThreads: readonly ThreadListEntry[];
   canAssignToParent: boolean;
@@ -111,6 +105,7 @@ export interface ParentSelectorRowProps {
 export function ParentSelectorRow({
   thread,
   projectId,
+  parentThreadProjectId,
   parentThreadDisplayName,
   parentThreads,
   canAssignToParent,
@@ -156,7 +151,10 @@ export function ParentSelectorRow({
           )}
         >
           <Link
-            to={getThreadRoutePath({ projectId, threadId: parentThreadId })}
+            to={getThreadRoutePath({
+              projectId: parentThreadProjectId ?? projectId,
+              threadId: parentThreadId,
+            })}
             className={cn(
               "min-w-0 truncate text-foreground no-underline transition-[text-decoration-color] duration-150 hover:underline hover:underline-offset-2",
               COARSE_POINTER_TEXT_SM_CLASS,
@@ -501,20 +499,7 @@ export function PullRequestRow({ pullRequest }: PullRequestRowProps) {
         {showGithubCheckIcon ? (
           <PullRequestGithubCheckIcon pullRequest={pullRequest} />
         ) : (
-          <>
-            <img
-              src={GITHUB_FAVICON_URL}
-              alt=""
-              className="size-4 shrink-0 dark:hidden"
-              aria-hidden="true"
-            />
-            <img
-              src={GITHUB_DARK_FAVICON_URL}
-              alt=""
-              className="hidden size-4 shrink-0 dark:block"
-              aria-hidden="true"
-            />
-          </>
+          <Icon name="Github" className="size-4 shrink-0" aria-hidden="true" />
         )}
         <span className="shrink-0 text-muted-foreground">
           #{pullRequest.number}
@@ -897,6 +882,7 @@ export function ThreadStorageRow({
 export interface ThreadMetadataContentProps {
   thread: Thread;
   projectId: string;
+  parentThreadProjectId: string | null;
   parentThreadDisplayName: string | null;
   parentThreads: readonly ThreadListEntry[];
   canAssignToParent: boolean;
@@ -1013,6 +999,7 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
   const {
     thread,
     projectId,
+    parentThreadProjectId,
     parentThreadDisplayName,
     parentThreads,
     canAssignToParent,
@@ -1047,6 +1034,7 @@ export function ThreadMetadataContent(props: ThreadMetadataContentProps) {
       <ParentSelectorRow
         thread={thread}
         projectId={projectId}
+        parentThreadProjectId={parentThreadProjectId}
         parentThreadDisplayName={parentThreadDisplayName}
         parentThreads={parentThreads}
         canAssignToParent={canAssignToParent}

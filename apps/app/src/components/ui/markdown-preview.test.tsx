@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import {
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MarkdownPreview } from "./markdown-preview";
 import {
@@ -66,6 +72,132 @@ describe("MarkdownPreview", () => {
     expect(observed).toHaveLength(1);
     expect(observed[0]?.hasAttribute("data-markdown-preview")).toBe(true);
     expect(breakout?.style.getPropertyValue("--md-content-w")).toBe("320px");
+  });
+
+  it("caps the table breakout at the nearest horizontally clipped ancestor", () => {
+    class ResizeObserverMock {
+      constructor(_callback: ResizeObserverCallback) {}
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    // Every element is 300px wide at x=100 unless it sets data-left/data-width.
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      function (this: HTMLElement) {
+        const left = Number(this.dataset.left ?? 100);
+        const width = Number(this.dataset.width ?? 300);
+        return {
+          bottom: 10,
+          height: 10,
+          left,
+          right: left + width,
+          top: 0,
+          width,
+          x: left,
+          y: 0,
+          toJSON: () => ({}),
+        };
+      },
+    );
+    vi.spyOn(Element.prototype, "clientWidth", "get").mockImplementation(
+      function (this: Element) {
+        return Number((this as HTMLElement).dataset.width ?? 300);
+      },
+    );
+
+    const renderClipped = (clipWidth: number) =>
+      render(
+        <div
+          data-left="0"
+          data-width={String(clipWidth)}
+          style={{ overflowX: "hidden" }}
+        >
+          <MarkdownPreview content={"| A |\n| - |\n| B |"} />
+        </div>,
+      );
+
+    // The clip ends where the content ends: no room on the right, no breakout.
+    const flush = renderClipped(400);
+    const flushBreakout =
+      flush.container.querySelector("table")?.parentElement?.parentElement;
+    expect(
+      flushBreakout?.style.getPropertyValue("--md-table-breakout-max"),
+    ).toBe("300px");
+    flush.unmount();
+
+    // 100px free on the left and 200px on the right: grow by the smaller side.
+    const roomy = renderClipped(600);
+    const roomyBreakout =
+      roomy.container.querySelector("table")?.parentElement?.parentElement;
+    expect(
+      roomyBreakout?.style.getPropertyValue("--md-table-breakout-max"),
+    ).toBe("500px");
+    roomy.unmount();
+
+    // The preview root itself clips: the table must not leave the preview.
+    const sheet = document.createElement("style");
+    sheet.textContent = ".overflow-x-hidden { overflow-x: hidden; }";
+    document.head.appendChild(sheet);
+    const rooted = render(
+      <div data-left="0" data-width="600">
+        <MarkdownPreview
+          className="overflow-x-hidden"
+          content={"| A |\n| - |\n| B |"}
+        />
+      </div>,
+    );
+    const rootedBreakout =
+      rooted.container.querySelector("table")?.parentElement?.parentElement;
+    expect(
+      rootedBreakout?.style.getPropertyValue("--md-table-breakout-max"),
+    ).toBe("300px");
+    sheet.remove();
+  });
+
+  it("skips height-only resize events for tables", () => {
+    let callback: ResizeObserverCallback | null = null;
+    class ResizeObserverMock {
+      constructor(cb: ResizeObserverCallback) {
+        callback = cb;
+      }
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    }
+    vi.stubGlobal("ResizeObserver", ResizeObserverMock);
+    let width = 320;
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+      () => ({
+        bottom: 0,
+        height: 0,
+        left: 0,
+        right: width,
+        top: 0,
+        width,
+        x: 0,
+        y: 0,
+        toJSON: () => ({}),
+      }),
+    );
+
+    const { container } = render(
+      <MarkdownPreview content={"| A |\n| - |\n| B |"} />,
+    );
+    const breakout = container.querySelector("table")?.parentElement
+      ?.parentElement as HTMLElement;
+    expect(breakout.style.getPropertyValue("--md-content-w")).toBe("320px");
+    expect(callback).not.toBeNull();
+
+    // Same width, different height: no style write.
+    breakout.style.setProperty("--md-content-w", "sentinel");
+    callback!([], {} as ResizeObserver);
+    expect(breakout.style.getPropertyValue("--md-content-w")).toBe("sentinel");
+
+    // A width change re-measures.
+    width = 480;
+    callback!([], {} as ResizeObserver);
+    expect(breakout.style.getPropertyValue("--md-content-w")).toBe("480px");
   });
 
   it("keeps the starting number of an ordered list", () => {
@@ -248,12 +380,14 @@ describe("MarkdownPreview", () => {
     );
   });
 
-  it("renders inline LaTeX math with KaTeX", () => {
+  it("renders inline LaTeX math with KaTeX", async () => {
     const { container } = render(
       <MarkdownPreview content={"Mass-energy is $$E = mc^2$$ exactly."} />,
     );
 
-    expect(container.querySelector(".katex")).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector(".katex")).not.toBeNull(),
+    );
     expect(container.querySelector(".katex-display")).toBeNull();
   });
 
@@ -269,12 +403,14 @@ describe("MarkdownPreview", () => {
     expect(container.textContent).toContain("$x$");
   });
 
-  it("renders display LaTeX math blocks with KaTeX", () => {
+  it("renders display LaTeX math blocks with KaTeX", async () => {
     const { container } = render(
       <MarkdownPreview content={"$$\n\\frac{1}{2} + \\frac{1}{2} = 1\n$$"} />,
     );
 
-    expect(container.querySelector(".katex-display")).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector(".katex-display")).not.toBeNull(),
+    );
   });
 
   it("leaves escaped dollar amounts as literal text", () => {
@@ -287,7 +423,7 @@ describe("MarkdownPreview", () => {
     expect(container.textContent).toContain("$10");
   });
 
-  it("renders math while still sanitizing untrusted HTML when allowHtml is set", () => {
+  it("renders math while still sanitizing untrusted HTML when allowHtml is set", async () => {
     const { container } = render(
       <MarkdownPreview
         allowHtml
@@ -295,17 +431,21 @@ describe("MarkdownPreview", () => {
       />,
     );
 
-    expect(container.querySelector(".katex")).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector(".katex")).not.toBeNull(),
+    );
     expect(container.querySelector("script")).toBeNull();
     expect(container.textContent).not.toContain("alert(1)");
   });
 
-  it("contains invalid TeX instead of throwing", () => {
+  it("contains invalid TeX instead of throwing", async () => {
     const { container } = render(
       <MarkdownPreview content={"Broken: $$\\frac{1}{$$ keeps rendering."} />,
     );
 
-    expect(container.querySelector(".katex-error")).not.toBeNull();
+    await waitFor(() =>
+      expect(container.querySelector(".katex-error")).not.toBeNull(),
+    );
     expect(container.textContent).toContain("keeps rendering.");
   });
 });

@@ -873,7 +873,12 @@ export async function getWorkspaceGitOperation(
     // --no-optional-locks: status must not take index.lock, or background
     // polling races concurrent commits in the same checkout.
     runGit(
-      ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
+      [
+        "--no-optional-locks",
+        "status",
+        "--porcelain=v1",
+        "--untracked-files=all",
+      ],
       { cwd },
     ),
   ]);
@@ -1090,7 +1095,10 @@ function resolvePreferredLocalDefaultBranch(
   localBranches: readonly string[],
   originDefaultBranchName: string | undefined,
 ): string | undefined {
-  if (originDefaultBranchName && localBranches.includes(originDefaultBranchName)) {
+  if (
+    originDefaultBranchName &&
+    localBranches.includes(originDefaultBranchName)
+  ) {
     return originDefaultBranchName;
   }
   if (localBranches.includes("main")) {
@@ -1216,7 +1224,12 @@ async function readDefaultBranchRelation(
     return "equal";
   }
 
-  const localIsAncestor = await isAncestorRef(cwd, localRef, originRef, options);
+  const localIsAncestor = await isAncestorRef(
+    cwd,
+    localRef,
+    originRef,
+    options,
+  );
   if (localIsAncestor === true) {
     return "local-behind";
   }
@@ -1224,7 +1237,12 @@ async function readDefaultBranchRelation(
     return "unknown";
   }
 
-  const originIsAncestor = await isAncestorRef(cwd, originRef, localRef, options);
+  const originIsAncestor = await isAncestorRef(
+    cwd,
+    originRef,
+    localRef,
+    options,
+  );
   if (originIsAncestor === true) {
     return "local-ahead";
   }
@@ -1294,7 +1312,10 @@ export async function fetchRemoteBranches(
     });
     return { status: result.exitCode === 0 ? "fetched" : "failed" };
   } catch (error) {
-    if (error instanceof WorkspaceError && error.code === "git_command_timeout") {
+    if (
+      error instanceof WorkspaceError &&
+      error.code === "git_command_timeout"
+    ) {
       return { status: "failed" };
     }
     throw error;
@@ -1504,7 +1525,12 @@ export async function listGitWorktrees(
 export async function hasUncommittedChanges(cwd: string): Promise<boolean> {
   await ensureGitRepo(cwd);
   const status = await runGit(
-    ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
+    [
+      "--no-optional-locks",
+      "status",
+      "--porcelain=v1",
+      "--untracked-files=all",
+    ],
     { cwd },
   );
   return status.stdout.trim().length > 0;

@@ -233,8 +233,12 @@ export interface PluginCatalogSearchEntry {
   description: string;
   icon: string | null;
   iconUrl: string | null;
+  /** Mask `iconUrl` with the text color instead of showing its own colors. */
+  iconTinted: boolean;
   category: string;
   source: string;
+  /** Public repository or package page of the entry's code; null when none. */
+  repositoryUrl: string | null;
   marketplace: string;
   marketplaceDisplayName: string;
   /** Stable publisher identity, for grouping; never the label, which a
@@ -259,8 +263,10 @@ function toPluginCatalogSearchEntry(
     description: data.description,
     icon: data.icon,
     iconUrl: data.iconUrl,
+    iconTinted: data.iconTinted,
     category: data.category,
     source: data.source,
+    repositoryUrl: data.repositoryUrl,
     marketplace: data.marketplace,
     marketplaceDisplayName: data.marketplaceDisplayName,
     publisherKey: data.publisherKey,

@@ -54,6 +54,10 @@ vi.mock("./SidebarUpdatesBadge", () => ({
   SidebarUpdatesBadge: () => null,
 }));
 
+vi.mock("./SidebarPluginAttentionGlyph", () => ({
+  SidebarPluginAttentionGlyph: () => null,
+}));
+
 vi.mock("./SidebarHistoryNavigationControls", () => ({
   SidebarHistoryNavigationControls: () => null,
 }));

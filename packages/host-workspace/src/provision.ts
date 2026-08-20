@@ -1,9 +1,6 @@
 import { mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
-import type {
-  ProvisioningTranscriptEntry,
-  WorkspaceStatus,
-} from "@bb/domain";
+import type { ProvisioningTranscriptEntry, WorkspaceStatus } from "@bb/domain";
 import type {
   CommitOptions,
   CommitResult,

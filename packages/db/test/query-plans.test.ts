@@ -21,6 +21,7 @@ import {
   listLatestOpenBackgroundTaskStateRowsForThread,
   listStoredConversationOutlineEventRows,
   listStoredEventRows,
+  listStoredEventRowsByParentToolCallIds,
   pruneContextWindowUsageEventsBeforeSequence,
   pruneResolvedItemDeltas,
 } from "../src/data/events.js";
@@ -262,6 +263,7 @@ describe("slow query index plans", () => {
         scope: turnScope(turnId),
         itemId: null,
         itemKind: null,
+        parentToolCallId: null,
         data: JSON.stringify({ providerThreadId: "provider-plan" }),
       },
       {
@@ -271,6 +273,7 @@ describe("slow query index plans", () => {
         scope: turnScope(turnId),
         itemId,
         itemKind: "agentMessage",
+        parentToolCallId: null,
         data: JSON.stringify({
           providerThreadId: "provider-plan",
           item: { type: "agentMessage", id: itemId, text: "done" },
@@ -288,6 +291,7 @@ describe("slow query index plans", () => {
             scope: turnScope(turnId),
             itemId,
             itemKind: "agentMessage",
+            parentToolCallId: null,
             providerThreadId: "provider-plan",
             data: JSON.stringify({
               providerThreadId: "provider-plan",
@@ -351,6 +355,30 @@ describe("slow query index plans", () => {
     db.$client.close();
   });
 
+  it("loads parented timeline rows through the normalized parent index", () => {
+    const { db, thread } = setup();
+
+    const [query] = captureStatements(db, () => {
+      expect(
+        listStoredEventRowsByParentToolCallIds(db, {
+          maxInlineOutputChars: null,
+          parentToolCallIds: ["parent-tool-call"],
+          threadId: thread.id,
+        }),
+      ).toEqual([]);
+    });
+    if (!query) {
+      throw new Error("Expected the parented timeline row lookup SQL");
+    }
+    expect(
+      queryPlanDetails({ db, params: query.params, sql: query.sql }),
+    ).toMatch(
+      /SEARCH events USING INDEX events_parent_tool_call_thread_parent_sequence_idx/u,
+    );
+
+    db.$client.close();
+  });
+
   it("scans background-task history once without a completed-set join", () => {
     const { db, thread } = setup();
 
@@ -380,44 +408,61 @@ describe("slow query index plans", () => {
   });
 
   it("uses selective indexes for conversation-outline events", () => {
-    const { db, logger, thread } = setup();
+    const { db, thread } = setup();
 
-    listStoredConversationOutlineEventRows(db, { threadId: thread.id });
-
-    const debugLog = findOnlyDebugLog({
-      logger,
-      predicate: (fields) =>
-        fields.operation === "all" && fields.sql.includes('from "events"'),
+    // The slow-query log truncates this union past 1,000 chars; capture the
+    // statement itself.
+    const captured = captureStatements(db, () => {
+      listStoredConversationOutlineEventRows(db, { threadId: thread.id });
     });
-    assertEmittedQueryPlanUsesIndex({
+    const outline = captured.filter((query) =>
+      query.sql.includes('from "events"'),
+    );
+    expect(outline).toHaveLength(1);
+    const [query] = outline;
+    expect(query?.params).toEqual([
+      thread.id,
+      "client/turn/requested",
+      "turn/input/accepted",
+      "turn/started",
+      "turn/completed",
+      "system/manager/user_message",
+      "system/thread/interrupted",
+      "system/error",
+      "provider/error",
+      "system/userQuestion/lifecycle",
+      "item/agentMessage/delta",
+      "item/plan/delta",
+      thread.id,
+      "item/completed",
+      "agentMessage",
+      "plan",
+      thread.id,
+      "item/started",
+      "item/completed",
+      "item/backgroundTask/progress",
+      "item/backgroundTask/completed",
+      "backgroundTask",
+      "toolCall",
+    ]);
+    const details = queryPlanDetails({
       db,
-      debugLog,
-      indexName: "events_thread_type_item_kind_sequence_idx",
-      params: [
-        thread.id,
-        "client/turn/requested",
-        "turn/input/accepted",
-        "turn/started",
-        "turn/completed",
-        "system/manager/user_message",
-        "system/thread/interrupted",
-        "system/error",
-        "provider/error",
-        "item/agentMessage/delta",
-        "item/plan/delta",
-        thread.id,
-        "item/completed",
-        "agentMessage",
-        "plan",
-        thread.id,
-        "item/started",
-        "item/completed",
-        "item/backgroundTask/progress",
-        "item/backgroundTask/completed",
-        "backgroundTask",
-        "toolCall",
-      ],
+      params: query?.params ?? [],
+      sql: query?.sql ?? "",
     });
+    // Each union branch stays on a thread/type index (the lifecycle branch has
+    // no item kind); the superseded-snapshot check on the structural branch
+    // probes the background-task partial index instead of scanning.
+    expect(
+      details.match(/USING INDEX events_thread_type_sequence_idx/gu),
+    ).toHaveLength(1);
+    expect(
+      details.match(/USING INDEX events_thread_type_item_kind_sequence_idx/gu),
+    ).toHaveLength(2);
+    expect(details).toMatch(
+      /USING COVERING INDEX events_background_task_thread_type_item_sequence_idx/u,
+    );
+    expect(details).not.toMatch(/SCAN events/u);
 
     db.$client.close();
   });
@@ -558,6 +603,7 @@ describe("slow query index plans", () => {
         }),
         itemId: null,
         itemKind: null,
+        parentToolCallId: null,
         scope: turnScope("turn_query_plan"),
         sequence: 1,
         threadId: thread.id,
@@ -572,6 +618,7 @@ describe("slow query index plans", () => {
         }),
         itemId: null,
         itemKind: null,
+        parentToolCallId: null,
         scope: turnScope("turn_query_plan"),
         sequence: 2,
         threadId: thread.id,
@@ -581,6 +628,7 @@ describe("slow query index plans", () => {
         data: "{}",
         itemId: null,
         itemKind: null,
+        parentToolCallId: null,
         scope: threadScope(),
         sequence: 3,
         threadId: thread.id,
@@ -707,6 +755,7 @@ describe("slow query index plans", () => {
         }),
         itemId: "cmd-truncation-query-plan",
         itemKind: "commandExecution",
+        parentToolCallId: null,
         scope: turnScope("turn_truncation_query_plan"),
         sequence: 1,
         threadId: thread.id,
@@ -754,6 +803,7 @@ describe("slow query index plans", () => {
         data: JSON.stringify({ output: "first", parentToolCallId: "parent" }),
         itemId,
         itemKind: null,
+        parentToolCallId: "parent",
         scope: turnScope(turnId),
         sequence: 1,
         threadId: thread.id,
@@ -763,6 +813,7 @@ describe("slow query index plans", () => {
         data: JSON.stringify({ output: "second", parentToolCallId: "parent" }),
         itemId,
         itemKind: null,
+        parentToolCallId: "parent",
         scope: turnScope(turnId),
         sequence: 2,
         threadId: thread.id,
@@ -779,6 +830,7 @@ describe("slow query index plans", () => {
         }),
         itemId,
         itemKind: "commandExecution",
+        parentToolCallId: "parent",
         scope: turnScope(turnId),
         sequence: 3,
         threadId: thread.id,
@@ -838,6 +890,7 @@ describe("slow query index plans", () => {
         data: JSON.stringify({ goal: "guard the query plan" }),
         itemId: null,
         itemKind: null,
+        parentToolCallId: null,
         scope: threadScope(),
         sequence: 1,
         threadId: thread.id,

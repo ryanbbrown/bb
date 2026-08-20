@@ -47,7 +47,6 @@ import {
 } from "@/hooks/queries/project-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
 import { useSystemConfig } from "@/hooks/queries/system-queries";
-import { useThreads } from "@/hooks/queries/thread-queries";
 import { useCommandSuggestions } from "@/hooks/useCommandSuggestions";
 import {
   usePromptDraftStorage,
@@ -58,6 +57,7 @@ import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
 import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import { promptHistoryEntriesToDrafts } from "@/lib/prompt-history";
+import { usePromptHistoryEnabled } from "@/hooks/usePromptHistoryEnabled";
 import {
   arePromptDraftStatesEqual,
   getProjectStoredPromptAttachmentPaths,
@@ -117,7 +117,8 @@ export interface NewThreadComposerPromptOptions {
   header?: ReactNode;
   externallyBlocked?: boolean;
   resolveMentionLink?: PromptMentionLinkResolver;
-  pluginComposerHost?: PluginComposerHost | null;
+  /** Override the host bound to this prompt box; omission uses this Composer's host. */
+  pluginComposerHost?: PluginComposerHost;
   textEffects?: NewThreadPromptBoxProps["textEffects"];
   allowNoProject?: boolean;
   createProject?: ProjectSelectorCreateProjectConfig;
@@ -133,7 +134,6 @@ export interface NewThreadComposerState {
   isProjectless: boolean;
   projects: readonly SidebarProject[] | undefined;
   sidebarNavigation: SidebarBootstrapResponse | undefined;
-  sidebarNavigationSettled: boolean;
   sidebarNavigationError: boolean;
   currentProject: SidebarProject | undefined;
   projectSources: SidebarProject["sources"];
@@ -317,18 +317,34 @@ export function NewThreadComposer({
   const promptBoxRef = useRef<PromptBoxHandle>(null);
 
   const sidebarNavigationQuery = useSidebarNavigation();
+  // Until the sidebar bootstrap settles, `projectId` below is only the
+  // requested candidate: it may not exist and would then fall back to the
+  // personal project. Queries keyed by projectId wait for the settled value
+  // so a cold start does not fetch (and cache) data for the wrong project.
   const projects = useMemo(
     () => sidebarNavigationQuery.data?.projects.map(stripProjectThreads),
     [sidebarNavigationQuery.data],
   );
+  const requestedCandidate = requestedProjectId ?? PERSONAL_PROJECT_ID;
+  const candidateKnown =
+    isProjectlessProjectId(requestedCandidate) ||
+    (projects?.some((project) => project.id === requestedCandidate) ?? false);
+  // Replayed bootstrap data (a placeholder from the last page load) may not
+  // know a project that was created since. It must not demote that project
+  // to the personal project: a submit in that window would create the thread
+  // in the wrong project. Treat the replay as settled only when it already
+  // knows the requested project; otherwise hold the candidate and wait for
+  // the live response.
+  const replayKnowsCandidate =
+    !sidebarNavigationQuery.isPlaceholderData || candidateKnown;
+  const sidebarNavigationSettled =
+    sidebarNavigationQuery.isError ||
+    (sidebarNavigationQuery.isSuccess && replayKnowsCandidate);
   const projectId = useMemo(() => {
-    const candidate = requestedProjectId ?? PERSONAL_PROJECT_ID;
-    if (isProjectlessProjectId(candidate)) return PERSONAL_PROJECT_ID;
-    if (!projects) return candidate;
-    return projects.some((project) => project.id === candidate)
-      ? candidate
-      : PERSONAL_PROJECT_ID;
-  }, [projects, requestedProjectId]);
+    if (isProjectlessProjectId(requestedCandidate)) return PERSONAL_PROJECT_ID;
+    if (!projects || !replayKnowsCandidate) return requestedCandidate;
+    return candidateKnown ? requestedCandidate : PERSONAL_PROJECT_ID;
+  }, [candidateKnown, projects, replayKnowsCandidate, requestedCandidate]);
   const isProjectless = isProjectlessProjectId(projectId);
   const currentProject = useMemo(() => {
     if (isProjectless) {
@@ -372,21 +388,31 @@ export function NewThreadComposer({
       ? null
       : new Map(hosts.map((host) => [host.id, host.name]));
   }, [hostsQuery.data]);
-  const threadsQuery = useThreads(
-    { projectId, archived: false },
-    { enabled: Boolean(projectId) },
-  );
+  // The sidebar bootstrap already carries every unarchived thread of the
+  // selected project. Discovery adds user-managed worktrees that have no bb
+  // environment yet.
+  const projectThreads = useMemo(() => {
+    const navigation = sidebarNavigationQuery.data;
+    if (!navigation) return undefined;
+    if (isProjectless) return navigation.personalProject.threads;
+    return navigation.projects.find((project) => project.id === projectId)
+      ?.threads;
+  }, [isProjectless, projectId, sidebarNavigationQuery.data]);
   const worktreesQuery = useProjectWorktrees(projectId, {
     enabled: !isProjectless,
   });
+  const reuseThreadOptionsLoading =
+    !isProjectless &&
+    (worktreesQuery.isLoading ||
+      (projectThreads === undefined && !sidebarNavigationSettled));
   const reuseThreadOptions = useMemo(
     () =>
       buildReuseThreadOptions(
-        threadsQuery.data ?? [],
+        projectThreads ?? [],
         worktreesQuery.data?.worktrees ?? [],
         worktreeHostNameById,
       ),
-    [threadsQuery.data, worktreeHostNameById, worktreesQuery.data?.worktrees],
+    [projectThreads, worktreeHostNameById, worktreesQuery.data?.worktrees],
   );
 
   const seedSignature = JSON.stringify([
@@ -421,7 +447,7 @@ export function NewThreadComposer({
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: worktreesQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       isProjectless,
@@ -429,7 +455,7 @@ export function NewThreadComposer({
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      worktreesQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   const projectDefaultsQuery = useProjectDefaultExecutionOptions(
@@ -552,7 +578,7 @@ export function NewThreadComposer({
         primaryHostId,
         projectSources,
         reuseThreadOptions,
-        reuseThreadOptionsLoading: worktreesQuery.isLoading,
+        reuseThreadOptionsLoading,
       }),
     [
       environmentSelectionValue,
@@ -561,7 +587,7 @@ export function NewThreadComposer({
       primaryHostId,
       projectSources,
       reuseThreadOptions,
-      worktreesQuery.isLoading,
+      reuseThreadOptionsLoading,
     ],
   );
   const parsedEnvironment = useMemo(
@@ -901,6 +927,10 @@ export function NewThreadComposer({
     [navigate, projectId],
   );
   const [commandQuery, setCommandQuery] = useState<string | null>(null);
+  const [hasComposerFocused, setHasComposerFocused] = useState(false);
+  const handleEditorFocus = useCallback(() => {
+    setHasComposerFocused(true);
+  }, []);
   const providerPromptActions = useMemo(
     () => buildProviderPromptActionProps(selectedProviderComposerActions),
     [selectedProviderComposerActions],
@@ -918,9 +948,13 @@ export function NewThreadComposer({
     environmentId: reuseEnvironmentId,
     hostId: projectHostId,
     query: commandQuery,
+    composerFocused: hasComposerFocused,
   });
-  const { data: projectPromptHistory = [] } =
-    useProjectPromptHistory(projectId);
+  const promptHistoryEnabled = usePromptHistoryEnabled();
+  const { data: projectPromptHistory = [] } = useProjectPromptHistory(
+    projectId,
+    { enabled: promptHistoryEnabled && sidebarNavigationSettled },
+  );
   const promptHistoryDrafts = useMemo(
     () => promptHistoryEntriesToDrafts(projectPromptHistory),
     [projectPromptHistory],
@@ -1154,8 +1188,8 @@ export function NewThreadComposer({
           disabled={baseSubmitDisabled || externallyBlocked}
           placeholder={options.placeholder}
           autoFocus={options.autoFocus}
-          pluginComposerHost={options.pluginComposerHost}
-          textEffects={options.textEffects}
+          pluginComposerHost={options.pluginComposerHost ?? pluginComposerHost}
+          textEffects={options.textEffects ?? textEffects}
           zenModeStorageKey={options.zenModeStorageKey}
           history={{
             currentDraft,
@@ -1182,6 +1216,7 @@ export function NewThreadComposer({
               isLoadingMore: commandSuggestions.isLoadingMore,
               loadMore: commandSuggestions.loadMore,
               onQueryChange: setCommandQuery,
+              onEditorFocus: handleEditorFocus,
             },
           }}
           attachments={{
@@ -1279,6 +1314,7 @@ export function NewThreadComposer({
             onChange: handleProjectChange,
             allowNoProject: options.allowNoProject,
             createProject: options.createProject,
+            isLoading: !sidebarNavigationSettled,
             disabled:
               locks.project ||
               isUploading ||
@@ -1342,6 +1378,7 @@ export function NewThreadComposer({
       handleCreateBranch,
       handleCreateBranchFrom,
       handleContinueBranch,
+      handleEditorFocus,
       handleModelChange,
       handlePermissionChange,
       handleProjectChange,
@@ -1370,6 +1407,7 @@ export function NewThreadComposer({
       promptDraft,
       promptHistoryDrafts,
       promptMentions,
+      pluginComposerHost,
       providerOptions,
       reasoningLevel,
       reasoningOptions,
@@ -1381,8 +1419,10 @@ export function NewThreadComposer({
       selectedProviderId,
       serviceTier,
       serviceTierSupportByProvider,
+      sidebarNavigationSettled,
       supportsPermissionModeSelection,
       supportsServiceTier,
+      textEffects,
       worktreeDisabledReason,
       worktreeUnavailable,
     ],
@@ -1393,8 +1433,6 @@ export function NewThreadComposer({
     isProjectless,
     projects,
     sidebarNavigation: sidebarNavigationQuery.data,
-    sidebarNavigationSettled:
-      sidebarNavigationQuery.isSuccess || sidebarNavigationQuery.isError,
     sidebarNavigationError: sidebarNavigationQuery.isError,
     currentProject,
     projectSources,

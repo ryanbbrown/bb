@@ -103,14 +103,36 @@ function queryInSqliteVariableBatches<TValue, TRow>(
   return rows;
 }
 
-const isRootTurnStartedEventData = sql`COALESCE(json_extract(${events.data}, '$.parentToolCallId'), '') = ''`;
+const isRootTurnStartedEventData = isNull(events.parentToolCallId);
 const isNotNestedTurnUsageEvent = sql`NOT EXISTS (
   SELECT 1
   FROM events AS nested_turn_started
   WHERE nested_turn_started.thread_id = ${events.threadId}
     AND nested_turn_started.turn_id = ${events.turnId}
     AND nested_turn_started.type = 'turn/started'
-    AND COALESCE(json_extract(nested_turn_started.data, '$.parentToolCallId'), '') <> ''
+    AND nested_turn_started.parent_tool_call_id IS NOT NULL
+)`;
+
+/**
+ * A background-task progress row that a later progress or completed row for
+ * the same item supersedes. Each snapshot carries the full task state (a
+ * workflow snapshot with hundreds of agents is hundreds of KB), consumers
+ * replace rather than merge, and `pruneBackgroundTaskProgressEvents` deletes
+ * superseded rows on its own cadence. Timeline reads skip them so a burst of
+ * snapshots between prunes cannot spend the page byte budget on rows that
+ * project to nothing.
+ */
+const isNotSupersededBackgroundTaskProgress = sql`NOT (
+  ${events.type} = 'item/backgroundTask/progress'
+  AND EXISTS (
+    SELECT 1
+    FROM events AS newer_task_state
+    WHERE newer_task_state.thread_id = ${events.threadId}
+      AND newer_task_state.item_kind = 'backgroundTask'
+      AND newer_task_state.item_id = ${events.itemId}
+      AND newer_task_state.type IN ('item/backgroundTask/progress', 'item/backgroundTask/completed')
+      AND newer_task_state.sequence > ${events.sequence}
+  )
 )`;
 
 export interface InsertEventInput {
@@ -122,6 +144,7 @@ export interface InsertEventInput {
   type: ThreadEventType;
   itemId: string | null;
   itemKind: ThreadEventItemType | null;
+  parentToolCallId: string | null;
   createdAt?: number;
   data: string;
 }
@@ -136,6 +159,7 @@ export interface AppendDaemonEventInput {
   environmentId: string | null;
   itemId: string | null;
   itemKind: ThreadEventItemType | null;
+  parentToolCallId: string | null;
   providerThreadId: string | null;
   scope: ThreadEventScope;
   threadId: string;
@@ -385,8 +409,8 @@ export function insertEvents(
     const createdAt = input.createdAt ?? Date.now();
     const turnId = getThreadEventScopeTurnId(input.scope) ?? null;
     const result = db.run(
-      sql`INSERT OR IGNORE INTO events (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, data, created_at)
-          VALUES (${id}, ${input.threadId}, ${input.environmentId ?? null}, ${input.scope.kind}, ${turnId}, ${input.providerThreadId ?? null}, ${input.sequence}, ${input.type}, ${input.itemId}, ${input.itemKind}, ${input.data}, ${createdAt})`,
+      sql`INSERT OR IGNORE INTO events (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, parent_tool_call_id, data, created_at)
+          VALUES (${id}, ${input.threadId}, ${input.environmentId ?? null}, ${input.scope.kind}, ${turnId}, ${input.providerThreadId ?? null}, ${input.sequence}, ${input.type}, ${input.itemId}, ${input.itemKind}, ${input.parentToolCallId}, ${input.data}, ${createdAt})`,
     );
     if (result.changes > 0) {
       insertedCount++;
@@ -713,7 +737,7 @@ export function appendDaemonEventsInTransaction(
     }
     db.run(
       sql`INSERT INTO events
-        (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, data, created_at)
+        (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, parent_tool_call_id, data, created_at)
         VALUES (
           ${createEventId()},
           ${input.threadId},
@@ -725,6 +749,7 @@ export function appendDaemonEventsInTransaction(
           ${input.type},
           ${input.itemId},
           ${input.itemKind},
+          ${input.parentToolCallId},
           ${input.data},
           ${now}
         )`,
@@ -807,12 +832,16 @@ export function appendStoredThreadEventsInTransaction(
       type: args.type,
       item: "item" in args.data ? args.data.item : undefined,
       itemId: "itemId" in args.data ? args.data.itemId : undefined,
+      parentToolCallId:
+        "parentToolCallId" in args.data
+          ? args.data.parentToolCallId
+          : undefined,
     });
     const turnId = getThreadEventScopeTurnId(args.scope) ?? null;
 
     db.run(
       sql`INSERT INTO events
-        (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, data, created_at)
+        (id, thread_id, environment_id, scope_kind, turn_id, provider_thread_id, sequence, type, item_id, item_kind, parent_tool_call_id, data, created_at)
         VALUES (
           ${createEventId()},
           ${args.threadId},
@@ -824,6 +853,7 @@ export function appendStoredThreadEventsInTransaction(
           ${args.type},
           ${itemFields.itemId},
           ${itemFields.itemKind},
+          ${itemFields.parentToolCallId},
           ${JSON.stringify(args.data)},
           ${now}
         )`,
@@ -919,6 +949,7 @@ const storedEventRowFields = {
   id: events.id,
   itemId: events.itemId,
   itemKind: events.itemKind,
+  parentToolCallId: events.parentToolCallId,
   providerThreadId: events.providerThreadId,
   scopeKind: events.scopeKind,
   sequence: events.sequence,
@@ -1512,14 +1543,10 @@ function storedEventRowsByParentToolCallIdsConditions(
     return null;
   }
 
-  const eventParentToolCallId = sql<string>`json_extract(${events.data}, '$.parentToolCallId')`;
-  const itemParentToolCallId = sql<string>`json_extract(${events.data}, '$.item.parentToolCallId')`;
   const conditions: SQL[] = [
     eq(events.threadId, args.threadId),
-    or(
-      inArray(eventParentToolCallId, parentToolCallIds),
-      inArray(itemParentToolCallId, parentToolCallIds),
-    )!,
+    isNotSupersededBackgroundTaskProgress,
+    inArray(events.parentToolCallId, parentToolCallIds),
   ];
   if (args.excludedTypes && args.excludedTypes.length > 0) {
     conditions.push(notInArray(events.type, [...args.excludedTypes]));
@@ -2467,18 +2494,18 @@ export function listRecentStoredEventRows(
   db: DbConnection,
   args: ListRecentStoredEventRowsArgs,
 ): StoredEventRow[] {
-  const condition =
-    args.excludedTypes && args.excludedTypes.length > 0
-      ? and(
-          eq(events.threadId, args.threadId),
-          notInArray(events.type, [...args.excludedTypes]),
-        )
-      : eq(events.threadId, args.threadId);
+  const conditions: SQL[] = [
+    eq(events.threadId, args.threadId),
+    isNotSupersededBackgroundTaskProgress,
+  ];
+  if (args.excludedTypes && args.excludedTypes.length > 0) {
+    conditions.push(notInArray(events.type, [...args.excludedTypes]));
+  }
 
   return db
     .select(storedEventRowFieldsWithInlineOutputLimit(args.maxInlineOutputChars))
     .from(events)
-    .where(condition)
+    .where(and(...conditions))
     .orderBy(events.sequence)
     .all();
 }
@@ -2502,6 +2529,10 @@ export function listStoredConversationOutlineEventRows(
     "system/thread/interrupted",
     "system/error",
     "provider/error",
+    // An answered question splits a completed turn's folded summary exactly
+    // like accepted user input does; the outline must see it to keep the
+    // assistant rows it exposes in step with the main timeline.
+    "system/userQuestion/lifecycle",
     "item/agentMessage/delta",
     "item/plan/delta",
   ] satisfies ThreadEventType[];
@@ -2547,6 +2578,7 @@ export function listStoredConversationOutlineEventRows(
         eq(events.threadId, args.threadId),
         inArray(events.type, structuralItemLifecycleTypes),
         inArray(events.itemKind, structuralItemKinds),
+        isNotSupersededBackgroundTaskProgress,
       ),
     );
 
@@ -2635,7 +2667,10 @@ export function findTimelineWindowBudgetFloorSequence(
   db: DbConnection,
   args: FindTimelineWindowBudgetFloorSequenceArgs,
 ): number | undefined {
-  const conditions: SQL[] = [eq(events.threadId, args.threadId)];
+  const conditions: SQL[] = [
+    eq(events.threadId, args.threadId),
+    isNotSupersededBackgroundTaskProgress,
+  ];
   if (args.excludedTypes.length > 0) {
     conditions.push(notInArray(events.type, [...args.excludedTypes]));
   }
@@ -2675,10 +2710,6 @@ export function hasParentedEventCrossingSequence(
   db: DbConnection,
   args: TimelineTurnBoundaryLookupArgs,
 ): boolean {
-  const parentToolCallId = sql<string | null>`COALESCE(
-    NULLIF(json_extract(${events.data}, '$.item.parentToolCallId'), ''),
-    NULLIF(json_extract(${events.data}, '$.parentToolCallId'), '')
-  )`;
   const row = db
     .select({ sequence: events.sequence })
     .from(events)
@@ -2686,12 +2717,12 @@ export function hasParentedEventCrossingSequence(
       and(
         eq(events.threadId, args.threadId),
         gte(events.sequence, args.sequence),
-        sql`${parentToolCallId} IS NOT NULL`,
+        isNotNull(events.parentToolCallId),
         sql`EXISTS (
           SELECT 1
           FROM events AS parent_event
           WHERE parent_event.thread_id = ${events.threadId}
-            AND parent_event.item_id = ${parentToolCallId}
+            AND parent_event.item_id = ${events.parentToolCallId}
             AND parent_event.item_kind = 'toolCall'
             AND parent_event.sequence < ${args.sequence}
         )`,
@@ -2831,6 +2862,7 @@ function storedTimelineWindowConditions(
   const conditions: SQL[] = [
     eq(events.threadId, args.threadId),
     gte(events.sequence, args.sequenceStart),
+    isNotSupersededBackgroundTaskProgress,
   ];
   if (args.beforeSequence !== undefined) {
     conditions.push(lt(events.sequence, args.beforeSequence));
@@ -2878,6 +2910,21 @@ export function findStoredTimelineWindowByteBudgetFloor(
   db: DbConnection,
   args: FindStoredTimelineWindowByteBudgetFloorArgs,
 ): StoredTimelineWindowByteBudgetFloor {
+  // The common case is a window that fits. Let SQLite total it and return one
+  // scalar instead of crossing the native boundary once per event merely to
+  // rediscover that no floor is needed. Oversized windows still take the
+  // ordered iterator below so they retain the exact cutoff/placeholder rules.
+  const windowDataBytes = getStoredTimelineWindowEventDataBytes(db, {
+    beforeSequence: args.beforeSequence,
+    excludedTypes: args.excludedTypes,
+    maxInlineOutputChars: args.maxInlineOutputChars,
+    sequenceStart: args.sequenceStart,
+    threadId: args.threadId,
+  });
+  if (windowDataBytes <= args.maxDataBytes) {
+    return { eventDataBytes: windowDataBytes, kind: "fits" };
+  }
+
   const data = storedTimelineWindowDataColumn(args.maxInlineOutputChars);
   const query = db
     .select({

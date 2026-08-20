@@ -26,11 +26,7 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { Input } from "@bb/shared-ui/input";
 import { blurActiveKeyboardInputWithin } from "@bb/shared-ui/overlay-trigger";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@bb/shared-ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
 import {
   OPTION_BASE_CLASS_NAME,
   OPTION_INTERACTIVE_CLASS_NAME,

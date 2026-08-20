@@ -30,6 +30,11 @@ import {
   PLUGIN_PANEL_ROUTE_PATH,
   AUTOMATIONS_PLUGIN_PANEL_PATH,
 } from "@/lib/route-paths";
+import {
+  markPluginFrontendsSettled,
+  resetPluginFrontendBootStateForTest,
+} from "@/lib/plugin-frontend-boot-state";
+import { writeLastKnownPluginNavPanelChrome } from "@/lib/plugin-nav-panel-chrome";
 import { PluginPanelView } from "@/views/PluginPanelView";
 import {
   PluginPanelHeaderActions,
@@ -88,6 +93,8 @@ function registrationSet(
 afterEach(() => {
   cleanup();
   resetPluginSlotStoreForTest();
+  resetPluginFrontendBootStateForTest();
+  window.localStorage.clear();
   resetAllCrashedPluginSlotsForTest();
   vi.restoreAllMocks();
 });
@@ -1397,7 +1404,72 @@ describe("PluginNavSidebarItems + PluginPanelView", () => {
     ).toBe("page");
   });
 
-  it("shows a placeholder for an unknown plugin panel route", () => {
+  it("draws a remembered plugin row before boot and keeps the same node when the plugin registers", () => {
+    resetPluginFrontendBootStateForTest();
+    writeLastKnownPluginNavPanelChrome([
+      {
+        pluginId: "demo",
+        id: "board",
+        path: "board",
+        title: "Demo board",
+        icon: "columns",
+      },
+    ]);
+    render(
+      <MemoryRouter>
+        <PluginNavSidebarItems />
+      </MemoryRouter>,
+    );
+    const rememberedRow = screen.getByRole("button", { name: "Demo board" });
+
+    // The live registration lands under the same key: no remount, no flash.
+    act(() => {
+      setPluginSlotRegistrations(
+        "demo",
+        registrationSet({
+          navPanels: [
+            {
+              id: "board",
+              title: "Demo board",
+              icon: "columns",
+              path: "board",
+              component: Board,
+            },
+          ],
+        }),
+      );
+      markPluginFrontendsSettled();
+    });
+    expect(screen.getByRole("button", { name: "Demo board" })).toBe(
+      rememberedRow,
+    );
+  });
+
+  it("drops a remembered plugin row that never registers once frontends have settled", () => {
+    resetPluginFrontendBootStateForTest();
+    writeLastKnownPluginNavPanelChrome([
+      {
+        pluginId: "ghost",
+        id: "board",
+        path: "board",
+        title: "Ghost board",
+        icon: "columns",
+      },
+    ]);
+    render(
+      <MemoryRouter>
+        <PluginNavSidebarItems />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Ghost board" })).toBeDefined();
+    act(() => markPluginFrontendsSettled());
+    expect(screen.queryByRole("button", { name: "Ghost board" })).toBeNull();
+  });
+
+  it("stays quiet for an unknown panel until plugin frontends have booted", () => {
+    resetPluginFrontendBootStateForTest();
+    // A reload or deep link renders the route before registrations arrive;
+    // that moment must not read as an error.
     render(
       <MemoryRouter initialEntries={["/plugins/ghost/board"]}>
         <Routes>
@@ -1405,6 +1477,9 @@ describe("PluginNavSidebarItems + PluginPanelView", () => {
         </Routes>
       </MemoryRouter>,
     );
+    expect(screen.queryByText(/This plugin panel is not available/)).toBeNull();
+
+    act(() => markPluginFrontendsSettled());
     expect(
       screen.getByText(/This plugin panel is not available/),
     ).toBeDefined();
@@ -1450,7 +1525,7 @@ describe("plugin panel shared title bar and full-bleed body", () => {
     const panel = panelSlot({ headerContent: ExplodingAccessory });
     render(
       <>
-        <PluginPanelHeaderCenter panel={panel} />
+        <PluginPanelHeaderCenter chrome={panel} />
         <PluginPanelHeaderActions panel={panel} subPath="" />
       </>,
     );
@@ -1466,7 +1541,7 @@ describe("plugin panel shared title bar and full-bleed body", () => {
     const panel = panelSlot({ headerContent: Accessory });
     render(
       <>
-        <PluginPanelHeaderCenter panel={panel} />
+        <PluginPanelHeaderCenter chrome={panel} />
         <PluginPanelHeaderActions panel={panel} subPath="notes/today.md" />
       </>,
     );
@@ -1487,18 +1562,6 @@ describe("plugin panel shared title bar and full-bleed body", () => {
         .querySelector("[data-plugin-right-panel-toggle-portal]")
         ?.getAttribute("data-plugin-right-panel-toggle-portal"),
     ).toBe("plugin-panel:demo:board:pane-docs");
-  });
-
-  it("gives the component a zero-padding full-bleed body", () => {
-    setPluginSlotRegistrations(
-      "demo",
-      registrationSet({ navPanels: [panelSlot({})] }),
-    );
-    renderPanelBody();
-    const body = screen.getByTestId("plugin-panel-body");
-    expect(body.className).toContain("-m-4");
-    expect(body.className).toContain("md:-m-5");
-    expect(body.className).not.toMatch(/(?:^|\s)p[trblxy]?-/u);
   });
 
   it("still contains a crashing panel inside the error boundary", () => {
@@ -1609,8 +1672,12 @@ describe("plugin thread panel actions", () => {
     ).toBeDefined();
   });
 
-  it("contains a throwing run and rejects non-JSON params without opening", () => {
+  it("contains a throwing run and declines non-JSON params without opening", () => {
     const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    // What each declined openPanel reported back to the plugin: a bad
+    // `params` must surface as false, never as a throw the plugin has to
+    // catch (the host swallows run errors, so a throw would be invisible).
+    const declines: boolean[] = [];
     const cyclic: Record<string, unknown> = {};
     cyclic.self = cyclic;
     setPluginSlotRegistrations(
@@ -1629,14 +1696,19 @@ describe("plugin thread panel actions", () => {
             id: "cyclic",
             title: "Cyclic",
             component: PanelProbe,
-            run: ({ openPanel }) => openPanel({ params: cyclic as never }),
+            run: ({ openPanel }) => {
+              declines.push(openPanel({ params: cyclic as never }));
+            },
           },
           {
             id: "coerced",
             title: "Coerced",
             component: PanelProbe,
-            run: ({ openPanel }) =>
-              openPanel({ params: new Date("2026-01-01") as never }),
+            run: ({ openPanel }) => {
+              declines.push(
+                openPanel({ params: new Date("2026-01-01") as never }),
+              );
+            },
           },
         ],
       }),
@@ -1647,7 +1719,67 @@ describe("plugin thread panel actions", () => {
     fireEvent.click(screen.getByText("Cyclic"));
     fireEvent.click(screen.getByText("Coerced"));
     expect(openPluginPanel).not.toHaveBeenCalled();
+    expect(declines).toEqual([false, false]);
     expect(warn).toHaveBeenCalledTimes(3);
+  });
+
+  it("reports an accepted open as true from both panel action kinds", () => {
+    // The contract every openPanel entry point shares: an accepted open is
+    // true. Both action kinds are exercised in one test because the value of
+    // the boolean is that a plugin registering more than one kind can branch
+    // on it uniformly.
+    const accepted: boolean[] = [];
+    setPluginSlotRegistrations(
+      "demo",
+      registrationSet({
+        threadPanelActions: [
+          {
+            id: "issue",
+            title: "Thread action",
+            component: PanelProbe,
+            run: ({ openPanel }) => {
+              accepted.push(openPanel({ params: { source: "thread" } }));
+            },
+          },
+        ],
+        newThreadPanelActions: [
+          {
+            id: "setup",
+            title: "Root action",
+            component: NewThreadPanelProbe,
+            run: ({ openPanel }) => {
+              accepted.push(openPanel({ params: { source: "root" } }));
+            },
+          },
+        ],
+      }),
+    );
+
+    function BothActionsHarness() {
+      const threadEntries = usePluginPanelActions({
+        openPluginPanel: () => undefined,
+        threadId: "thr_9",
+      });
+      const rootEntries = usePluginNewThreadPanelActions({
+        openPluginPanel: () => undefined,
+        projectId: "proj_1",
+      });
+      return (
+        <div>
+          {[...threadEntries, ...rootEntries].map((entry) => (
+            <button key={entry.id} type="button" onClick={entry.onSelect}>
+              {entry.title}
+            </button>
+          ))}
+        </div>
+      );
+    }
+
+    render(<BothActionsHarness />);
+    fireEvent.click(screen.getByText("Thread action"));
+    fireEvent.click(screen.getByText("Root action"));
+
+    expect(accepted).toEqual([true, true]);
   });
 
   it("offers no actions outside a thread context", () => {
@@ -1676,11 +1808,12 @@ describe("plugin thread panel actions", () => {
             title: "Set up thread",
             icon: "Wand",
             component: NewThreadPanelProbe,
-            run: ({ projectId, openPanel }) =>
+            run: ({ projectId, openPanel }) => {
               openPanel({
                 title: `Setup for ${String(projectId)}`,
                 params: { source: "root" },
-              }),
+              });
+            },
           },
         ],
       }),

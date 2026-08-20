@@ -16,7 +16,7 @@ import {
 import { createPortal } from "react-dom";
 import { PERSONAL_PROJECT_ID, type ThreadListEntry } from "@bb/domain";
 import type { ProjectResponse } from "@bb/server-contract";
-import { NavLink, useNavigate } from "react-router-dom";
+import { NavLink } from "react-router-dom";
 import { useCreateThreadInWorktree } from "@/hooks/useCreateThreadInWorktree";
 import {
   usePromptDraftHasInput,
@@ -72,6 +72,7 @@ import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import { getProjectSettingsRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import { appToast } from "@/components/ui/app-toast";
+import { useRouteNavigate } from "@/components/ui/app-route-anchor";
 import {
   CollapsedThreadStatusGlyph,
   ThreadRow,
@@ -271,6 +272,8 @@ interface ProjectThreadTreeGroupProps {
 }
 
 interface ThreadTreeNodeRowProps {
+  // Project of the enclosing group for a root node, or of the parent thread for
+  // a child node. A node whose thread lives elsewhere gets a cross-project marker.
   projectId: string;
   node: ProjectThreadNode;
   depthOffset: number;
@@ -752,7 +755,7 @@ function useArchiveEnvironmentThreadGroupAction({
   selectedThreadId,
   threads,
 }: UseArchiveEnvironmentThreadGroupActionArgs): UseArchiveEnvironmentThreadGroupActionResult {
-  const navigate = useNavigate();
+  const navigate = useRouteNavigate();
   const archiveEnvironmentThreads = useArchiveEnvironmentThreads();
   const {
     isPending: archiveThreadsIsPending,
@@ -1651,8 +1654,10 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
     ],
   );
   const showChildren = !isCollapsed && hasChildren;
-  const rowProjectId =
-    variant === "section" ? node.thread.projectId : projectId;
+  // Route and draft keys always use the thread's own project; a child may live
+  // in a different project than the parent it nests under.
+  const rowProjectId = node.thread.projectId;
+  const crossProjectId = rowProjectId !== projectId ? rowProjectId : null;
   const hasComposerDraft = usePromptDraftHasInput({
     kind: "thread",
     projectId: rowProjectId,
@@ -1671,6 +1676,7 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
     <ThreadRow
       projectId={rowProjectId}
       thread={node.thread}
+      crossProjectId={crossProjectId}
       isActive={selectedThreadId === node.thread.id}
       hasComposerDraft={hasComposerDraft}
       onProjectSelect={onProjectSelect}
@@ -1705,7 +1711,7 @@ export const ThreadTreeNodeRow = memo(function ThreadTreeNodeRow({
               return (
                 <ThreadTreeItemRow
                   key={getItemKey(item)}
-                  projectId={projectId}
+                  projectId={rowProjectId}
                   item={item}
                   depthOffset={depthOffset}
                   selectedThreadId={selectedThreadId}

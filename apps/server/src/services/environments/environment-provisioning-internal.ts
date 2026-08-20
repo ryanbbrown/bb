@@ -609,13 +609,11 @@ export function settleEnvironmentProvisionCommandResult(
         ...resolveProvisionedEnvironmentBranchMetadata(args.command),
       },
     );
-    const provisionedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
-      args.deps,
-      {
+    const provisionedOutcome =
+      applyLoggedEnvironmentLifecycleEventInTransaction(args.deps, {
         environmentId: args.command.environmentId,
         event: { type: "provision.succeeded" },
-      },
-    );
+      });
     if (provisionedOutcome.applied) {
       args.deps.hub.notifyEnvironment(
         args.command.environmentId,

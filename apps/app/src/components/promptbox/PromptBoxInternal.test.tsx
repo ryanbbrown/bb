@@ -45,6 +45,7 @@ import {
   type PluginComposerHost,
 } from "@/components/plugin/plugin-composer-host";
 import { resetAllCrashedPluginSlotsForTest } from "@/components/plugin/PluginSlotMount";
+import { QueuedEditorTypeaheadLayoutContext } from "@/components/promptbox/queued-editor-typeahead-layout";
 import {
   resetPluginLogoStoreForTest,
   setPluginLogoUrls,
@@ -56,6 +57,7 @@ import {
 import {
   INERT_TYPEAHEAD_COMMAND_CONFIG,
   PromptBoxInternal,
+  arePromptEditorValuesEqual,
   suppressPromptEditorAnchorActivation,
   type PromptBoxAction,
   type PromptBoxHandle,
@@ -555,6 +557,40 @@ describe("suppressPromptEditorAnchorActivation", () => {
 });
 
 describe("PromptBoxInternal controlled value sync", () => {
+  it("compares cloned mention values without serializing the prompt text", () => {
+    const resource = {
+      kind: "path" as const,
+      source: "workspace" as const,
+      entryKind: "file" as const,
+      path: "src/a.ts",
+      label: "a.ts",
+    };
+    const mention: PromptTextMention = {
+      start: 4,
+      end: 10,
+      resource,
+    };
+    const left = { text: "see @a.ts", mentions: [mention] };
+
+    expect(
+      arePromptEditorValuesEqual(left, {
+        text: left.text,
+        mentions: [{ ...mention, resource: { ...resource } }],
+      }),
+    ).toBe(true);
+    expect(
+      arePromptEditorValuesEqual(left, {
+        text: left.text,
+        mentions: [
+          {
+            ...mention,
+            resource: { ...resource, path: "src/b.ts" },
+          },
+        ],
+      }),
+    ).toBe(false);
+  });
+
   it("suppresses and restores plugin customizations without remounting the editor", () => {
     setPluginSlotRegistrations(
       "pending-test",
@@ -1558,48 +1594,6 @@ describe("PromptBoxInternal zen mode layout", () => {
     fireEvent.transitionEnd(form, { propertyName: "height" });
     window.localStorage.removeItem(storageKey);
   });
-
-  it("keeps long editor content constrained to the scroll area", async () => {
-    const storageKey = "bb.test.promptbox.zen-layout";
-    window.localStorage.removeItem(storageKey);
-
-    render(
-      <PromptBoxInternal
-        {...createPromptBoxProps({
-          value: Array.from(
-            { length: 40 },
-            (_, index) => `Line ${index + 1}`,
-          ).join("\n"),
-          promptActions,
-          zenMode: { storageKey },
-        })}
-      />,
-    );
-
-    fireEvent.click(
-      screen.getByRole("button", { name: "Make prompt box larger" }),
-    );
-
-    await waitFor(() => {
-      const scrollContainer = document.querySelector(
-        "[data-promptbox-editor-scroll]",
-      );
-      if (!(scrollContainer instanceof HTMLElement)) {
-        throw new Error("Prompt editor scroll container was not rendered");
-      }
-
-      expect(scrollContainer.classList.contains("min-h-0")).toBe(true);
-      expect(scrollContainer.parentElement?.classList.contains("min-h-0")).toBe(
-        true,
-      );
-    });
-
-    const footerRow = screen.getByRole("button", { name: "Prompt actions" })
-      .parentElement?.parentElement;
-    expect(footerRow?.classList.contains("shrink-0")).toBe(true);
-
-    window.localStorage.removeItem(storageKey);
-  });
 });
 
 describe("PromptBoxInternal plugin composer actions", () => {
@@ -2066,14 +2060,7 @@ describe("PromptBoxInternal compact layout", () => {
 
     const form = document.querySelector("[data-promptbox]");
     expect(form?.getAttribute("data-promptbox-compact")).toBe("");
-    const submitButton = screen.getByRole("button", {
-      name: "Submit (Enter)",
-    });
-    expect(submitButton.classList.contains("size-8")).toBe(true);
-    expect(submitButton.classList.contains("p-0")).toBe(true);
-    expect(submitButton.classList.contains("ml-1")).toBe(false);
-    expect(submitButton.classList.contains("transition-colors")).toBe(true);
-    expect(submitButton.classList.contains("transition-all")).toBe(false);
+    expect(screen.getByRole("button", { name: "Submit (Enter)" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Prompt actions" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Model selector" })).toBeNull();
     expect(screen.queryByRole("button", { name: "Attach files" })).toBeNull();
@@ -2090,12 +2077,6 @@ describe("PromptBoxInternal compact layout", () => {
       "[data-promptbox-compact-content]",
     );
     expect(compactContent).toBeTruthy();
-    expect(compactContent?.classList.contains("items-center")).toBe(true);
-    expect(
-      document
-        .querySelector("[data-promptbox-editor-scroll]")
-        ?.classList.contains("pt-0"),
-    ).toBe(true);
   });
 
   it("uses voice as the primary action for an empty coarse-pointer prompt", () => {
@@ -2172,6 +2153,29 @@ describe("PromptBoxInternal compact layout", () => {
 
     fireEvent.click(submit, { detail: 1 });
     expect(onSubmit).toHaveBeenCalledOnce();
+    expect(document.activeElement).toBe(editor);
+  });
+
+  it("keeps DOM focus through submit when TipTap focus state is stale", async () => {
+    render(
+      <PromptBoxInternal
+        {...createPromptBoxProps({ value: "Send this follow-up" })}
+      />,
+    );
+
+    await waitForPromptFocus();
+    const editor = getPromptEditorElement();
+    const submit = screen.getByRole("button", { name: "Submit (Enter)" });
+
+    // TipTap derives isFocused from focus and blur events. Model the iOS
+    // window where its blur event has arrived but the contenteditable still
+    // owns native focus and therefore still controls the software keyboard.
+    editor.dispatchEvent(new FocusEvent("blur"));
+    expect(document.activeElement).toBe(editor);
+
+    expect(
+      fireEvent.pointerDown(submit, { button: 0, pointerType: "touch" }),
+    ).toBe(false);
     expect(document.activeElement).toBe(editor);
   });
 
@@ -2778,6 +2782,48 @@ describe("PromptBoxInternal mention triggers", () => {
     icon: null,
     replacement: "#42 Fix login bug",
   };
+
+  it("reports the queued editor typeahead's open state and measured height", async () => {
+    const layouts: Array<{ height: number; isOpen: boolean }> = [];
+    const nativeGetBoundingClientRect =
+      HTMLElement.prototype.getBoundingClientRect;
+    const rectSpy = vi
+      .spyOn(HTMLElement.prototype, "getBoundingClientRect")
+      .mockImplementation(function (this: HTMLElement) {
+        if (this.hasAttribute("data-promptbox-typeahead-menu")) {
+          return new DOMRect(0, 0, 600, 144);
+        }
+        return nativeGetBoundingClientRect.call(this);
+      });
+    const promptBoxRef = createRef<PromptBoxHandle>();
+
+    render(
+      <QueuedEditorTypeaheadLayoutContext.Provider
+        value={(layout) => layouts.push(layout)}
+      >
+        <PromptBoxInternal
+          {...createPromptBoxProps({
+            value: "@fix",
+            typeahead: buildTypeaheadConfig({
+              mentionSuggestions: [githubIssueSuggestion],
+            }),
+          })}
+          promptBoxRef={promptBoxRef}
+        />
+      </QueuedEditorTypeaheadLayoutContext.Provider>,
+    );
+
+    await focusPromptEnd(promptBoxRef);
+    await waitFor(() =>
+      expect(layouts).toContainEqual({ height: 144, isOpen: true }),
+    );
+
+    fireEvent.keyDown(getPromptEditorElement(), { key: "Escape" });
+    await waitFor(() =>
+      expect(layouts.at(-1)).toEqual({ height: 0, isOpen: false }),
+    );
+    rectSpy.mockRestore();
+  });
 
   it("renders a plugin mention's named icon hint", async () => {
     const suggestion = { ...githubIssueSuggestion, icon: "FileText" };

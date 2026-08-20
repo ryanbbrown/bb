@@ -9,6 +9,7 @@ import {
   type ComponentProps,
   type FocusEvent as ReactFocusEvent,
   type ReactNode,
+  type RefObject,
 } from "react";
 import type {
   PromptTextMention,
@@ -25,9 +26,9 @@ import {
   usePluginComposerViewModel,
 } from "@/components/plugin/plugin-composer-host";
 import {
-  useAppCommandContext,
-  useAppCommandHandler,
-} from "@/components/commands/AppCommandProvider";
+  ComposerExtensionHost,
+  useComposerExtensionController,
+} from "@/components/plugin/ComposerExtensionHost";
 import {
   PromptBoxInternal,
   type AttachmentsConfig,
@@ -252,6 +253,15 @@ export interface FollowUpPromptBoxProps {
   isPrimaryComposer?: boolean;
   /** Inline queue editors do not own a timeline scroll control. */
   showScrollToBottomButton?: boolean;
+  /**
+   * A pending interaction (permission request, user question) that takes the
+   * composer's place. The composer editor stays MOUNTED but hidden while this
+   * is set: the previous implementation swapped the whole composer out of the
+   * tree, so every approval tore down and rebuilt the TipTap editor and the
+   * composer's pickers, and the draft-restoring remount landed in the same
+   * task as the approval's timeline update. Rendered as the last stack item.
+   */
+  pendingInteraction?: ReactNode;
 }
 
 type FollowUpPromptBoxWithComposerProps = Omit<
@@ -322,8 +332,11 @@ function FollowUpPromptBoxWithComposer({
   focusEndKey,
   isPrimaryComposer = true,
   showScrollToBottomButton = true,
+  pendingInteraction = null,
 }: FollowUpPromptBoxWithComposerProps) {
   const submitMode = composer.submitMode;
+  const hasPendingInteraction =
+    pendingInteraction !== null && pendingInteraction !== undefined;
   const canQueueFollowUp = submitMode.kind === "queue";
   const canSubmit = submitMode.kind === "ready" || submitMode.kind === "queue";
   const isStopping =
@@ -364,11 +377,16 @@ function FollowUpPromptBoxWithComposer({
   // surfaces have no pane context and default to focused.
   const paneContext = useOptionalPaneContext();
   const isFocusedPane = paneContext?.isFocused ?? true;
-  useAppCommandContext("promptAvailable", true);
-  useAppCommandHandler("composer.focus", () => {
-    if (!isFocusedPane || !isPrimaryComposer) return false;
+  const focusDefault = useCallback(() => {
     promptBoxRef.current?.focusEnd();
     return promptBoxRef.current !== null;
+  }, []);
+  const extensionController = useComposerExtensionController({
+    host: pluginComposerHost ?? null,
+    view: composerView,
+    isFocused: isFocusedPane,
+    isPrimary: isPrimaryComposer,
+    focusDefault,
   });
   const voice = usePromptVoice(promptBoxRef);
   const isCompactViewport = useIsCompactViewport();
@@ -588,7 +606,11 @@ function FollowUpPromptBoxWithComposer({
       ? composer.onSubmit
       : composer.onModifierSubmit
     : undefined;
-  const executionControlsDisabled = executionReadOnly ?? readOnly ?? false;
+  // While the interaction owns the surface the pickers are hidden with the
+  // editor; keep them disabled too so their keyboard chords (model picker
+  // toggle/cycle) cannot open a popover anchored to a hidden trigger.
+  const executionControlsDisabled =
+    (executionReadOnly ?? readOnly ?? false) || hasPendingInteraction;
   const footerStart = useMemo(
     () => (
       <ExecutionControls {...execution} disabled={executionControlsDisabled} />
@@ -612,7 +634,8 @@ function FollowUpPromptBoxWithComposer({
   const permissionPickerDisabledByPlanMode =
     shouldDisablePermissionPickerForActivePromptMode(activePromptMode) ||
     shouldDisablePermissionPickerForPromptMode(promptModeInput);
-  const permissionReadOnlyResolved = permissionReadOnly ?? readOnly ?? false;
+  const permissionReadOnlyResolved =
+    (permissionReadOnly ?? readOnly ?? false) || hasPendingInteraction;
   const permissionPickerDisabled =
     permissionReadOnlyResolved || permissionPickerDisabledByPlanMode;
   // Side chat and active plan mode render the same permission picker as the
@@ -692,6 +715,9 @@ function FollowUpPromptBoxWithComposer({
       className="relative z-20"
       data-follow-up-composer=""
       data-follow-up-composer-expanded={isInteractionExpanded ? "" : undefined}
+      // Hidden, not unmounted: the editor keeps its DOM, draft, and history
+      // across the interaction (see `pendingInteraction`).
+      hidden={hasPendingInteraction}
       onBlurCapture={scheduleCollapseAfterFocusLoss}
       onFocusCapture={handleComposerFocus}
     >
@@ -783,32 +809,68 @@ function FollowUpPromptBoxWithComposer({
   );
 
   return (
-    <PluginComposerViewProvider value={composerView}>
-      <PluginComposerHostProvider value={pluginComposerHost ?? null}>
-        <>
-          {showScrollToBottomButton ? (
-            <ThreadTimelineScrollToBottomButton
-              active={composer.threadRuntimeDisplayStatus === "active"}
-            />
-          ) : null}
-          <div
-            data-app-composer=""
-            data-app-composer-role={isPrimaryComposer ? "primary" : "secondary"}
-            data-promptbox-shell=""
-            className="space-y-2"
-          >
-            <div ref={stackRef} className="grid gap-2">
-              {composerScope ? (
-                <ComposerBannersSlot>{stack}</ComposerBannersSlot>
-              ) : (
-                stack
-              )}
-            </div>
-            <div data-follow-up-composer-anchor="">{composerElement}</div>
-          </div>
-        </>
-      </PluginComposerHostProvider>
-    </PluginComposerViewProvider>
+    <ComposerExtensionHost
+      controller={extensionController}
+      defaultRenderer={
+        <DefaultFollowUpComposer
+          active={composer.threadRuntimeDisplayStatus === "active"}
+          composerElement={composerElement}
+          hasPluginComposerScope={composerScope !== null}
+          isPrimaryComposer={isPrimaryComposer}
+          pendingInteraction={pendingInteraction}
+          showScrollToBottomButton={showScrollToBottomButton}
+          stack={stack}
+          stackRef={stackRef}
+        />
+      }
+    />
+  );
+}
+
+interface DefaultFollowUpComposerProps {
+  active: boolean;
+  composerElement: ReactNode;
+  hasPluginComposerScope: boolean;
+  isPrimaryComposer: boolean;
+  pendingInteraction?: ReactNode;
+  showScrollToBottomButton: boolean;
+  stack: ReactNode | null;
+  stackRef: RefObject<HTMLDivElement | null>;
+}
+
+/** BB's presentation for a host-owned follow-up Composer controller. */
+export function DefaultFollowUpComposer({
+  active,
+  composerElement,
+  hasPluginComposerScope,
+  isPrimaryComposer,
+  pendingInteraction = null,
+  showScrollToBottomButton,
+  stack,
+  stackRef,
+}: DefaultFollowUpComposerProps) {
+  return (
+    <>
+      {showScrollToBottomButton ? (
+        <ThreadTimelineScrollToBottomButton active={active} />
+      ) : null}
+      <div
+        data-app-composer=""
+        data-app-composer-role={isPrimaryComposer ? "primary" : "secondary"}
+        data-promptbox-shell=""
+        className="space-y-2"
+      >
+        <div ref={stackRef} className="grid gap-2">
+          {hasPluginComposerScope ? (
+            <ComposerBannersSlot>{stack}</ComposerBannersSlot>
+          ) : (
+            stack
+          )}
+          {pendingInteraction}
+        </div>
+        <div data-follow-up-composer-anchor="">{composerElement}</div>
+      </div>
+    </>
   );
 }
 

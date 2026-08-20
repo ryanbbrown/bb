@@ -605,9 +605,7 @@ function EnvironmentMenuItem({
           )}
         />
         <span className="flex min-w-0 flex-col">
-          <span className="whitespace-normal break-words text-xs">
-            {label}
-          </span>
+          <span className="whitespace-normal break-words text-xs">{label}</span>
           {description ? (
             <span className="mt-0.5 whitespace-normal break-words text-xs leading-snug text-muted-foreground">
               {description}

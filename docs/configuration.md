@@ -225,7 +225,7 @@ delayed shortcut badges without disabling any shortcuts.
 | Composer  | Cycle model forward / backward            | `Alt+M` / `Alt+Shift+M`           | All clients              |
 | Composer  | Cycle provider forward / backward         | `Alt+P` / `Alt+Shift+P`           | All clients              |
 | Composer  | Cycle reasoning effort forward / backward | `Alt+T` / `Alt+Shift+T`           | All clients              |
-| Browser   | Focus location / reload                   | `Mod+L` / `Mod+R`                 | Desktop embedded browser |
+| Browser   | Focus location / reload / find in page    | `Mod+L` / `Mod+R` / `Mod+F`       | Desktop embedded browser |
 | Questions | Choose visible answer 1–9                 | `1` … `9`                         | While a question is open |
 
 Cycle commands wrap in both directions. Reasoning cycles only through the
@@ -737,9 +737,14 @@ an unselected install and lists its entry names.
 ### Plugin updates
 
 Bundled builtin and official plugins update with BB app releases. For direct
-`git:`/`npm:` installs, updates are manual: `bb plugin outdated` checks
-tracking sources and `bb plugin update <id>` / `bb plugin update --all`
-applies compatible candidates; there is no automatic plugin update
+`git:`/`npm:` installs, update application is manual: `bb plugin outdated` or
+the "Check for updates" key on the Plugins page checks tracking sources, and
+`bb plugin update <id>` / `bb plugin update --all` or the "Update x.y.z" pill
+applies compatible candidates. The server also checks every installed plugin
+every 6 hours (the first check runs when any plugin has no recorded check or
+the oldest one is older than 6 hours), at most four plugins at a time, and a
+manual check joins a sweep already in flight; a check only records what is
+available and never installs or runs plugin code. There is no automatic plugin update
 application or update audit feed. Reinstalling an already-installed managed plugin is
 refused — use `bb plugin update`. Before activation bb snapshots the plugin
 database, host-managed settings/storage/schedules, secrets, and registration.

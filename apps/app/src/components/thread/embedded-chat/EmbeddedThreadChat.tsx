@@ -145,6 +145,8 @@ export interface EmbeddedThreadChatComposerProps {
   executionDefaultsThreadId: string;
   executionResetKey: string;
   executionEnvironmentId?: string;
+  /** Machine of `executionEnvironmentId`; lets host-scoped catalogs share one query across environments. */
+  executionEnvironmentHostId?: string;
   /**
    * Defer model/permission metadata loading until the surface first becomes
    * active — lets a retained hidden panel's first paint win over host-backed
@@ -381,6 +383,7 @@ function EmbeddedThreadChatWithComposer({
     enabled: shouldLoadExecutionOptions,
     scope: "component-local",
     environmentId: composer.executionEnvironmentId,
+    environmentHostId: composer.executionEnvironmentHostId,
     resetKey: composer.executionResetKey,
     initialProviderId: providerId,
     initialModel: defaultExecutionOptions?.model,
@@ -553,8 +556,11 @@ function EmbeddedThreadChatWithComposer({
   }, [stopThread, threadId]);
   const isProvisioning =
     displayStatus === "provisioning" || displayStatus === "starting";
+  // A replayed (placeholder) resolution seeds the pickers but does not open
+  // submission; wait for the live query like an empty cache would.
   const isDefaultExecutionOptionsLoading =
-    defaultExecutionOptions === undefined && executionOptionsQuery.isLoading;
+    executionOptionsQuery.isPlaceholderData ||
+    (defaultExecutionOptions === undefined && executionOptionsQuery.isLoading);
 
   const {
     processingQueuedMessage,

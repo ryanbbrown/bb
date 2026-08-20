@@ -1,6 +1,13 @@
-// Version 136 adds worktree discovery, canonical host path resolution, and
+// Version 137 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
+//
+// Version 136 carries the narrow-grammar provider bridge protocol (bridge
+// protocol v2): the provider bridge artifacts a server serves to daemons now
+// speak `thread/delta` only — the `thread/event` lane is gone. An old daemon's
+// runtime would ignore the delta notifications and render empty timelines, and
+// old runtimes predate the bridge-handshake version check, so this daemon
+// protocol version is the only gate that forces those daemons to update.
 //
 // Version 135 adds the `compaction-skipped` provider warning category. The Pi
 // bridge now reports a refused manual compaction ("Nothing to compact") as
@@ -48,7 +55,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 136 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 137 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

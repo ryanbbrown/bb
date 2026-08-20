@@ -11,6 +11,8 @@ message agents, or inspect projects, providers, and environments.
 ## Start With Context
 
 - Use `bb status` to identify the current project, thread, and environment.
+  It also lists enabled plugins that are not running (incompatible, error,
+  missing); `bb plugin list` shows each plugin's status detail.
 - Prefer `--json` when command output will drive follow-up work.
 - Run `bb guide` for the system overview and `bb guide <chapter>` for full
   command reference.
@@ -308,6 +310,9 @@ environment pull-request show <id>`. Diff commands require an explicit target
 - Use `--parent-self` inside a thread to parent the new thread to the current
   thread.
 - Use `--parent-thread <thread-id>` to choose another specific parent.
+- A parent can live in a different project. Pass `--project <other-id>` with
+  `--parent-self` to delegate work in another repository; the child still
+  reports back to its parent and stays under its parent's permission ceiling.
 - If provider or model choice matters, inspect options with `bb provider list`
   and `bb provider models <provider-id>`. Both accept `--machine <id-or-name>`
   (alias `--host`) or `--environment <id>` to inspect the machine where work
@@ -883,7 +888,8 @@ them by mixing ink into canvas), the `--primary` accent, the secondary text tier
     Re-running on a migrated plugin is a no-op. Needs no server.
   - `bb plugin dev [path]` — watch loop for an installed plugin (default:
     cwd): on every change it rebuilds the frontend bundle (when `bb.app` is
-    declared) and reloads the plugin; open app pages pick the new UI up live.
+    declared; unminified, unlike `bb plugin build`) and reloads the plugin;
+    open app pages pick the new UI up live.
     Build/reload failures print and keep watching; Ctrl+C stops.
   - Frontend entries default-export `definePluginApp` from
     `@get-bb/plugin-sdk/app` and register UI slots (homepageSection,

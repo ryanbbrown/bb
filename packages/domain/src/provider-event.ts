@@ -280,6 +280,14 @@ export const toolCallProgressEventSchema = z.object({
 export const threadEventBackgroundTaskItemSchema = z.object({
   type: z.literal("backgroundTask"),
   id: z.string(),
+  /**
+   * The provider's stable task id, shared by every generation (restart) of
+   * the same task; consumers use it to correlate a restarted task with its
+   * earlier generations. Absent only on events persisted before the field
+   * existed — those encoded the family in the item id's legacy `#N`
+   * generation suffix instead.
+   */
+  familyId: z.string().optional(),
   /** Raw SDK task discriminant (e.g. "local_workflow"); "unknown" when the provider omitted it. */
   taskType: z.string(),
   description: z.string(),
@@ -634,7 +642,7 @@ export const providerEventTypeValues = unscopedProviderEventSchema.options.map(
  * Events originating from the server/system layer (not from a provider process).
  * These do NOT carry `providerThreadId`.
  */
-const unscopedSystemEventSchema = z.union([
+const unscopedSystemEventSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("client/thread/start"),
@@ -712,17 +720,22 @@ export const systemEventSchema = unscopedSystemEventSchema.and(
   scopedEventDataSchema,
 );
 
-const eventPropertyBagSchema = z.record(z.string(), z.unknown());
 const legacyClientRequestKey = ["clientRequest", "Sequence"].join("");
+
+function isEventPropertyBag(
+  value: unknown,
+): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 const rejectLegacyClientRequestSequenceSchema = z
   .unknown()
   .superRefine((value, ctx) => {
-    const eventResult = eventPropertyBagSchema.safeParse(value);
-    if (!eventResult.success) {
+    if (!isEventPropertyBag(value)) {
       return;
     }
 
-    if (Object.hasOwn(eventResult.data, legacyClientRequestKey)) {
+    if (Object.hasOwn(value, legacyClientRequestKey)) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         message: "legacy request sequence field is no longer accepted",
@@ -730,11 +743,11 @@ const rejectLegacyClientRequestSequenceSchema = z
       });
     }
 
-    const itemResult = eventPropertyBagSchema.safeParse(eventResult.data.item);
+    const item = value.item;
     if (
-      itemResult.success &&
-      itemResult.data.type === "userMessage" &&
-      Object.hasOwn(itemResult.data, legacyClientRequestKey)
+      isEventPropertyBag(item) &&
+      item.type === "userMessage" &&
+      Object.hasOwn(item, legacyClientRequestKey)
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,

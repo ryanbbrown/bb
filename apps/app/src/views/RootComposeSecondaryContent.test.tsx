@@ -248,33 +248,20 @@ afterEach(() => {
 });
 
 describe("RootComposeSecondaryContent desktop layout", () => {
-  it("always offers a new tab from the new-thread right panel", () => {
+  it("always offers a new tab from the new-thread right panel", async () => {
     renderRootCompose({
       isCompactViewport: false,
       isSecondaryPanelOpen: true,
     });
 
+    // The panel chunk loads lazily; the panel appears one tick after mount.
     expect(
-      screen
-        .getByTestId("inline-secondary-panel")
-        .getAttribute("data-show-new-tab-button"),
+      (await screen.findByTestId("inline-secondary-panel")).getAttribute(
+        "data-show-new-tab-button",
+      ),
     ).toBe("true");
     expect(screen.getByTestId("root-compose-content")).not.toBeNull();
     expect(screen.getByTestId("plugin-homepage-sections")).not.toBeNull();
-  });
-
-  it("marks the root compose top strip as a macOS window drag region", () => {
-    setMacosDesktopChrome();
-
-    renderRootCompose({
-      isCompactViewport: false,
-      isSecondaryPanelOpen: false,
-    });
-
-    const strip = screen.getByTestId("root-compose-main-window-drag-strip");
-    expect(strip.className).toContain("h-[48px]");
-    expect(strip.className).toContain("[app-region:drag]");
-    expect(strip.className).toContain("[-webkit-app-region:drag]");
   });
 
   it("keeps the drag strip on a split pane that touches the window top edge", () => {

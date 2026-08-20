@@ -253,9 +253,10 @@ bridge ships inside its plugin's `bb.host` artifact, and a host artifact may
 not import private `@bb/*` workspace packages, so everything a bridge needs is
 named here: `experimental_defineProviderBridge` (the export shape the
 daemon-side bootstrap looks for), the Provider Bridge Protocol's method
-vocabulary and param schemas, the bridge kit's authoring helpers (JSON-RPC
-framing, tool-call and interaction codecs, id scoping, visibility, translation
-helpers), and the `@bb/domain` event vocabulary those payloads are made of.
+vocabulary, the `thread/delta` grammar, and param schemas, the bridge kit's
+authoring helpers (JSON-RPC framing, tool-call and interaction codecs,
+visibility, dialect-parsing helpers), and the `@bb/domain` command-plane
+vocabulary those params reference.
 Curated by hand — named exports only, never `export *`. Unlike
 `@get-bb/plugin-sdk` and `@get-bb/plugin-sdk/host`, it is NOT a build-time
 runtime stub: it is pure schema and helper code with no daemon-pinned
@@ -264,17 +265,30 @@ build inlines the SDK's published, self-contained bundle.
 
 **Audit before stabilizing.**
 
-1. **The event vocabulary's home.** The names in group (4) of
-   `src/provider-bridge.ts`
-   (`ThreadEvent`, `PromptInput`, `PendingInteractionPayload`, `turnScope`, …)
-   are `@bb/domain`'s — bb's persisted-thread vocabulary, shared by the server,
-   the app and the runtime. The SDK names them because a published surface
-   cannot reference a private package, not because it owns them; moving them
-   here would invert the dependency and hand the plugin SDK the product's core
-   domain. Decide, before third parties depend on the shapes, whether the
-   protocol should own a narrower event vocabulary of its own that `@bb/domain`
-   then derives from, or whether this facade is the permanent answer.
-2. **Surface size.** ~190 names is a large promise. Single-consumer
+1. **Resolved (Aug 2026, the narrow-grammar cutover): the protocol owns its
+   own timeline vocabulary.** Bridges no longer construct `ThreadEvent`s —
+   they emit the protocol's own `thread/delta` grammar and the runtime's
+   assembler constructs every canonical event — so the `@bb/domain` event
+   vocabulary (`ThreadEvent`, the item types, `threadScope`/`turnScope` and
+   the scope helpers) left the surface with the kit's assembly machinery
+   (turn-state registry, scoped-item-ids, accepted-user-messages, item
+   constructors, unhandled-event builders). What still comes from
+   `@bb/domain` is deliberate and consumed by bridges today: the
+   command-plane and interaction surface the protocol's params are made of
+   (`PromptInput`, `PendingInteraction*`, `DynamicTool`,
+   `RuntimePermissionPolicy`, permission/reasoning/service-tier values,
+   rate-limit state, workflow snapshots) plus the enum/status types the
+   delta shapes reference (`ThreadEventItemStatus`, `ThreadEventTurnStatus`,
+   `ThreadEventPlanStep`, `ThreadEventTokenUsageBreakdown`,
+   `ThreadEventContextWindowUsage`, `ThreadEventUserContent`). Those are
+   shared server/app/runtime contracts, so the facade re-export (bundle
+   inlining, `@bb/domain` staying private) is the permanent answer for
+   them.
+2. **Surface size.** 184 names after the cutover (was ~190, then ~216 with
+   the delta grammar added, then the assembly surface deleted: the
+   turn-state/scoped-id/accepted-message/constructor helpers, the orphaned
+   `buildEditDiff`/`withParentToolCallId`, and the unconsumed domain
+   re-exports came off). Single-consumer
    repatriation done (Aug 2026): `extractEnvOverrides` and
    `getMessageContentTypes` moved into the claude-code plugin,
    `normalizePendingInteractionRequestedPermissionProfile` (whole
@@ -287,10 +301,8 @@ build inlines the SDK's published, self-contained bundle.
    server), the `claudeTaskTool*` schemas share their contract file with
    thread-view, the `acp*Cli`/`acpNativeReasoning` schemas are parsed by
    host-daemon-contract and config, and the workflow snapshot types are
-   rendered by the app. `buildEditDiff`, `completeStartedToolItem`, and
-   `decodeToolCallResponsePayload` are used inside the kit itself. The
-   surface is still large; any further shrink is a per-name product decision,
-   not a mechanical move.
+   rendered by the app. The surface is still large; any further shrink is a
+   per-name product decision, not a mechanical move.
    A follow-up de-overfitting pass (Aug 2026) then unwound the kit's
    over-general helpers: `buildToolUseItem`'s parser-callback router became
    per-provider switches over plain constructors (`buildFileChangeItem`,
@@ -326,7 +338,9 @@ a separate document where `currentColor` resolves to black — invisible on dark
 themes. Registrations are replaced wholesale with the rest of the plugin's
 slot set, so disable/uninstall/failed reload falls back to the vendored map,
 then `logoUrl`, then the generic glyph. The four first-party provider plugins
-register their own marks through this slot.
+do not use it: their marks are vendored in the host (`BUILT_IN_BRAND_ICONS`),
+and shipping an app bundle only to register the same SVGs cost four JS+CSS
+fetches and four icon remounts at every boot.
 
 **Audit before stabilizing.**
 
@@ -340,9 +354,11 @@ register their own marks through this slot.
 2. **Bundle size and boot ordering.** An icon now costs a frontend bundle: a
    provider plugin that previously shipped only a server entry pays esbuild +
    Tailwind on install and an extra module fetch at boot, and the vendored map
-   covers the window before the bundle loads. Confirm the cost is acceptable
-   for icon-only plugins, or add a lighter delivery path (e.g. a declared
-   inline SVG string sanitized by the host) before freezing the shape.
+   covers the window before the bundle loads. The first-party provider plugins
+   dropped their icon-only bundles for exactly this reason. Confirm the cost is
+   acceptable for third-party icon-only plugins, or add a lighter delivery
+   path (e.g. a declared inline SVG string sanitized by the host) before
+   freezing the shape.
 3. **Disposal and identity.** The icon component is resolved through a cached
    host wrapper keyed by provider id and `logoUrl`; the wrapper subscribes to
    the slot store so a disposed registration falls back mid-render. Audit that
@@ -461,7 +477,12 @@ Before stabilization, audit:
    plugin is removed, and in projectless compose has the right fallback.
 5. **Relationship to `threadPanelAction`.** Confirm separate opt-in remains
    preferable to a unified discriminated context after external plugins have
-   had time to adopt the root surface deliberately.
+   had time to adopt the root surface deliberately. The two contexts' `openPanel`
+   signatures were already unified: both take `PluginPanelActionOpenOptions` and
+   return `boolean` (true = accepted, false = declined), matching
+   `messageAction`'s `openPanel` and `useBbNavigate().openThreadPanel`. Do not
+   re-litigate that in the stabilization audit; audit only whether the two
+   _contexts_ should merge.
 
 ## `app.slots.experimental_threadList` (`@get-bb/plugin-sdk/app`)
 
@@ -569,7 +590,15 @@ reimplementing it, and `indicatorLabel` carries the matching accessible string.
    child threads and running threads that `isUnreadDoneThread` excludes by
    design. Confirm that is the more useful primitive for a replaced list.
 4. **Scale.** Confirm one array of every thread is right at ten thousand
-   threads, versus a paged or windowed read.
+   threads, versus a paged or windowed read. Today the host memoizes each
+   thread DTO per unchanged `ThreadListEntry` (React Query structurally shares
+   the payload), so a refetch that changes one thread hands plugins the same
+   objects for every other thread and a `memo`/compiler-memoized row bails
+   out; the array itself is new whenever the payload changes. Plugin lists
+   are still expected to window their rows (the built-in sidebar does): the
+   host does not cap the array, and mounting one row per thread on a phone is
+   the plugin's cost. Decide whether that expectation should be enforced by
+   the contract (paged/windowed read) before stabilizing.
 5. **Draft indicators.** `indicator` never reports "draft" or "working-draft",
    because an unsubmitted draft is per-composer client state the host reads per
    row. An idle unread thread holding a draft therefore reads as

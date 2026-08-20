@@ -54,6 +54,7 @@ const PRESET_REASONING_LEVELS = [
   "high",
   "xhigh",
   "max",
+  "ultra",
 ] as const;
 
 const MAX_THREAD_SEARCH_RESULTS = 10;
@@ -679,9 +680,9 @@ export function registerHandlers(
       return { folder };
     },
     deleteFolder(input) {
-      const deleted = store.tasks.deleteFolder(input.folderId);
-      if (deleted) publishProjectsChanged(bb, null);
-      return { deleted };
+      const result = store.tasks.deleteFolder(input.folderId);
+      if (result.deleted) publishProjectsChanged(bb, null);
+      return result;
     },
     listFolders() {
       return { folders: store.tasks.listFolders() };
@@ -1023,8 +1024,7 @@ export function registerHandlers(
         providers: providers.map((provider) => ({
           id: provider.id,
           name: provider.displayName,
-          permissionModes:
-            provider.capabilities.permissionModes,
+          permissionModes: provider.capabilities.permissionModes,
         })),
       };
     },

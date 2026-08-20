@@ -144,9 +144,11 @@ describe("personal install database reconciliation", () => {
       },
     ]);
     const migrations = readMigrationFiles({ migrationsFolder });
-    createHistoricalPersonalDatabase(databasePath, migrations[1].hash, [
-      150, 175,
-    ]);
+    createHistoricalPersonalDatabase(
+      databasePath,
+      migrations[1].hash,
+      [150, 175],
+    );
 
     const database = new Database(databasePath);
     const result = reconcilePersonalMigrationHistory(

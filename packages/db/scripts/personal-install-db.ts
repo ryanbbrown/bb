@@ -135,7 +135,9 @@ export function reconcilePersonalMigrationHistory(
       (expectedHashCounts.get(migration.hash) ?? 0) + 1,
     );
   }
-  const expectedTimestamps = new Set(expected.map((migration) => migration.when));
+  const expectedTimestamps = new Set(
+    expected.map((migration) => migration.when),
+  );
 
   const reconcile = database.transaction(() => {
     let applied = [...existing];
@@ -156,7 +158,8 @@ export function reconcilePersonalMigrationHistory(
       if (hashRows.length > 0) {
         const expectedHashCount = expectedHashCounts.get(migration.hash) ?? 0;
         const staleRows = hashRows.filter(
-          (row) => row.createdAt === null || !expectedTimestamps.has(row.createdAt),
+          (row) =>
+            row.createdAt === null || !expectedTimestamps.has(row.createdAt),
         );
         if (expectedHashCount !== 1 || staleRows.length !== hashRows.length) {
           throw new Error(

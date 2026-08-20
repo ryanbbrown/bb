@@ -145,6 +145,7 @@ export const pluginAppStateSchema = z.object({
     .object({
       jsUrl: z.string(),
       cssUrl: z.string().nullable(),
+      jsBytes: z.number().int().nonnegative(),
       hash: z.string(),
       sdkMajor: z.number(),
       sdkVersion: z.string(),
@@ -411,8 +412,24 @@ export const pluginCatalogSearchResultSchema = z.object({
    * names a host icon. The app never requests the marketplace's own URL.
    */
   iconUrl: z.string().nullable(),
+  /**
+   * Whether the app masks `iconUrl` with the surrounding text color, as it
+   * does a plugin's own compact `branding.icon`, instead of showing the
+   * image's own colors. True for bundled compact icons and for catalog SVGs;
+   * false for PNG and WebP. Servers before bb-app 0.40.0 do not send it;
+   * those icons render untinted.
+   */
+  iconTinted: z.boolean().default(false),
   category: z.string(),
   source: z.string(),
+  /**
+   * Where a person can read the plugin's code before an install: the git
+   * repository of a git-sourced entry, or the public npm package page of an
+   * npm-sourced entry on the default registry. Null for plugins bundled with
+   * the app and for packages on a private registry. Older servers do not
+   * send it; those entries show no link.
+   */
+  repositoryUrl: z.string().nullable().default(null),
   /** Marketplace that lists the entry; plugins bundled with the app use `bb-community`. */
   marketplace: z.string(),
   marketplaceDisplayName: z.string(),

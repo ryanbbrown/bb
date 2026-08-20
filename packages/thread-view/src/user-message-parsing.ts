@@ -529,8 +529,9 @@ export function parseProviderUserMessage(
   }
 
   const parsedInput = parsePromptInput(
-    decoded.item.content.map((part): PromptInput =>
-      part.type === "text" ? { ...part, mentions: [] } : part,
+    decoded.item.content.map(
+      (part): PromptInput =>
+        part.type === "text" ? { ...part, mentions: [] } : part,
     ),
   );
   if (!parsedInput) {

@@ -82,7 +82,9 @@ import type { ProjectThreadListState } from "./ProjectRow";
 import {
   compareByCreatedAtDescending,
   compareStandardThreads,
+  createSidebarProjectIdResolver,
   isSidebarProjectThread,
+  resolveSidebarProjectId,
   type ProjectThreadItem,
   type SidebarSectionDefinition,
   type ThreadComparator,
@@ -95,7 +97,7 @@ import {
   PinnedThreadTree,
   type PinnedThreadTreeProps,
 } from "./PinnedThreadTree";
-import { SidebarThreadTitleMentionResourcesProvider } from "./SidebarThreadTitleMentions";
+import { useThreadTitleMentionResources } from "@/components/thread/ThreadTitleMentions";
 import { buildPinnedSidebarState } from "./pinnedSidebarThreads";
 import {
   collapsedEnvironmentIdsAtom,
@@ -179,11 +181,6 @@ interface ProjectListActionButtonsProps {
 
 interface ProjectListShellProps {
   children: ReactNode;
-  titleMentionResources?: {
-    sectionNamesById: ReadonlyMap<string, string>;
-    projectNamesById: ReadonlyMap<string, string>;
-    threadById: ReadonlyMap<string, ThreadListEntry>;
-  };
 }
 
 interface ProjectListSectionIconButtonProps {
@@ -271,6 +268,9 @@ interface SelectedThreadSidebarExpansionArgs {
   organizationMode: SidebarOrganizationMode;
   isPinned: boolean;
   selectedThread: ThreadListEntry;
+  // Project group that renders the thread in "By project" mode. A cross-project
+  // child renders under its root ancestor's project, not its own.
+  sidebarProjectId: string;
 }
 
 interface SelectedThreadSidebarExpansion {
@@ -321,6 +321,7 @@ export function getSelectedThreadSidebarExpansion({
   organizationMode,
   isPinned,
   selectedThread,
+  sidebarProjectId,
 }: SelectedThreadSidebarExpansionArgs): SelectedThreadSidebarExpansion {
   if (isPinned) {
     return { sidebarSectionId: "pinned" };
@@ -340,13 +341,11 @@ export function getSelectedThreadSidebarExpansion({
     return sectionKey ? { sectionKey } : { sidebarSectionId: "threads" };
   }
 
-  if (selectedThread.projectId === PERSONAL_PROJECT_ID) {
+  if (sidebarProjectId === PERSONAL_PROJECT_ID) {
     return { sidebarSectionId: "threads" };
   }
 
-  return {
-    projectId: selectedThread.projectId,
-  };
+  return { projectId: sidebarProjectId };
 }
 
 function isCollapsibleSidebarSectionId(
@@ -979,22 +978,11 @@ export function ProjectListActionButtons({
   );
 }
 
-export function ProjectListShell({
-  children,
-  titleMentionResources,
-}: ProjectListShellProps) {
-  const content = (
+export function ProjectListShell({ children }: ProjectListShellProps) {
+  return (
     <SidebarStickyStack data-sidebar-sticky-density="compact-actions">
       <SidebarGroupContent>{children}</SidebarGroupContent>
     </SidebarStickyStack>
-  );
-  if (!titleMentionResources) {
-    return content;
-  }
-  return (
-    <SidebarThreadTitleMentionResourcesProvider {...titleMentionResources}>
-      {content}
-    </SidebarThreadTitleMentionResourcesProvider>
   );
 }
 
@@ -1113,20 +1101,20 @@ export function ProjectModeSections({
   const { activityThreadsByProject, threadsByProject } = useMemo(() => {
     const activityGroups = new Map<string, ThreadListEntry[]>();
     const displayGroups = new Map<string, ThreadListEntry[]>();
+    const resolveSidebarProjectId = createSidebarProjectIdResolver(
+      new Map(threads.map((thread) => [thread.id, thread])),
+    );
     for (const thread of threads) {
-      const activityGroup = activityGroups.get(thread.projectId);
-      if (activityGroup) {
-        activityGroup.push(thread);
-      } else {
-        activityGroups.set(thread.projectId, [thread]);
-      }
+      // Cross-project children render and rank with their parent's project.
+      const sidebarProjectId = resolveSidebarProjectId(thread);
+      const activityGroup = activityGroups.get(sidebarProjectId);
+      if (activityGroup) activityGroup.push(thread);
+      else activityGroups.set(sidebarProjectId, [thread]);
+
       if (effectivePinnedThreadIds.has(thread.id)) continue;
-      const displayGroup = displayGroups.get(thread.projectId);
-      if (displayGroup) {
-        displayGroup.push(thread);
-      } else {
-        displayGroups.set(thread.projectId, [thread]);
-      }
+      const displayGroup = displayGroups.get(sidebarProjectId);
+      if (displayGroup) displayGroup.push(thread);
+      else displayGroups.set(sidebarProjectId, [thread]);
     }
     return {
       activityThreadsByProject: activityGroups,
@@ -1601,24 +1589,11 @@ function ProjectListComponent({
     return sidebarThreads;
   }, [sidebarNavigation]);
   const draftThreadIds = usePromptDraftInputThreadIds(threads);
-  const projectNamesById = useMemo(() => {
-    const namesById = new Map<string, string>();
-    if (!sidebarNavigation) {
-      return namesById;
-    }
-    for (const project of sidebarNavigation.projects) {
-      namesById.set(project.id, project.name);
-    }
-    namesById.set(PERSONAL_PROJECT_ID, sidebarNavigation.personalProject.name);
-    return namesById;
-  }, [sidebarNavigation]);
-  const sectionNamesById = useMemo(() => {
-    const namesById = new Map<string, string>();
-    for (const section of sections) {
-      namesById.set(section.id, section.name);
-    }
-    return namesById;
-  }, [sections]);
+  // Provided once by AppLayout from the same sidebar payload (with value
+  // retention across refetches); building a second copy here re-rendered every
+  // row twice per sidebar update.
+  const titleMentionResources = useThreadTitleMentionResources();
+  const { sectionNamesById, projectNamesById } = titleMentionResources;
   const threadById = useMemo(() => {
     const map = new Map<string, ThreadListEntry>();
     for (const thread of threads) {
@@ -1626,10 +1601,6 @@ function ProjectListComponent({
     }
     return map;
   }, [threads]);
-  const titleMentionResources = useMemo(
-    () => ({ sectionNamesById, projectNamesById, threadById }),
-    [sectionNamesById, projectNamesById, threadById],
-  );
   const projectsState = useConnectionAwareQueryState({
     hasResolvedData: projects !== undefined,
     isFetching: sidebarNavigationQuery.isFetching,
@@ -1941,6 +1912,7 @@ function ProjectListComponent({
       organizationMode,
       isPinned,
       selectedThread,
+      sidebarProjectId: resolveSidebarProjectId(selectedThread, threadById),
     });
     if (expansion.machineKey) {
       const machineKey = expansion.machineKey;
@@ -2091,7 +2063,7 @@ function ProjectListComponent({
 
   if (threadSearch?.isActive) {
     return (
-      <ProjectListShell titleMentionResources={titleMentionResources}>
+      <ProjectListShell>
         <SidebarThreadSearchPanel
           activeIndex={threadSearch.activeIndex}
           isRecentsLoading={projectsState.status === "loading"}
@@ -2110,14 +2082,14 @@ function ProjectListComponent({
 
   if (projectsState.status === "loading") {
     return (
-      <ProjectListShell titleMentionResources={titleMentionResources}>
+      <ProjectListShell>
         <ProjectListNavigationLoadingState />
       </ProjectListShell>
     );
   }
 
   return (
-    <ProjectListShell titleMentionResources={titleMentionResources}>
+    <ProjectListShell>
       <ActiveSidebarModeSections
         mode={organizationMode}
         renderMachine={() => (

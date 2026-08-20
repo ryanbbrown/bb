@@ -237,11 +237,7 @@ export const hostDaemonBridgeLaunchSchema = z
         .object({
           kind: z.literal("artifact"),
           digest: z.string().regex(/^[a-f0-9]{64}$/u),
-          byteLength: z
-            .number()
-            .int()
-            .positive()
-            .max(HOST_ARTIFACT_MAX_BYTES),
+          byteLength: z.number().int().positive().max(HOST_ARTIFACT_MAX_BYTES),
         })
         .strict(),
       z

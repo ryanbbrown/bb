@@ -1,7 +1,11 @@
 import { useState, type ReactNode } from "react";
 import { Icon, type IconName } from "@bb/shared-ui/icon";
 import { cn } from "@bb/shared-ui/lib/utils";
-import { PluginIcon, pluginIconName } from "@/components/plugin/PluginIcon";
+import {
+  PluginCompactIconMask,
+  PluginIcon,
+  pluginIconName,
+} from "@/components/plugin/PluginIcon";
 import { usePreferredTheme } from "@/hooks/useTheme";
 import type { PluginListItem } from "@/hooks/queries/plugin-settings-queries";
 
@@ -116,10 +120,21 @@ export function CatalogEntryIcon({
   entry,
   className,
 }: {
-  entry: { displayName: string; icon: string | null; iconUrl: string | null };
+  entry: {
+    displayName: string;
+    icon: string | null;
+    iconUrl: string | null;
+    iconTinted: boolean;
+  };
   className: string;
 }) {
   const [failedIconUrl, setFailedIconUrl] = useState<string | null>(null);
+  // The server marks single-color artwork (a bundled compact icon or a catalog
+  // SVG not declared a logo) for masking with the surrounding text color, so a
+  // black-on-transparent glyph stays visible on a dark theme.
+  if (entry.iconUrl !== null && entry.iconTinted) {
+    return <PluginCompactIconMask url={entry.iconUrl} className={className} />;
+  }
   if (entry.iconUrl === null || entry.iconUrl === failedIconUrl) {
     return (
       <PlaceholderBadge

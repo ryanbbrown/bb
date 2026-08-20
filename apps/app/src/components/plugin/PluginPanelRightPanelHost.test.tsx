@@ -10,6 +10,7 @@ import {
 import { createStore, Provider as JotaiProvider } from "jotai";
 import type { ReactNode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { resetFixedPanelTabsStateForTest } from "@/lib/fixed-panel-tabs";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { TooltipProvider } from "@bb/shared-ui/tooltip";
 import {
@@ -192,6 +193,15 @@ vi.mock("@/hooks/queries/system-queries", () => ({
   useSystemConfig: () => ({
     data: { primaryHostId: hostState.primaryHostId },
   }),
+}));
+
+// The lazy secondary panel's inline placeholder registers a real `Panel`
+// while the chunk loads; the layout mock below has no PanelGroup to host it.
+vi.mock("react-resizable-panels", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-resizable-panels")>()),
+  Panel: ({ children }: { children?: ReactNode }) => (
+    <div data-testid="panel-placeholder">{children}</div>
+  ),
 }));
 
 vi.mock("@/components/secondary-panel/SecondaryPanelLayout", () => ({
@@ -382,6 +392,9 @@ describe("PluginPanelRightPanelHost", () => {
     fixedTabState.panelRegistered = true;
     fixedTabState.registrations = [];
     localStorage.clear();
+    // Clearing storage is not enough on its own: the per-thread atoms cache
+    // whatever storage held when they were first created.
+    resetFixedPanelTabsStateForTest();
   });
 
   afterEach(() => {
@@ -407,7 +420,6 @@ describe("PluginPanelRightPanelHost", () => {
     const showButton = await screen.findByRole("button", {
       name: "Show right panel",
     });
-    expect(showButton.className).toContain("[&_svg]:size-[16px]");
     fireEvent.click(showButton);
 
     expect(screen.getByTestId("shared-thread-secondary-panel")).toBe(

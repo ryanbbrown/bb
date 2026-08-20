@@ -30,6 +30,7 @@ import { MANAGED_ENVIRONMENT_RETIRE_GRACE_MS } from "./constants.js";
 import type { ServerRuntimeConfig } from "./types.js";
 import { NotificationHub } from "./ws/hub.js";
 import { WatchInterestCoordinator } from "./ws/watch-interests.js";
+import { WorkspaceReadCaches } from "./services/environments/workspace-read-cache.js";
 import { HostSharedPortCoordinator } from "./ws/host-shared-ports.js";
 
 interface StartHttpListenerArgs {
@@ -57,6 +58,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
   const hub = new NotificationHub();
   const watchInterests = new WatchInterestCoordinator({ db, hub });
   const sharedPorts = new HostSharedPortCoordinator({ db, hub });
+  const workspaceReadCaches = new WorkspaceReadCaches({ hub });
   const lifecycleDedupers = createLifecycleDedupers();
   const appUrl = toOptionalString(serverConfig.BB_APP_URL);
   const threadStorageRootPath = resolveThreadStorageRootPath({
@@ -184,6 +186,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
       terminalSessions,
       watchInterests,
       sharedPorts,
+      workspaceReadCaches,
     },
     { staticDir },
   );
@@ -247,6 +250,9 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
       // Success or failure, the registry now holds whatever loaded: release
       // the requests waiting for providers rather than stalling them out.
       providerRegistry.markRegistrationsSettled();
+      // Check installed plugins for updates every 6 hours. A check only
+      // records what is available; it never installs or runs plugin code.
+      pluginService.startPeriodicUpdateChecks();
     });
   // Discovery metadata only: a refresh never installs, updates, or runs
   // plugin code, and a failure keeps the last-known-good catalog.
@@ -266,6 +272,7 @@ export async function runServer(serverConfig: ServerConfig): Promise<void> {
       eventLoopStallMonitor.stop();
       clearInterval(sweepInterval);
       pluginCatalogService.stopPeriodicRefresh();
+      await pluginService.stopPeriodicUpdateChecks();
       await pluginService.stop().catch((error: unknown) => {
         logger.warn({ err: error }, "Plugin shutdown failed");
       });

@@ -133,11 +133,11 @@ describe.sequential("fake provider smoke reuse integration", () => {
       // row — otherwise the timeline shows "Provisioned thread" for a start
       // that only attached to a ready environment. The first thread did
       // provision, so it keeps its row.
-      expect(await visibleProvisioningStatuses(harness.api,thread.id)).not.toEqual(
-        [],
-      );
       expect(
-        await visibleProvisioningStatuses(harness.api,reusedThread.thread.id),
+        await visibleProvisioningStatuses(harness.api, thread.id),
+      ).not.toEqual([]);
+      expect(
+        await visibleProvisioningStatuses(harness.api, reusedThread.thread.id),
       ).toEqual([]);
     }));
 
