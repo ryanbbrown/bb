@@ -550,6 +550,21 @@ when the plugin component crashes.
    registration or stabilize together with the replacement primitive shared by
    other surfaces.
 
+## `PluginThreadListProps.experimental_SidebarThreadProjection` (`@get-bb/plugin-sdk/app`)
+
+**What it does.** Supplies a thread-list replacement with a native sidebar renderer bound to the active sidebar instance, plugin generation, and registration. The plugin submits complete region, order, nesting, grouping, project-order, and exclusion data using thread and project IDs. BB validates the complete value against the current host snapshot, then renders native project headings, thread rows, status and draft precedence, actions, search bypass, split behavior, accessibility, collapse, and windowing. Invalid values atomically delegate to `experimental_Original`; one bounded diagnostic and toast are deduplicated per plugin generation and failure reason, and a later value is retried.
+
+**Audit before stabilizing.**
+
+1. Confirm full-snapshot exact coverage remains safer and easier to reason about than partial include/filter rules, especially at 10,000 threads.
+2. Confirm the bounded limits and invalid-projection diagnostic/toast policy give authors enough information without exposing host-local thread data or creating notification noise.
+3. Audit whether `sticky` and `flow`, headerless regions, dividers, project grouping, and `flat`/`native` nesting are the smallest stable organization vocabulary.
+4. Verify native parent-tree, cross-project, project-order, empty-project, worktree grouping, and source-order semantics stay deterministic as BB adds new native grouping behavior.
+5. Confirm projection-local collapse identity should remain scoped to plugin ID, registration ID, region ID, and project/item identity, and decide whether any collapse state should persist across reloads.
+6. Confirm active search should always bypass organization projections, including an active empty query, rather than asking each plugin to reproduce Recent, archived, full-text, keyboard, and deep-link behavior.
+7. Confirm the renderer stays bound instead of becoming a global UI-kit component. Its value is ownership of a live sidebar snapshot, not reusable visual primitives.
+8. Audit the SDK harness semantic adapter and projection inspection contract. It intentionally records organization data without pretending to model native BB behavior.
+
 ## `PluginFileOpenerProps.experimental_Original` (`@get-bb/plugin-sdk/app`)
 
 **What it does.** Supplies a file-opener replacement with BB's preview bound to
@@ -693,8 +708,10 @@ built-in sidebar uses — so a plugin list costs no extra request and updates on
 exactly the same events. The action hook routes to the host's own mutations, so
 optimistic updates, toasts, and cache invalidation are identical.
 
-`PluginSidebarThread` is a deliberate copy of the fields a sidebar needs, not a
-re-export of the internal `ThreadListEntry`. `indicator` is
+`PluginSidebarThread` is a deliberate copy of the fields a custom sidebar or
+organization projection needs, not a re-export of the internal
+`ThreadListEntry`. A native projection submits only IDs, so BB reads private
+per-client draft state and renders its normal indicators. `indicator` is
 `resolveThreadListIndicator` already run by the host, so plugins inherit bb's
 precedence (attention before work; plan and goal before the spinner) instead of
 reimplementing it, and `indicatorLabel` carries the matching accessible string.
@@ -707,7 +724,9 @@ reimplementing it, and `indicatorLabel` carries the matching accessible string.
    need it. `host` is resolved host-side to `{ id, name }` because a plugin
    cannot turn a host id into a machine name — confirm resolution belongs here
    rather than in a separate hosts hook, and that falling back to the id for an
-   unknown host is the right failure.
+   unknown host is the right failure. `visibility` remains available to raw
+   replacements and is the required eligibility signal for projections;
+   confirm the internal name should stabilize unchanged.
 2. **Indicator coupling.** `indicator` freezes bb's precedence into the
    contract. Confirm new kinds can ship without breaking plugins, and that the
    documented "treat unknown as none" rule is enough.
@@ -719,16 +738,16 @@ reimplementing it, and `indicatorLabel` carries the matching accessible string.
    thread DTO per unchanged `ThreadListEntry` (React Query structurally shares
    the payload), so a refetch that changes one thread hands plugins the same
    objects for every other thread and a `memo`/compiler-memoized row bails
-   out; the array itself is new whenever the payload changes. Plugin lists
-   are still expected to window their rows (the built-in sidebar does): the
-   host does not cap the array, and mounting one row per thread on a phone is
-   the plugin's cost. Decide whether that expectation should be enforced by
-   the contract (paged/windowed read) before stabilizing.
+   out; the array itself is new whenever the payload changes. Raw custom lists
+   are still expected to window their rows. Native projections use BB's own
+   windowing and placeholder navigation. The host does not cap the input array.
+   Decide whether raw replacements need an enforced paged/windowed read before
+   stabilizing.
 5. **Draft indicators.** `indicator` never reports "draft" or "working-draft",
    because an unsubmitted draft is per-composer client state the host reads per
-   row. An idle unread thread holding a draft therefore reads as
-   "unread-success" where the built-in row paints "draft". Decide whether to
-   close that gap (a per-thread draft hook) or keep it documented.
+   row. Native projections close this gap by rendering BB's row. A raw custom
+   row can still show "unread-success" where the built-in row paints "draft".
+   Decide whether raw replacements need a per-thread draft hook.
 6. **Action surface.** Destructive and dialog-bearing actions route through
    `useThreadActions()`, so `archive` closes panes and repairs the route, and
    `requestDelete` opens bb's confirmation rather than deleting silently.

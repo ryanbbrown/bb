@@ -1412,17 +1412,66 @@ interface PluginThreadListProps {
   /** BB's bound thread list. Render it to delegate conditionally without
       re-entering plugin replacement resolution. */
   experimental_Original: ComponentType;
+  /** BB's native sidebar renderer, bound to this instance and registration. */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: PluginSidebarThreadProjection;
+  }>;
 }
 ```
 
-**Reading and acting on threads.** Two hooks back a replaced list:
+**Prefer an ID-only native projection for organization changes.** Build regions from `experimental_useSidebarThreads()`, then render `experimental_SidebarThreadProjection`. BB keeps native project headings, thread rows, status and per-client draft precedence, menus and confirmations, rename, archive, keyboard navigation, split behavior, responsive accessibility, collapse, and windowing.
+
+```tsx
+const Projection = props.experimental_SidebarThreadProjection;
+return (
+  <Projection
+    projection={{
+      regions: [
+        {
+          id: "priority",
+          label: "Priority",
+          placement: "sticky",
+          dividerAfter: true,
+          collapsible: false,
+          nesting: "flat",
+          grouping: { kind: "none" },
+          threadOrder: priorityThreadIds,
+        },
+        {
+          id: "work",
+          label: "Work",
+          placement: "flow",
+          dividerAfter: false,
+          collapsible: true,
+          nesting: "native",
+          grouping: {
+            kind: "project",
+            projectOrder: projects.map(({ id }) => id),
+            collapsible: true,
+            showEmptyProjects: false,
+          },
+          threadOrder: workThreadIds,
+        },
+      ],
+      excludedThreadIds,
+    }}
+  />
+);
+```
+
+Filter with `thread.visibility === "visible" && !thread.isArchived`. Account for every resulting eligible thread exactly once in a region or `excludedThreadIds`. Sticky regions must precede flow regions. Region and thread order are authoritative; `flat` ignores parents, while `native` applies BB's parent tree and cross-project rules. An invalid or stale projection atomically renders `experimental_Original`, reports one bounded deduplicated failure, and retries a later value. Active host search bypasses the projection, even when its query is empty. A valid all-excluded projection shows BB's native empty state.
+
+The test harness records submissions at `inspection.sidebarThreadProjections` and renders a semantic ID adapter. It does not simulate native UI. Use the raw custom-markup path below only when custom presentation is the product requirement.
+
+**Reading and acting on threads.** These hooks back a native projection or raw replaced list:
 
 ```tsx
 const { status, threads, projects } = experimental_useSidebarThreads();
 const actions = experimental_useSidebarThreadActions();
 
 // threads: PluginSidebarThread[] — id, title, parentThreadId, originKind,
-// providerId, activity counts, isUnread/isPinned, environment.branchName,
+// providerId, activity counts, isUnread/isPinned/isArchived, visibility,
+// environment.branchName,
 // host ({ id, name } — the machine, useful when a thread has no branch),
 // timestamps, and
 // `indicator` (bb's resolved status kind) + `indicatorLabel` (its a11y string).
@@ -1714,11 +1763,16 @@ projectId }` (nullable fields) and `path` follows the source (workspace:
     id: "compact",
     title: "Compact diffs",
     component: ({ patch, path, experimental_Original: Original }) =>
-      patch.length > 20_000 ? <Original /> : <MyDiff patch={patch} path={path} />,
+      patch.length > 20_000 ? (
+        <Original />
+      ) : (
+        <MyDiff patch={patch} path={path} />
+      ),
   });
   ```
 
   Experimental: see `docs/api_to_audit.md`.
+
 - `messageDirective` → `{ attributes, source, message,
 openWorkspaceFile }` — register a leaf
   assistant-message directive. Registration:
@@ -1835,6 +1889,7 @@ className?, leadingContent?, messageActions? }` —
   panels and plugin nav panels have one; homepage and settings sections do
   not, so code there renders unhighlighted rather than broken.
   Experimental: see `docs/api_to_audit.md`.
+
 - `Markdown` — bb's chat-message markdown renderer (same typography,
   spacing, and code styling as timeline messages). Props:
   `{ content, className? }`. Use it wherever plugin UI quotes or previews

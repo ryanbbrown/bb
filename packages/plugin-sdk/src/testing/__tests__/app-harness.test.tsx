@@ -8,6 +8,7 @@ import type {
   PluginComposerScope,
   PluginMessageDirectiveProps,
   PluginNavPanelProps,
+  PluginThreadListProps,
 } from "../../app-contract.js";
 import {
   installTestPluginRuntime,
@@ -36,6 +37,30 @@ const typedRpcContract = defineRpcContract({
     output: z.object({ title: z.string() }),
   },
 });
+
+function ProjectionProbe({
+  experimental_SidebarThreadProjection: Projection,
+}: PluginThreadListProps) {
+  return (
+    <Projection
+      projection={{
+        regions: [
+          {
+            id: "priority",
+            label: "Priority",
+            placement: "sticky",
+            dividerAfter: true,
+            collapsible: false,
+            nesting: "flat",
+            grouping: { kind: "none" },
+            threadOrder: ["thread-2", "thread-1"],
+          },
+        ],
+        excludedThreadIds: ["thread-3"],
+      }}
+    />
+  );
+}
 
 function TypedRpcPanel() {
   const rpc = useRpc<typeof typedRpcContract>();
@@ -939,6 +964,35 @@ describe("typed rpc test runtime", () => {
 });
 
 describe("renderSlot", () => {
+  it("records native sidebar projections and renders only a semantic adapter", () => {
+    const slot = renderSlot(
+      { component: ProjectionProbe },
+      {
+        activeThreadId: null,
+        activeProjectId: null,
+        isCompactViewport: false,
+        onNavigate: () => undefined,
+        searchQuery: "",
+        experimental_Original: () => null,
+        experimental_SidebarThreadProjection: () => null,
+      },
+    );
+
+    expect(slot.inspection.sidebarThreadProjections).toEqual([
+      {
+        regions: [
+          expect.objectContaining({
+            id: "priority",
+            threadOrder: ["thread-2", "thread-1"],
+          }),
+        ],
+        excludedThreadIds: ["thread-3"],
+      },
+    ]);
+    expect(slot.getByRole("region", { name: "Priority" })).toBeDefined();
+    expect(slot.getByText("thread-2").dataset.threadId).toBe("thread-2");
+  });
+
   it("drives the shared realtime connection lifecycle", async () => {
     const slot = renderSlot(
       app.homepageSections[0]!,

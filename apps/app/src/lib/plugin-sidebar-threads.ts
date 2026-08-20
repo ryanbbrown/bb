@@ -80,6 +80,7 @@ export function toPluginSidebarThread(
     isUnread: !isThreadRead(entry),
     isPinned: entry.pinnedAt !== null,
     isArchived: entry.archivedAt !== null,
+    visibility: entry.visibility,
     environment:
       entry.environmentId === null
         ? null

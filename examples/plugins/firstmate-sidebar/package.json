@@ -6,7 +6,7 @@
   "description": "A project-grouped sidebar for a Firstmate manager and its managed sessions.",
   "engines": {
     "bb": ">=0.0",
-    "bbPluginSdk": ">=0.4.3"
+    "bbPluginSdk": ">=0.4.11"
   },
   "bb": {
     "name": "Firstmate sidebar",

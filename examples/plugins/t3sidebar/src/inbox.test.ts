@@ -38,6 +38,7 @@ function thread(
     isUnread: false,
     isPinned: false,
     isArchived: false,
+    visibility: "visible",
     environment: null,
     host: null,
     createdAt: 100,

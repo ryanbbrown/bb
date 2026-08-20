@@ -3,9 +3,9 @@
 Status: **implemented**. The members below ship in `@get-bb/plugin-sdk/app`.
 
 This document specifies one exclusive slot and the data surface it needs.
-A plugin uses them to replace bb's thread list with its own. The reference
-consumer is the `t3sidebar` plugin in
-[`examples/plugins/t3sidebar`](../examples/plugins/t3sidebar).
+A plugin can replace bb's thread list with custom markup, or submit an ID-only
+organization projection for BB to render natively. `firstmate-sidebar` is the
+native-projection example. `t3sidebar` remains the raw custom-markup example.
 
 Every member below ships with the `experimental_` prefix and an entry in
 [api_to_audit.md](api_to_audit.md), per [AGENTS.md](../AGENTS.md).
@@ -16,16 +16,17 @@ Every member below ships with the `experimental_` prefix and an entry in
 
 `AppSidebar` renders five regions from top to bottom:
 
-| Region                                     | Owner today                | After this change |
-| ------------------------------------------ | -------------------------- | ----------------- |
-| Top reserve / window drag row              | host                       | host, always      |
-| Primary actions (New thread, search)       | `ProjectListActionButtons` | host, always      |
-| Plugin nav rows (Tools, Docs, Tasks)       | `PluginNavSidebarItems`    | host, always      |
-| **Scrolling thread list**                  | `ProjectList`              | **the plugin**    |
-| Footer (Settings, plugin actions, updates) | host                       | host, always      |
+| Region                                     | Owner today                | After this change                         |
+| ------------------------------------------ | -------------------------- | ----------------------------------------- |
+| Top reserve / window drag row              | host                       | host, always                              |
+| Primary actions (New thread, search)       | `ProjectListActionButtons` | host, always                              |
+| Plugin nav rows (Tools, Docs, Tasks)       | `PluginNavSidebarItems`    | host, always                              |
+| **Scrolling thread list**                  | `ProjectList`              | plugin markup or host-rendered projection |
+| Footer (Settings, plugin actions, updates) | host                       | host, always                              |
 
-The plugin replaces the scroll area only. The host keeps the chrome, so
-every sidebar looks like bb, resizes like bb, and collapses like bb.
+The slot replaces the scroll area only. The host keeps the chrome. A raw
+replacement owns its list markup; a projection keeps the complete list UI
+host-owned as well.
 
 Two reasons the host keeps the rest. The nav rows and footer are other
 plugins' surfaces — Docs, Tasks, and every `sidebarFooterAction` live there —
@@ -82,8 +83,67 @@ interface PluginThreadListProps {
    * conditionally without re-entering plugin replacement resolution.
    */
   experimental_Original: ComponentType;
+  /** BB's native sidebar, bound to this instance and registration. */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: PluginSidebarThreadProjection;
+  }>;
 }
 ```
+
+### Native organization projections
+
+Use `experimental_SidebarThreadProjection` when a plugin only changes organization. The plugin submits IDs and BB renders the current native project headings and thread rows. This keeps native status and draft precedence, menus and confirmations, inline rename, navigation, shortcuts, split click and drag, responsive behavior, accessibility, collapse, and windowing without copying BB markup.
+
+```tsx
+function OrganizedList({
+  experimental_SidebarThreadProjection: Projection,
+}: PluginThreadListProps) {
+  return (
+    <Projection
+      projection={{
+        regions: [
+          {
+            id: "priority",
+            label: "Priority",
+            placement: "sticky",
+            dividerAfter: true,
+            collapsible: false,
+            nesting: "flat",
+            grouping: { kind: "none" },
+            threadOrder: ["thr_manager"],
+          },
+          {
+            id: "work",
+            label: "Work",
+            placement: "flow",
+            dividerAfter: false,
+            collapsible: true,
+            nesting: "native",
+            grouping: {
+              kind: "project",
+              projectOrder: ["proj_a", "proj_b"],
+              collapsible: true,
+              showEmptyProjects: false,
+            },
+            threadOrder: ["thr_parent", "thr_child"],
+          },
+        ],
+        excludedThreadIds: [],
+      }}
+    />
+  );
+}
+```
+
+Region and thread order are authoritative. Sticky regions must come first. `flat` ignores parent relationships; `native` applies BB's parent tree, cross-project nesting, and native worktree grouping after the supplied source order. Project grouping uses each thread's own project in `flat` mode and the native root project in `native` mode. `showEmptyProjects` controls whether an ordered project with no represented thread gets a heading. Pin and lifecycle state do not move a projected row.
+
+A complete projection must account for every current eligible visible, non-archived thread exactly once, either in one region or in `excludedThreadIds`. BB rejects the complete projection for malformed fields, blank or duplicate region IDs, sticky regions after flow regions, duplicate, unknown, stale, archived, hidden, deleted, missing, or visible-and-excluded threads, and unknown, duplicate, or omitted represented projects. BB also bounds regions, ID references, text, and diagnostics. Rejection renders `experimental_Original` atomically, logs one bounded reason, and shows one toast for each plugin generation and failure reason. A later valid projection is retried normally. A valid projection that excludes all threads shows BB's native empty state.
+
+The renderer is bound to the active sidebar and registration. Do not save it globally. Build one projection from normal plugin hooks and memoization, then render it. Active host search, including an open search field with an empty query, bypasses the projection and uses BB's full native Recent, active, archived, and message-search surface.
+
+The SDK test harness replaces the bound renderer with a semantic adapter. `renderSlot(...).inspection.sidebarThreadProjections` records submitted values. The adapter exposes region, project ID, and thread ID structure for plugin tests, but it does not model native BB UI. Test native behavior in the app host.
+
+Use `experimental_Original` directly for deliberate fallback while settings or required plugin state are unavailable. Use the raw replacement path only when the plugin intentionally owns custom markup. [`firstmate-sidebar`](../examples/plugins/firstmate-sidebar) is the ID-only projection example; [`t3sidebar`](../examples/plugins/t3sidebar) remains the custom-markup example.
 
 ### This slot is exclusive
 
@@ -167,7 +227,9 @@ interface PluginSidebarThread {
 
   isUnread: boolean;
   isPinned: boolean;
-  hasUnsubmittedDraft: boolean;
+  isArchived: boolean;
+  /** Use this with isArchived to build the projection's eligible ID set. */
+  visibility: "visible" | "hidden";
 
   environment: {
     id: string;
@@ -237,23 +299,13 @@ promise carries the host's error; the plugin decides whether to toast.
 
 ---
 
-## 5. No host components
+## 5. One bound host renderer, no UI-kit components
 
-The SDK deliberately ships almost no components (plugin design §5.5), and this
-API adds none.
+The SDK deliberately ships almost no components (plugin design §5.5). The bound `experimental_SidebarThreadProjection` is the exception: it is a product capability tied to one live sidebar snapshot, not a reusable row, heading, menu, status, or layout primitive.
 
-Status icons are data: `indicator`, `indicatorLabel`, and `activity`. The
-context menu is the plugin's too — every item bb's own menu offers (open, open
-in split, pin, mark read, rename, archive, request delete) is on
-`experimental_useSidebarThreadActions`, so a replaced sidebar can rebuild it,
-reorder it, or replace it with something else entirely.
+A raw replacement still owns its presentation. Status icons are data: `indicator`, `indicatorLabel`, and `activity`. The context menu is the plugin's too — every item BB's menu offers is on `experimental_useSidebarThreadActions`, so an intentional custom sidebar can rebuild or replace it.
 
-That is the point of replacing the list: a sidebar that cannot choose its own
-glyphs and its own menu is not really replaced.
-
-The trade is real and worth stating. A plugin menu will not automatically pick
-up a thread action bb adds later, and it can drift from bb's labels and
-ordering. `docs/api_to_audit.md` tracks that as an open question.
+The trade is real. Raw markup does not automatically pick up a native action, status, draft rule, accessibility change, or windowing improvement. Use a native projection unless that presentation difference is the feature.
 
 ---
 
@@ -618,9 +670,7 @@ thread shortcuts, and right-click still opens bb's full menu.
   settled, snoozed, starred — stores it in its own database through
   `bb.storage.database()` and serves it over `bb.rpc`. This keeps plugin
   concepts out of bb's schema and out of the host-daemon protocol.
-- **No components at all.** `indicator`, `indicatorLabel`, and `activity` are
-  data, and so is the action list: plugins draw their own icons and build their
-  own context menus.
+- **No reusable row components.** The bound native projection renders a complete list. Raw replacements still receive data and actions, not native row, glyph, or menu primitives.
 - **No drag to reorder, and no drag into a section.** Those stay host-internal.
   Bring your own drag library; the split drag will not fight it.
 - **No control of the footer, the nav rows, or the window chrome.**

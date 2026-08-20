@@ -68,6 +68,7 @@ Faster large threads, child threads across projects, and a long list of fixes.
 - `bb.agents.experimental_registerProvider`, `@get-bb/plugin-sdk/provider-bridge`, and `app.slots.experimental_providerIcon` are the infrastructure for agent providers as plugins. Codex, Claude Code, Pi, and ACP now run through this path internally.
 - `bb.host` entries, `bb.hosts.experimental_client`, `experimental_defineHostEntry`, `experimental_retainWorker`, and `experimental_createHostEntryHarness` let a plugin run code on an enrolled host. Keep Awake is the first plugin on this path.
 - `PluginThreadListProps.experimental_Original` and `PluginFileOpenerProps.experimental_Original` give a replacement component bb's own list or preview.
+- `PluginThreadListProps.experimental_SidebarThreadProjection` lets an organization plugin submit thread and project IDs while bb renders its complete native sidebar UI.
 
 ### Thanks
 

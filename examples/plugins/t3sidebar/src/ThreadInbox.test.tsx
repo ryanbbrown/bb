@@ -42,6 +42,7 @@ function thread(
     isUnread: false,
     isPinned: false,
     isArchived: false,
+    visibility: "visible",
     environment: null,
     host: null,
     createdAt: 100,
@@ -59,6 +60,7 @@ const listProps = {
   onNavigate: () => {},
   searchQuery: "",
   experimental_Original: () => null,
+  experimental_SidebarThreadProjection: () => null,
 };
 
 function render(

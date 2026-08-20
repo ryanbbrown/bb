@@ -79,6 +79,7 @@ import {
   type ThreadRowOptions,
 } from "./ThreadRow";
 import {
+  buildChronologicalThreadList,
   buildSectionThreadList,
   buildProjectThreadGroups,
   CHRONOLOGICAL_CONTAINER_ID,
@@ -174,6 +175,10 @@ export interface ProjectRowProps {
   projectDragBindings?: SidebarSortableDragBindings;
   projectRowRef?: (element: HTMLDivElement | null) => void;
   projectRowStyle?: CSSProperties;
+  /** Region projections nest project headings below their own section label. */
+  headingTier?: "label" | "project";
+  /** Flat projections disable synthetic worktree grouping. */
+  groupEnvironmentThreads?: boolean;
 }
 
 interface ProjectThreadTreeProps {
@@ -189,6 +194,8 @@ interface ProjectThreadTreeProps {
   onProjectSelect?: () => void;
   onToggleThreadCollapsed: (threadId: string) => void;
   onToggleEnvironmentCollapsed: (environmentId: string) => void;
+  /** Flat projections disable synthetic worktree grouping. */
+  groupEnvironmentThreads?: boolean;
 }
 
 interface SectionThreadTreeProps {
@@ -1911,6 +1918,7 @@ export const ProjectThreadTree = memo(function ProjectThreadTree({
   onProjectSelect,
   onToggleThreadCollapsed,
   onToggleEnvironmentCollapsed,
+  groupEnvironmentThreads = true,
 }: ProjectThreadTreeProps) {
   const projectThreads =
     threadListState.status === "ready"
@@ -1919,8 +1927,18 @@ export const ProjectThreadTree = memo(function ProjectThreadTree({
   const draftThreadIds = usePromptDraftInputThreadIds(projectThreads);
   const rootItems = useMemo(
     () =>
-      buildProjectThreadGroups(projectThreads, compareThreads, draftThreadIds),
-    [compareThreads, draftThreadIds, projectThreads],
+      groupEnvironmentThreads
+        ? buildProjectThreadGroups(
+            projectThreads,
+            compareThreads,
+            draftThreadIds,
+          )
+        : buildChronologicalThreadList(
+            projectThreads,
+            compareThreads,
+            draftThreadIds,
+          ),
+    [compareThreads, draftThreadIds, groupEnvironmentThreads, projectThreads],
   );
 
   if (threadListState.status === "loading") {
@@ -2295,6 +2313,8 @@ function ProjectRowComponent({
   projectDragBindings,
   projectRowRef,
   projectRowStyle,
+  headingTier = "label",
+  groupEnvironmentThreads = true,
 }: ProjectRowProps) {
   const [isDropdownActionsOpen, setIsDropdownActionsOpen] = useState(false);
   const [isContextActionsOpen, setIsContextActionsOpen] = useState(false);
@@ -2421,6 +2441,7 @@ function ProjectRowComponent({
           dragBindings={projectDragBindings}
           sectionRef={projectRowRef}
           sectionStyle={projectRowStyle}
+          stickyTier={headingTier}
         >
           <ProjectThreadTree
             projectId={project.id}
@@ -2429,7 +2450,8 @@ function ProjectRowComponent({
             collapsedThreadIds={collapsedThreadIds}
             collapsedEnvironmentIds={collapsedEnvironmentIds}
             compareThreads={compareThreads}
-            variant="section"
+            variant={headingTier === "project" ? "project" : "section"}
+            groupEnvironmentThreads={groupEnvironmentThreads}
             onProjectSelect={onProjectSelect}
             onToggleThreadCollapsed={onToggleThreadCollapsed}
             onToggleEnvironmentCollapsed={onToggleEnvironmentCollapsed}
@@ -2533,7 +2555,9 @@ function areProjectRowPropsEqual(
       next.consumeProjectClickSuppression ||
     prev.projectDragBindings !== next.projectDragBindings ||
     prev.projectRowRef !== next.projectRowRef ||
-    prev.projectRowStyle !== next.projectRowStyle
+    prev.projectRowStyle !== next.projectRowStyle ||
+    prev.headingTier !== next.headingTier ||
+    prev.groupEnvironmentThreads !== next.groupEnvironmentThreads
   ) {
     return false;
   }

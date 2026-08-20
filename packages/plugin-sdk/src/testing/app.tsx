@@ -43,6 +43,7 @@ import {
   type PluginSidebarPullRequest,
   type PluginSidebarThreadActions,
   type PluginSidebarThreadPullRequestState,
+  type PluginSidebarThreadProjection,
   type PluginSidebarThreadSplit,
   type PluginSidebarThreadsState,
   type PluginSourceCodeRendererRegistration,
@@ -819,6 +820,8 @@ export interface RenderedSlotBehaviorDrivers {
 
 /** Read-only call/write logs produced while the slot is mounted. */
 export interface RenderedSlotInspectionState {
+  /** Every projection submitted to the bound native sidebar test adapter. */
+  readonly sidebarThreadProjections: readonly PluginSidebarThreadProjection[];
   /** Every `useRpc().call`, in order. */
   readonly rpcCalls: RpcCall[];
   /** Every `useBbNavigate()` call, in order. */
@@ -904,6 +907,7 @@ export function renderSlot<
   options: RenderSlotOptions<Contract> = {},
 ): RenderedSlot {
   const rpcCalls: RpcCall[] = [];
+  const sidebarThreadProjections: PluginSidebarThreadProjection[] = [];
   const rpcHandlers = (options.rpc ?? {}) as Record<
     string,
     (input: unknown) => unknown
@@ -1140,7 +1144,53 @@ export function renderSlot<
     </SlotEnvContext.Provider>
   );
   const Component = registration.component;
-  const element = renderSlotTree(<Component {...props} />);
+  const TestSidebarThreadProjection = ({
+    projection,
+  }: {
+    projection: PluginSidebarThreadProjection;
+  }) => {
+    const recorded = strictJsonRoundTrip(
+      projection,
+      "sidebar thread projection",
+    ) as unknown as PluginSidebarThreadProjection;
+    sidebarThreadProjections.push(recorded);
+    return (
+      <div data-bb-test-sidebar-projection="">
+        {projection.regions.map((region) => (
+          <section
+            key={region.id}
+            aria-label={region.label ?? region.id}
+            data-placement={region.placement}
+            data-nesting={region.nesting}
+          >
+            {region.label === null ? null : <h2>{region.label}</h2>}
+            {region.grouping.kind === "project"
+              ? region.grouping.projectOrder.map((projectId) => (
+                  <div key={projectId} data-project-id={projectId}>
+                    {projectId}
+                  </div>
+                ))
+              : null}
+            <ol>
+              {region.threadOrder.map((threadId) => (
+                <li key={threadId} data-thread-id={threadId}>
+                  {threadId}
+                </li>
+              ))}
+            </ol>
+          </section>
+        ))}
+      </div>
+    );
+  };
+  const componentProps =
+    "experimental_SidebarThreadProjection" in props
+      ? {
+          ...props,
+          experimental_SidebarThreadProjection: TestSidebarThreadProjection,
+        }
+      : props;
+  const element = renderSlotTree(<Component {...componentProps} />);
   const result = render(element);
 
   const rerenderSlot = (ui: ReactNode): void => {
@@ -1194,6 +1244,7 @@ export function renderSlot<
     navigateCalls,
     sidebarActionCalls,
     composer: composerLog,
+    sidebarThreadProjections,
     behavior: {
       emitRealtime,
       setRealtimeConnectionState,
@@ -1201,6 +1252,7 @@ export function renderSlot<
       setComposerScope,
     },
     inspection: {
+      sidebarThreadProjections,
       rpcCalls,
       navigateCalls,
       sidebarActionCalls,

@@ -58,6 +58,8 @@ export interface TopLevelSidebarSectionProps {
   sectionStyle?: CSSProperties;
   consumeClickSuppression?: ConsumeDragClickSuppression;
   isDropTargetActive?: boolean;
+  /** Project groups nested under a region use the native project sticky tier. */
+  stickyTier?: "label" | "project";
 }
 
 /**
@@ -80,6 +82,7 @@ export function TopLevelSidebarSection({
   sectionStyle,
   consumeClickSuppression,
   isDropTargetActive = false,
+  stickyTier = "label",
 }: TopLevelSidebarSectionProps) {
   const threadSplitsEnabled = useThreadSplitsEnabled();
   const collapsedSplitIndicator = useThreadGroupSplitIndicator(
@@ -136,8 +139,9 @@ export function TopLevelSidebarSection({
     >
       <SidebarStickyTier
         ref={dragBindings?.setActivatorNodeRef}
-        tier="label"
+        tier={stickyTier}
         className={cn(
+          "flex shrink-0 items-center outline-none ring-sidebar-ring",
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
           CHROME_SECTION_LABEL_CLASS,
           SIDEBAR_STANDARD_ROW_PADDING_CLASS,

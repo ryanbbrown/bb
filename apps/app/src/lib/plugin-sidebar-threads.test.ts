@@ -172,6 +172,12 @@ describe("toPluginSidebarThread", () => {
     expect(toPluginSidebarThread(makeThread()).providerId).toBe("codex");
   });
 
+  it("maps visibility so projection plugins can exclude hidden threads", () => {
+    expect(
+      toPluginSidebarThread(makeThread({ visibility: "hidden" })).visibility,
+    ).toBe("hidden");
+  });
+
   // A personal-project thread has a machine but no worktree, so the machine
   // is the only place-of-work a row can show.
   it("resolves the machine name for the thread's host", () => {

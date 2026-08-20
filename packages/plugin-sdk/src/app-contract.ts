@@ -104,6 +104,36 @@ export interface PluginPendingInteractionProps {
  */
 export interface PluginSidebarFooterActionProps {}
 
+export interface PluginSidebarThreadProjection {
+  regions: readonly PluginSidebarThreadProjectionRegion[];
+  /**
+   * Every eligible visible, non-archived thread must occur exactly once in a
+   * region or in this exclusion list.
+   */
+  excludedThreadIds: readonly string[];
+}
+
+export interface PluginSidebarThreadProjectionRegion {
+  /** Stable within one thread-list registration. */
+  id: string;
+  /** Null renders no region heading. */
+  label: string | null;
+  placement: "sticky" | "flow";
+  dividerAfter: boolean;
+  collapsible: boolean;
+  nesting: "flat" | "native";
+  grouping:
+    | { kind: "none" }
+    | {
+        kind: "project";
+        projectOrder: readonly string[];
+        collapsible: boolean;
+        showEmptyProjects: boolean;
+      };
+  /** Exact source order before native parent-tree projection. */
+  threadOrder: readonly string[];
+}
+
 /**
  * Props passed to an `experimental_threadList` component — the sidebar's
  * scrolling thread area, replaced wholesale by one plugin.
@@ -134,6 +164,17 @@ export interface PluginThreadListProps {
    * @experimental Audit before relying on this as a stable contract.
    */
   experimental_Original: ComponentType;
+  /**
+   * BB's native sidebar renderer, bound to this sidebar and registration.
+   * Submit only thread and project IDs; BB owns rows, headings, search,
+   * windowing, collapse, menus, navigation, status, drafts, and split behavior.
+   * An invalid projection atomically renders `experimental_Original`.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: PluginSidebarThreadProjection;
+  }>;
 }
 
 /**
@@ -619,6 +660,8 @@ export interface PluginSidebarThread {
   isUnread: boolean;
   isPinned: boolean;
   isArchived: boolean;
+  /** Host eligibility signal. Hidden side chats are not native sidebar rows. */
+  visibility: "visible" | "hidden";
 
   environment: {
     id: string | null;
@@ -1029,9 +1072,7 @@ export interface PluginAppSlots {
    * {@link PluginDiffRendererRegistration}). Experimental: see
    * docs/api_to_audit.md.
    */
-  experimental_diffRenderer(
-    registration: PluginDiffRendererRegistration,
-  ): void;
+  experimental_diffRenderer(registration: PluginDiffRendererRegistration): void;
   messageDirective(registration: PluginMessageDirectiveRegistration): void;
   messageAction(registration: PluginMessageActionRegistration): void;
   /**

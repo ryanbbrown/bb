@@ -360,6 +360,7 @@ export function AppSidebar({
           replacement={threadListReplacement}
           original={originalThreadList}
           searchQuery={threadSearch.query}
+          isSearchActive={threadSearch.isActive}
           onNavigate={threadSearch.onExternalThreadOpen}
         />
       </SidebarContent>
