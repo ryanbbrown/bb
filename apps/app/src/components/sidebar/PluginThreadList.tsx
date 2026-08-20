@@ -1,4 +1,9 @@
-import { useCallback, useMemo, type ReactNode } from "react";
+import {
+  useCallback,
+  useMemo,
+  type ComponentType,
+  type ReactNode,
+} from "react";
 import { toast } from "sonner";
 import { PluginReplacementSlot } from "@/components/plugin/PluginReplacementSlot";
 import { useSidebar } from "@/components/ui/sidebar.js";
@@ -24,11 +29,62 @@ interface PluginThreadListProps {
   onNavigate: () => void;
 }
 
-/**
- * Mounts the active `experimental_threadList` slot in the sidebar's scroll
- * area, keyed by generation so a plugin reload remounts it with fresh
- * error-boundary state.
- */
+function BoundPluginThreadList({
+  BoundOriginal,
+  activeProjectId,
+  activeThreadId,
+  isCompactViewport,
+  isSearchActive,
+  onNavigate,
+  searchQuery,
+  slot,
+}: {
+  BoundOriginal: ComponentType;
+  activeProjectId: string | null;
+  activeThreadId: string | null;
+  isCompactViewport: boolean;
+  isSearchActive: boolean;
+  onNavigate: () => void;
+  searchQuery: string;
+  slot: PluginThreadListSlot;
+}) {
+  const projectionBinding = useMemo(
+    () => ({
+      activeThreadId,
+      generation: slot.generation,
+      isSearchActive,
+      onNavigate,
+      original: BoundOriginal,
+      pluginId: slot.pluginId,
+      registrationId: slot.id,
+    }),
+    [
+      BoundOriginal,
+      activeThreadId,
+      isSearchActive,
+      onNavigate,
+      slot.generation,
+      slot.id,
+      slot.pluginId,
+    ],
+  );
+  const Component = slot.component;
+  return (
+    <SidebarThreadProjectionBindingContext.Provider value={projectionBinding}>
+      <Component
+        activeThreadId={activeThreadId}
+        activeProjectId={activeProjectId}
+        isCompactViewport={isCompactViewport}
+        onNavigate={onNavigate}
+        searchQuery={searchQuery}
+        experimental_Original={BoundOriginal}
+        experimental_SidebarThreadProjection={BoundSidebarThreadProjection}
+      />
+    </SidebarThreadProjectionBindingContext.Provider>
+  );
+}
+
+/** Mounts the active exclusive thread-list provider with owner fallback. */
 export function PluginThreadList({
   replacement,
   original,
@@ -40,22 +96,6 @@ export function PluginThreadList({
   const { isCompactViewport } = useSidebar();
   const title =
     replacement.kind === "plugin" ? replacement.registration.title : "Plugin";
-  const projectionBinding = useMemo(
-    () =>
-      replacement.kind === "plugin"
-        ? {
-            activeThreadId: threadId ?? null,
-            generation: replacement.registration.generation,
-            isSearchActive,
-            onNavigate,
-            original: () => <>{original}</>,
-            pluginId: replacement.registration.pluginId,
-            registrationId: replacement.registration.id,
-          }
-        : null,
-    [isSearchActive, onNavigate, original, replacement, threadId],
-  );
-
   const handleCrash = useCallback(
     (pluginId: string) => {
       toast.error("Sidebar plugin crashed", {
@@ -72,26 +112,18 @@ export function PluginThreadList({
       slotKind={THREAD_LIST_SLOT_KIND}
       onCrash={handleCrash}
     >
-      {(slot, BoundOriginal) => {
-        if (projectionBinding === null) return null;
-        return (
-          <SidebarThreadProjectionBindingContext.Provider
-            value={{ ...projectionBinding, original: BoundOriginal }}
-          >
-            <slot.component
-              activeThreadId={threadId ?? null}
-              activeProjectId={projectId ?? null}
-              isCompactViewport={isCompactViewport}
-              onNavigate={onNavigate}
-              searchQuery={searchQuery}
-              experimental_Original={BoundOriginal}
-              experimental_SidebarThreadProjection={
-                BoundSidebarThreadProjection
-              }
-            />
-          </SidebarThreadProjectionBindingContext.Provider>
-        );
-      }}
+      {(slot, BoundOriginal) => (
+        <BoundPluginThreadList
+          BoundOriginal={BoundOriginal}
+          activeProjectId={projectId ?? null}
+          activeThreadId={threadId ?? null}
+          isCompactViewport={isCompactViewport}
+          isSearchActive={isSearchActive}
+          onNavigate={onNavigate}
+          searchQuery={searchQuery}
+          slot={slot}
+        />
+      )}
     </PluginReplacementSlot>
   );
 }

@@ -2218,6 +2218,11 @@ SidebarContent.displayName = "SidebarContent";
 export type SidebarStickyTierKind = "label" | "project" | "parent";
 
 type SidebarStickyStackProps = React.ComponentProps<"div">;
+type SidebarProjectionStickyRegionsProps = React.ComponentProps<"div">;
+
+type SidebarProjectionStickyStyle = React.CSSProperties & {
+  "--bb-sidebar-sticky-projection-offset": string;
+};
 
 interface SidebarStickyTierProps extends React.ComponentProps<"div"> {
   tier: SidebarStickyTierKind;
@@ -2246,6 +2251,61 @@ const SidebarStickyStack = React.forwardRef<
   );
 });
 SidebarStickyStack.displayName = "SidebarStickyStack";
+
+/**
+ * Pins leading projection regions and reserves their measured height for every
+ * following native sticky tier in the same sidebar stack.
+ */
+const SidebarProjectionStickyRegions = React.forwardRef<
+  HTMLDivElement,
+  SidebarProjectionStickyRegionsProps
+>(({ style, ...props }, forwardedRef) => {
+  const localRef = React.useRef<HTMLDivElement | null>(null);
+  const setRef = React.useCallback(
+    (node: HTMLDivElement | null) => {
+      localRef.current = node;
+      if (typeof forwardedRef === "function") forwardedRef(node);
+      else if (forwardedRef) forwardedRef.current = node;
+    },
+    [forwardedRef],
+  );
+
+  React.useLayoutEffect(() => {
+    const element = localRef.current;
+    const stack = element?.closest<HTMLElement>("[data-sidebar-sticky-stack]");
+    if (!element || !stack) return;
+    const updateOffset = () => {
+      stack.style.setProperty(
+        "--bb-sidebar-sticky-projection-offset",
+        `${element.getBoundingClientRect().height}px`,
+      );
+    };
+    updateOffset();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(updateOffset);
+    observer?.observe(element);
+    return () => {
+      observer?.disconnect();
+      stack.style.removeProperty("--bb-sidebar-sticky-projection-offset");
+    };
+  }, []);
+
+  const stickyStyle: SidebarProjectionStickyStyle = {
+    ...style,
+    "--bb-sidebar-sticky-projection-offset": "0px",
+  };
+  return (
+    <div
+      ref={setRef}
+      data-sidebar-projection-sticky-regions=""
+      {...props}
+      style={stickyStyle}
+    />
+  );
+});
+SidebarProjectionStickyRegions.displayName = "SidebarProjectionStickyRegions";
 
 const SidebarStickyTier = React.forwardRef<
   HTMLDivElement,
@@ -2450,6 +2510,7 @@ export {
   SidebarMenuItem,
   SidebarMenuSkeleton,
   SidebarProvider,
+  SidebarProjectionStickyRegions,
   SidebarStickyGroup,
   SidebarStickyStack,
   SidebarStickyTier,

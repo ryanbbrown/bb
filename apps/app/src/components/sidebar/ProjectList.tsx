@@ -14,11 +14,7 @@ import type {
   ProjectResponse,
   ThreadSectionResponse,
 } from "@bb/server-contract";
-import {
-  findLocalPathProjectSourceForHost,
-  PERSONAL_PROJECT_ID,
-  type ThreadListEntry,
-} from "@bb/domain";
+import { PERSONAL_PROJECT_ID, type ThreadListEntry } from "@bb/domain";
 import { useRouteState } from "@/hooks/useRouteState";
 import {
   useConnectionAwareQueryState,
@@ -33,11 +29,7 @@ import {
   useDeleteThreadSection,
   useUpdateThreadSection,
 } from "@/hooks/mutations/thread-section-mutations";
-import {
-  isHostPathMissing,
-  useHostPathExistence,
-} from "@/hooks/queries/host-path-queries";
-import { useHosts, usePrimaryHost } from "@/hooks/queries/host-queries";
+import { useHosts } from "@/hooks/queries/host-queries";
 import { useDialogState } from "@/hooks/useDialogState";
 import { usePromptDraftInputThreadIds } from "@/hooks/usePromptDraftStorage";
 import { getCollapsedChildActivity } from "@/lib/thread-activity";
@@ -78,6 +70,7 @@ import {
   ProjectThreadTree,
 } from "./ProjectRow";
 import { SidebarThreadSearchPanel } from "./SidebarThreadSearchPanel";
+import { useSidebarProjectPathInvalidity } from "./useSidebarProjectPathInvalidity";
 import type { ProjectThreadListState } from "./ProjectRow";
 import {
   compareByCreatedAtDescending,
@@ -205,11 +198,6 @@ interface SidebarDisplayOptionsMenuProps {
 
 interface ProjectListNavigationLoadingRowProps {
   textWidthClassName: string;
-}
-
-interface LocalSourcePathTarget {
-  path: string;
-  projectId: string;
 }
 
 // Exported for plugin nav entries that render as sibling primary action rows.
@@ -1023,35 +1011,7 @@ function ProjectModeSections({
     },
     [setCollapsedProjectIdList],
   );
-  const primaryHost = usePrimaryHost();
-  const workHostId =
-    primaryHost?.status === "connected" ? primaryHost.id : null;
-  const localSourceTargets = useMemo(() => {
-    if (!workHostId) return [];
-    const targets: LocalSourcePathTarget[] = [];
-    for (const project of projects) {
-      const source = findLocalPathProjectSourceForHost(
-        project.sources,
-        workHostId,
-      );
-      if (source) {
-        targets.push({ path: source.path, projectId: project.id });
-      }
-    }
-    return targets;
-  }, [projects, workHostId]);
-  const localSourcePathsByProjectId = useMemo(
-    () =>
-      new Map(
-        localSourceTargets.map((target) => [target.projectId, target.path]),
-      ),
-    [localSourceTargets],
-  );
-  const localPaths = useMemo(
-    () => localSourceTargets.map((target) => target.path),
-    [localSourceTargets],
-  );
-  const pathExistence = useHostPathExistence(workHostId, localPaths);
+  const invalidLocalPathProjectIds = useSidebarProjectPathInvalidity(projects);
   const threadsByProject = useMemo(() => {
     const grouped = new Map<string, ThreadListEntry[]>();
     const resolveSidebarProjectId = createSidebarProjectIdResolver(
@@ -1079,18 +1039,9 @@ function ProjectModeSections({
           threads: threadsByProject.get(project.id),
         }),
         isActive: false,
-        isLocalPathInvalid: isHostPathMissing(
-          pathExistence,
-          localSourcePathsByProjectId.get(project.id),
-        ),
+        isLocalPathInvalid: invalidLocalPathProjectIds.has(project.id),
       })),
-    [
-      localSourcePathsByProjectId,
-      pathExistence,
-      projects,
-      status,
-      threadsByProject,
-    ],
+    [invalidLocalPathProjectIds, projects, status, threadsByProject],
   );
   const projectSectionIds = useMemo(
     () =>

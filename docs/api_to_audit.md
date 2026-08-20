@@ -557,9 +557,9 @@ when the plugin component crashes.
 **Audit before stabilizing.**
 
 1. Confirm full-snapshot exact coverage remains safer and easier to reason about than partial include/filter rules, especially at 10,000 threads.
-2. Confirm the bounded limits and invalid-projection diagnostic/toast policy give authors enough information without exposing host-local thread data or creating notification noise.
+2. Confirm the current limits (64 regions, 50,000 combined thread references, 10,000 combined project references, 256-character strings, and 320-character diagnostics) and invalid-projection diagnostic/toast policy give authors enough information without exposing host-local thread data or creating notification noise.
 3. Audit whether `sticky` and `flow`, headerless regions, dividers, project grouping, and `flat`/`native` nesting are the smallest stable organization vocabulary.
-4. Verify native parent-tree, cross-project, project-order, empty-project, worktree grouping, and source-order semantics stay deterministic as BB adds new native grouping behavior.
+4. Verify shared native parent-tree, cross-project, project-order, empty-project, worktree grouping, source-order, project-group windowing, and placeholder-navigation semantics stay deterministic as BB adds native grouping behavior.
 5. Confirm projection-local collapse identity should remain scoped to plugin ID, registration ID, region ID, and project/item identity, and decide whether any collapse state should persist across reloads.
 6. Confirm active search should always bypass organization projections, including an active empty query, rather than asking each plugin to reproduce Recent, archived, full-text, keyboard, and deep-link behavior.
 7. Confirm the renderer stays bound instead of becoming a global UI-kit component. Its value is ownership of a live sidebar snapshot, not reusable visual primitives.

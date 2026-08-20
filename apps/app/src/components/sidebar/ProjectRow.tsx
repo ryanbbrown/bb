@@ -179,6 +179,8 @@ export interface ProjectRowProps {
   headingTier?: "label" | "project";
   /** Flat projections disable synthetic worktree grouping. */
   groupEnvironmentThreads?: boolean;
+  /** Projection groups can omit the project disclosure control. */
+  isProjectCollapsible?: boolean;
 }
 
 interface ProjectThreadTreeProps {
@@ -2315,6 +2317,7 @@ function ProjectRowComponent({
   projectRowStyle,
   headingTier = "label",
   groupEnvironmentThreads = true,
+  isProjectCollapsible = true,
 }: ProjectRowProps) {
   const [isDropdownActionsOpen, setIsDropdownActionsOpen] = useState(false);
   const [isContextActionsOpen, setIsContextActionsOpen] = useState(false);
@@ -2431,10 +2434,14 @@ function ProjectRowComponent({
           actionsAlwaysVisible
           actionsMobileAlways
           actionsOpen={isActionsOpen}
-          collapseControl={{
-            isCollapsed,
-            onToggleCollapsed: handleProjectRowToggle,
-          }}
+          collapseControl={
+            isProjectCollapsible
+              ? {
+                  isCollapsed,
+                  onToggleCollapsed: handleProjectRowToggle,
+                }
+              : undefined
+          }
           collapsedActivity={projectActivity}
           collapsedThreads={projectThreads}
           consumeClickSuppression={consumeProjectClickSuppression}
@@ -2557,7 +2564,8 @@ function areProjectRowPropsEqual(
     prev.projectRowRef !== next.projectRowRef ||
     prev.projectRowStyle !== next.projectRowStyle ||
     prev.headingTier !== next.headingTier ||
-    prev.groupEnvironmentThreads !== next.groupEnvironmentThreads
+    prev.groupEnvironmentThreads !== next.groupEnvironmentThreads ||
+    prev.isProjectCollapsible !== next.isProjectCollapsible
   ) {
     return false;
   }

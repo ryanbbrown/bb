@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import type { PluginSidebarThreadProjection } from "@get-bb/plugin-sdk";
 import {
   SIDEBAR_PROJECTION_MAX_DIAGNOSTIC_LENGTH,
+  SIDEBAR_PROJECTION_MAX_PROJECT_REFERENCES,
   SIDEBAR_PROJECTION_MAX_REGIONS,
+  SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES,
   buildSidebarProjectionCollapseKey,
   validateSidebarThreadProjection,
   type SidebarProjectionThreadSnapshot,
@@ -121,6 +123,65 @@ describe("validateSidebarThreadProjection", () => {
     }
   });
 
+  it.each([
+    [
+      "parent chain",
+      [
+        thread("one"),
+        thread("two", { parentThreadId: "one", projectId: "project-b" }),
+      ],
+      ["project-a"],
+    ],
+    [
+      "missing parent",
+      [
+        thread("one", {
+          parentThreadId: "missing",
+          projectId: "project-b",
+        }),
+        thread("two"),
+      ],
+      ["project-a", "project-b"],
+    ],
+    [
+      "cycle",
+      [
+        thread("one", { parentThreadId: "two", projectId: "project-a" }),
+        thread("two", { parentThreadId: "one", projectId: "project-b" }),
+      ],
+      ["project-b"],
+    ],
+  ] as const)(
+    "matches the shared native project resolver for %s",
+    (_name, nativeThreads, representedProjects) => {
+      const result = validate(
+        {
+          regions: [
+            region({
+              nesting: "native",
+              grouping: {
+                kind: "project",
+                projectOrder: ["project-a", "project-b"],
+                collapsible: false,
+                showEmptyProjects: false,
+              },
+            }),
+          ],
+          excludedThreadIds: [],
+        },
+        [...nativeThreads],
+      );
+      expect(result.kind).toBe("valid");
+      if (result.kind === "valid") {
+        expect(
+          result.projection.regions[0]!.projectGroups.map(
+            ({ projectId }) => projectId,
+          ),
+        ).toEqual(representedProjects);
+      }
+    },
+  );
+
   it("includes ordered empty projects only when requested", () => {
     const result = validate({
       regions: [
@@ -201,6 +262,17 @@ describe("validateSidebarThreadProjection", () => {
     expect("projection" in result).toBe(false);
   });
 
+  it("rejects a collapsible region without a heading", () => {
+    const result = validate({
+      regions: [region({ label: null, collapsible: true })],
+      excludedThreadIds: [],
+    });
+    expect(result).toMatchObject({
+      kind: "invalid",
+      reason: "headerless-collapse",
+    });
+  });
+
   it("rejects sticky regions after flow regions", () => {
     const result = validate({
       regions: [
@@ -231,6 +303,179 @@ describe("validateSidebarThreadProjection", () => {
       excludedThreadIds: [],
     });
     expect(result).toMatchObject({ kind: "invalid", reason });
+  });
+
+  it("enforces exclusion limits before parsing with zero regions", () => {
+    const exactThreads = Array.from(
+      { length: SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES },
+      (_, index) => thread(`excluded-${index}`),
+    );
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          regions: [],
+          excludedThreadIds: exactThreads.map(({ id }) => id),
+        },
+        threads: exactThreads,
+        projects,
+      }).kind,
+    ).toBe("valid");
+    expect(
+      validate({
+        regions: [],
+        excludedThreadIds: Array.from(
+          { length: SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES + 1 },
+          (_, index) => `too-many-${index}`,
+        ),
+      }),
+    ).toMatchObject({ kind: "invalid", reason: "thread-limit" });
+  });
+
+  it("enforces thread-order and combined thread-reference boundaries", () => {
+    const exactThreads = Array.from(
+      { length: SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES },
+      (_, index) => thread(`visible-${index}`),
+    );
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          regions: [region({ threadOrder: exactThreads.map(({ id }) => id) })],
+          excludedThreadIds: [],
+        },
+        threads: exactThreads,
+        projects,
+      }).kind,
+    ).toBe("valid");
+    expect(
+      validate({
+        regions: [
+          region({
+            threadOrder: Array.from(
+              { length: SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES + 1 },
+              (_, index) => `too-many-${index}`,
+            ),
+          }),
+        ],
+        excludedThreadIds: [],
+      }),
+    ).toMatchObject({ kind: "invalid", reason: "thread-limit" });
+
+    const excluded = exactThreads.slice(0, 25_000);
+    const visible = exactThreads.slice(25_000);
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          regions: [region({ threadOrder: visible.map(({ id }) => id) })],
+          excludedThreadIds: excluded.map(({ id }) => id),
+        },
+        threads: exactThreads,
+        projects,
+      }).kind,
+    ).toBe("valid");
+    expect(
+      validate({
+        regions: [
+          region({
+            threadOrder: Array.from({ length: 25_001 }, (_, index) =>
+              index < 2 ? ["one", "two"][index]! : `visible-${index}`,
+            ),
+          }),
+        ],
+        excludedThreadIds: Array.from(
+          { length: 25_000 },
+          (_, index) => `excluded-${index}`,
+        ),
+      }),
+    ).toMatchObject({ kind: "invalid", reason: "thread-limit" });
+  });
+
+  it("enforces project-order and combined project-reference boundaries", () => {
+    const manyProjects = Array.from(
+      { length: SIDEBAR_PROJECTION_MAX_PROJECT_REFERENCES },
+      (_, index) => ({ id: `project-${index}` }),
+    );
+    const grouping = {
+      kind: "project" as const,
+      projectOrder: manyProjects.map(({ id }) => id),
+      collapsible: false,
+      showEmptyProjects: true,
+    };
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          regions: [region({ threadOrder: [], grouping })],
+          excludedThreadIds: [],
+        },
+        threads: [],
+        projects: manyProjects,
+      }).kind,
+    ).toBe("valid");
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          regions: [
+            region({
+              threadOrder: [],
+              grouping: {
+                ...grouping,
+                projectOrder: [...grouping.projectOrder, "overflow"],
+              },
+            }),
+          ],
+          excludedThreadIds: [],
+        },
+        threads: [],
+        projects: [...manyProjects, { id: "overflow" }],
+      }),
+    ).toMatchObject({ kind: "invalid", reason: "project-limit" });
+    const combinedProjection = (secondEnd: number) => ({
+      regions: [
+        region({
+          id: "first",
+          threadOrder: [],
+          grouping: {
+            ...grouping,
+            projectOrder: grouping.projectOrder.slice(0, 5_000),
+          },
+        }),
+        region({
+          id: "second",
+          threadOrder: [],
+          grouping: {
+            ...grouping,
+            projectOrder: grouping.projectOrder.slice(5_000, secondEnd),
+          },
+        }),
+      ],
+      excludedThreadIds: [],
+    });
+    expect(
+      validateSidebarThreadProjection({
+        projection: combinedProjection(10_000),
+        threads: [],
+        projects: manyProjects,
+      }).kind,
+    ).toBe("valid");
+    expect(
+      validateSidebarThreadProjection({
+        projection: {
+          ...combinedProjection(10_000),
+          regions: [
+            ...combinedProjection(10_000).regions,
+            region({
+              id: "overflow",
+              threadOrder: [],
+              grouping: {
+                ...grouping,
+                projectOrder: [grouping.projectOrder[0]!],
+              },
+            }),
+          ],
+        },
+        threads: [],
+        projects: manyProjects,
+      }),
+    ).toMatchObject({ kind: "invalid", reason: "project-limit" });
   });
 
   it("bounds regions and diagnostics", () => {

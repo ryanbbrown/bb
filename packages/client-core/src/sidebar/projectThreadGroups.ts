@@ -321,16 +321,22 @@ function isRootThread(
  * The returned resolver memoizes per thread, so a sidebar pass over every
  * thread walks each ancestor chain once instead of once per descendant.
  */
-export function createSidebarProjectIdResolver(
-  threadById: ReadonlyMap<string, ThreadListEntry>,
-): (thread: ThreadListEntry) => string {
+export interface SidebarProjectIdThread {
+  id: string;
+  parentThreadId: string | null;
+  projectId: string;
+}
+
+export function createSidebarProjectIdResolver<
+  Thread extends SidebarProjectIdThread,
+>(threadById: ReadonlyMap<string, Thread>): (thread: Thread) => string {
   const sidebarProjectIdByThreadId = new Map<string, string>();
   return (thread) => {
     const cached = sidebarProjectIdByThreadId.get(thread.id);
     if (cached !== undefined) {
       return cached;
     }
-    const chain: ThreadListEntry[] = [thread];
+    const chain: Thread[] = [thread];
     const visitedThreadIds = new Set<string>([thread.id]);
     let current = thread;
     let resolved: string | undefined;

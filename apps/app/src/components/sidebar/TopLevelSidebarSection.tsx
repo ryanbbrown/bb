@@ -141,7 +141,7 @@ export function TopLevelSidebarSection({
         ref={dragBindings?.setActivatorNodeRef}
         tier={stickyTier}
         className={cn(
-          "flex shrink-0 items-center outline-none ring-sidebar-ring",
+          "flex shrink-0 items-center outline-none ring-sidebar-ring focus-visible:ring-2",
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
           CHROME_SECTION_LABEL_CLASS,
           SIDEBAR_STANDARD_ROW_PADDING_CLASS,

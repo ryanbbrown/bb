@@ -2,6 +2,7 @@ import type {
   PluginSidebarThreadProjection,
   PluginSidebarThreadProjectionRegion,
 } from "@get-bb/plugin-sdk";
+import { createSidebarProjectIdResolver } from "@bb/client-core";
 
 export const SIDEBAR_PROJECTION_MAX_REGIONS = 64;
 export const SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES = 50_000;
@@ -96,6 +97,9 @@ function readBoundedString(
 function readStringArray(
   value: unknown,
   path: string,
+  limit: number,
+  limitReason: string,
+  limitDiagnostic: string,
 ):
   | { kind: "valid"; value: readonly string[] }
   | { kind: "invalid"; result: SidebarThreadProjectionValidationResult } {
@@ -103,6 +107,12 @@ function readStringArray(
     return {
       kind: "invalid",
       result: invalid("invalid-shape", `${path} must be an array.`),
+    };
+  }
+  if (value.length > limit) {
+    return {
+      kind: "invalid",
+      result: invalid(limitReason, limitDiagnostic),
     };
   }
   const result: string[] = [];
@@ -123,30 +133,7 @@ function resolveNativeProjectGroups(
       (threadId) => [threadId, threadsById.get(threadId)!] as const,
     ),
   );
-  const projectByThreadId = new Map<string, string>();
-  const resolveProject = (thread: SidebarProjectionThreadSnapshot): string => {
-    const cached = projectByThreadId.get(thread.id);
-    if (cached !== undefined) return cached;
-    const chain: SidebarProjectionThreadSnapshot[] = [thread];
-    const visited = new Set([thread.id]);
-    let current = thread;
-    let resolved: string | undefined;
-    while (current.parentThreadId !== null) {
-      const parent = regionThreadsById.get(current.parentThreadId);
-      if (parent === undefined || visited.has(parent.id)) break;
-      const parentCached = projectByThreadId.get(parent.id);
-      if (parentCached !== undefined) {
-        resolved = parentCached;
-        break;
-      }
-      visited.add(parent.id);
-      chain.push(parent);
-      current = parent;
-    }
-    const projectId = resolved ?? current.projectId;
-    for (const member of chain) projectByThreadId.set(member.id, projectId);
-    return projectId;
-  };
+  const resolveProject = createSidebarProjectIdResolver(regionThreadsById);
 
   const groups = new Map<string, string[]>();
   for (const threadId of threadIds) {
@@ -227,6 +214,9 @@ export function validateSidebarThreadProjection({
     const exclusionsResult = readStringArray(
       projection.excludedThreadIds,
       "projection.excludedThreadIds",
+      SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES,
+      "thread-limit",
+      `Projection exceeds ${SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES} thread references.`,
     );
     if (exclusionsResult.kind === "invalid") return exclusionsResult.result;
 
@@ -311,15 +301,26 @@ export function validateSidebarThreadProjection({
       ) {
         return invalid("invalid-shape", `${path} boolean fields are invalid.`);
       }
+      if (labelResult.value === null && rawRegion.collapsible) {
+        return invalid(
+          "headerless-collapse",
+          `${path}.collapsible must be false when label is null.`,
+        );
+      }
       if (rawRegion.nesting !== "flat" && rawRegion.nesting !== "native") {
         return invalid(
           "invalid-discriminant",
           `${path}.nesting must be "flat" or "native".`,
         );
       }
+      const remainingThreadReferences =
+        SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES - referenceCount;
       const threadOrderResult = readStringArray(
         rawRegion.threadOrder,
         `${path}.threadOrder`,
+        remainingThreadReferences,
+        "thread-limit",
+        `Projection exceeds ${SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES} thread references.`,
       );
       if (threadOrderResult.kind === "invalid") return threadOrderResult.result;
       referenceCount += threadOrderResult.value.length;
@@ -341,6 +342,9 @@ export function validateSidebarThreadProjection({
         const orderResult = readStringArray(
           rawRegion.grouping.projectOrder,
           `${path}.grouping.projectOrder`,
+          SIDEBAR_PROJECTION_MAX_PROJECT_REFERENCES - projectReferenceCount,
+          "project-limit",
+          `Projection exceeds ${SIDEBAR_PROJECTION_MAX_PROJECT_REFERENCES} project references.`,
         );
         if (orderResult.kind === "invalid") return orderResult.result;
         projectReferenceCount += orderResult.value.length;
