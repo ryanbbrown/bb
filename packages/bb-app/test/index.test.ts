@@ -27,6 +27,7 @@ import {
   resolvePort,
   resolveBbAppStartContext,
   resolveBbAppCommand,
+  resolveWorktreeRuntimePolicy,
   runBbApp,
 } from "../src/index.js";
 import {
@@ -992,6 +993,64 @@ describe("bb-app launcher", () => {
     expect(runtime.serverEnv.OPENAI_API_KEY).toBe("stored-openai-key");
   });
 
+  it("applies the worktree policy after conflicting saved environment values", async () => {
+    const dataDir = mkdtempSync(join(tmpdir(), "bb-app-worktree-policy-"));
+    const storedDataDir = join(dataDir, "stored-data");
+    writeFileSync(
+      join(dataDir, "env.json"),
+      JSON.stringify({
+        env: {
+          BB_DATA_DIR: storedDataDir,
+          BB_DEV_APP_PORT: "4173",
+          BB_HOST_DAEMON_PORT: "48887",
+          BB_INHERITED_SKILLS_ROOTS: "/stored/skills",
+          BB_SERVER_BIND_HOST: "0.0.0.0",
+          BB_SERVER_PORT: "48886",
+          BB_TELEMETRY: "true",
+          OPENAI_API_KEY: "stored-openai-key",
+        },
+      }),
+      "utf8",
+    );
+    const worktreeEnv: NodeJS.ProcessEnv = {
+      BB_DATA_DIR: dataDir,
+      BB_HOST_DAEMON_PORT: "47887",
+      BB_INHERITED_SKILLS_ROOTS: "/worktree/skills",
+      BB_SERVER_PORT: "47886",
+    };
+
+    const runtime = await resolveBbAppRuntimeState({
+      entrypointUrl: pathToFileURL("/repo/packages/bb-app/dist/bb-app.js").href,
+      env: worktreeEnv,
+      homeDir: "/home/tester",
+      options: { help: false },
+      serverUrlMode: "local",
+      worktreePolicy: resolveWorktreeRuntimePolicy({
+        env: worktreeEnv,
+        homeDir: "/home/tester",
+      }),
+    });
+
+    expect(runtime.context).toMatchObject({
+      daemonPort: 47887,
+      dataDir,
+      serverPort: 47886,
+      serverUrl: "http://127.0.0.1:47886",
+    });
+    for (const env of [runtime.env, runtime.serverEnv]) {
+      expect(env).toMatchObject({
+        BB_DATA_DIR: dataDir,
+        BB_HOST_DAEMON_PORT: "47887",
+        BB_INHERITED_SKILLS_ROOTS: "/worktree/skills",
+        BB_SERVER_BIND_HOST: "127.0.0.1",
+        BB_SERVER_PORT: "47886",
+        BB_TELEMETRY: "false",
+        OPENAI_API_KEY: "stored-openai-key",
+      });
+      expect(env.BB_DEV_APP_PORT).toBeUndefined();
+    }
+  });
+
   it("uses launcher flags over managed config and ambient server URL", async () => {
     const dataDir = mkdtempSync(join(tmpdir(), "bb-app-flag-config-"));
     writeFileSync(
@@ -1110,6 +1169,55 @@ describe("bb-app launcher", () => {
         },
       });
       expect(statSync(join(dataDir, "client.json")).mode & 0o777).toBe(0o600);
+
+      await runBbApp([
+        "--data-dir",
+        dataDir,
+        "client",
+        "ssh-target",
+        "set",
+        server.url,
+        "buildbox",
+        "--host-id",
+        "host_2",
+      ]);
+      expect(
+        server.requests().filter((request) => request.includes("/hosts")),
+      ).toHaveLength(1);
+      expect(
+        JSON.parse(readFileSync(join(dataDir, "client.json"), "utf8")),
+      ).toMatchObject({
+        servers: {
+          [server.url]: {
+            hosts: {
+              host_1: { sshAuthority: "mbp-intel" },
+              host_2: { sshAuthority: "buildbox" },
+            },
+          },
+        },
+      });
+
+      await runBbApp([
+        "--data-dir",
+        dataDir,
+        "client",
+        "ssh-target",
+        "remove",
+        server.url,
+        "--host-id",
+        "host_2",
+      ]);
+      expect(
+        JSON.parse(readFileSync(join(dataDir, "client.json"), "utf8")),
+      ).toEqual({
+        servers: {
+          [server.url]: {
+            hosts: {
+              host_1: { sshAuthority: "mbp-intel" },
+            },
+          },
+        },
+      });
 
       await runBbApp([
         "--data-dir",

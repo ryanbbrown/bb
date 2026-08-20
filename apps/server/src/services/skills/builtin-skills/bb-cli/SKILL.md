@@ -43,10 +43,12 @@ message agents, or inspect projects, providers, and environments.
 
 ## Remote Client
 
-- `bb-app client ssh-target set <server-origin> <ssh-target>` configures the
+- `bb-app client ssh-target set <server-origin> <ssh-target> [--host-id <id>]`
+  configures the
   local helper to open files from a remote bb server in local editors. The SSH
   target is the value that works after `ssh`, such as `devbox` or
-  `user@devbox`.
+  `user@devbox`. Pass the work-host ID from `bb machine list` when the server
+  has more than one machine; single-machine servers are selected automatically.
 - These mappings live on the client machine in `<dataDir>/client.json`;
   the CLI resolves the server's host ID when writing the mapping, and the remote
   server does not read the file.
@@ -107,10 +109,9 @@ message agents, or inspect projects, providers, and environments.
   specific connected machine instead of the primary machine.
 - Extensions provides the unified Skills and Plugins management UI, while
   Automations stays in the Plugins section beside threads.
-- The default-off `newOnboarding` experiment exposes the first-run agent and
-  project setup guide. Change it with
-  `bb settings experiment newOnboarding <true|false>`. Use
-  `bb settings replay-onboarding` to enable it and show the guide again.
+- The default-off `changelogPreview` experiment shows the latest release notes
+  on Settings → Updates. Change it with
+  `bb settings experiment changelogPreview <true|false>`.
 - The default-on `editMessages` experiment allows accepted root user messages
   in Codex, Claude Code, and Pi threads to be replaced and rerun, including
   failed or incomplete turns. Submitting an edit to a running thread stops and
@@ -223,11 +224,19 @@ isolated|reuse`, or anchor with `--source-seq-end`. Permission mode inherits
   `bb connect servers` lists every bb on the paired account (handle,
   name, url, live) so callers can discover siblings; `--json` includes
   `selfHandle` for deduping this server. When you start a local server the user
-  should open remotely, expose the port and give them the share URL. Remote
+  should open remotely, expose the port and give them the share URL.
+  `bb connect machine-code` mints a one-time code (10 minutes, single use)
+  that pairs the bb mobile app with this bb (it needs the `mobileApp`
+  experiment: `bb settings experiment mobileApp true`): it prints the code, server URL,
+  connect apex, and expiry; `--json` returns `{code, serverUrl, apex,
+  expiresAt}`. The phone enrolls as a connect machine with its own revocable
+  credential (visible in the getbb.app dashboard). Settings → Remote access →
+  Add mobile device shows the same code as a QR. A machine-limit failure names
+  the dashboard so the user can revoke an unused device. Remote
   access is owned by the builtin `connect` plugin: `bb plugin disable connect`
   cuts it off entirely; with bb connect still enabled, `bb plugin enable
   connect` restores the command. Plugins → Connect shows the current URL, QR
-  code, shared ports, re-pair form, and disconnect control.
+  code, mobile pairing, shared ports, re-pair form, and disconnect control.
 - Add remote execution machines from Settings → Machines. Its one-line
   installer stores the bb connect machine credential locally and configures
   both the daemon protocol and agent-launched `bb` CLI to traverse the account
@@ -457,12 +466,11 @@ For review or fix pipelines, get the environment ID from
 - For failed threads, inspect `bb thread show <id> --json` and
   `bb thread log <id>` before deciding whether to retry, clarify, or update the
   user.
-- The opt-in Provider retry plugin automatically waits for structured Codex and
-  Claude Code subscription-window resets when the failed turn was accepted and
-  its execution settings remain available. Prior output or tool activity does
-  not block recovery. Enable it with
-  `bb plugin enable provider-retry` or under Extensions → Plugins. Its timers
-  last only while the current bb server/plugin process is running. Inspect it
+- The Provider retry plugin is enabled on fresh installations and automatically
+  waits for structured Codex and Claude Code subscription-window resets when
+  the failed turn was accepted and its execution settings remain available.
+  Prior output or tool activity does not block recovery. Its timers last only
+  while the current bb server/plugin process is running. Inspect it
   with `bb provider-retry status [thread-id]`, or cancel one with
   `bb provider-retry cancel <thread-id>`. Automatic waits default to six hours;
   configure longer waits with

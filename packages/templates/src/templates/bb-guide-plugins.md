@@ -39,11 +39,11 @@ It reconciles when the plugin starts, a host connects, its configuration
 changes, or a worker exits unexpectedly. Disabling the plugin disposes its host
 workers and their child processes.
 
-The opt-in builtin Provider retry plugin continues Codex and Claude Code
-turns after a structured subscription window resets. Enable it under
-Extensions → Plugins or run `bb plugin enable provider-retry`. It keeps its
-timers in memory, coordinates waits by machine/provider subscription, and adds
-a composer banner with a Cancel action while an automatic retry is pending.
+The builtin Provider retry plugin is enabled on fresh installations. It
+continues Codex and Claude Code turns after a structured subscription window
+resets, keeps its timers in memory, coordinates waits by machine/provider
+subscription, and adds a composer banner with a Cancel action while an
+automatic retry is pending.
 The banner disappears when the retry starts, is cancelled, or the user
 continues the thread. A server restart or plugin reload clears pending timers
 without changing the original failed thread. Inspect it with
@@ -535,10 +535,13 @@ components/ui/ and `npx shadcn add @bb/<name>` pulls more from the BB
 component registry (the full stock shadcn set, version-matched to the
 running BB via the pinned ref in components.json). `import { toast } from
 "sonner"` reaches the host toaster; react, the portaling radix families,
-sonner, vaul, @pierre/diffs (the app's syntax-highlighted diff
-renderer), and the host-resident clsx, tailwind-merge, and
-class-variance-authority libraries are runtime-shimmed (never bundled),
-everything else (zod included) bundles from the plugin's node_modules (`npm install` for authors; BB installs
+sonner, vaul, @pierre/diffs, and the host-resident clsx, tailwind-merge, and
+class-variance-authority libraries are runtime-shimmed (never bundled) —
+though source and diffs should go through the host's own
+experimental_SourceCode / experimental_Diff components rather than
+@pierre/diffs directly, so bb owns patch normalization, syntax
+highlighting, and the live code theme.
+Everything else (zod included) bundles from the plugin's node_modules (`npm install` for authors; BB installs
 release packages with their declared production dependencies). A crashing slot collapses to a
 "plugin <id> crashed" chip without
 touching the rest of the app. Installed plugins and their declared settings

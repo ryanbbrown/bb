@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 
 import type { PromptTextMention } from "@bb/domain";
+import { TextSelection } from "@tiptap/pm/state";
 import { EditorView } from "@tiptap/pm/view";
 import {
   createRef,
@@ -501,8 +502,13 @@ function mockIPadOSWebKit(): () => void {
   });
 }
 
-afterEach(() => {
+afterEach(async () => {
   cleanup();
+  // TipTap's React hook defers editor destruction by 1 ms so a Strict Mode
+  // remount can reuse the instance. Let that teardown finish while this
+  // test's jsdom window is still alive instead of leaking it into the next
+  // test (or the environment shutdown after the final test).
+  await new Promise<void>((resolve) => setTimeout(resolve, 2));
   resetPluginLogoStoreForTest();
   resetPluginSlotStoreForTest();
   resetAllCrashedPluginSlotsForTest();
@@ -1190,6 +1196,31 @@ describe("PromptBoxInternal controlled value sync", () => {
 });
 
 describe("PromptBoxInternal submit shortcuts", () => {
+  it("exposes the disabled submit reason as its label and hover tooltip", async () => {
+    const reason = "Loading models from the selected machine...";
+    render(
+      <PromptBoxInternal
+        {...createPromptBoxProps({
+          value: "Investigate this",
+          submission: { disabled: true, disabledReason: reason },
+        })}
+      />,
+    );
+
+    const submit = screen.getByRole("button", { name: reason });
+    expect(submit.hasAttribute("disabled")).toBe(true);
+
+    const tooltipTrigger = submit.closest(
+      "[data-promptbox-submit-disabled-reason]",
+    );
+    expect(tooltipTrigger).not.toBeNull();
+    fireEvent.pointerMove(tooltipTrigger!, { pointerType: "mouse" });
+
+    await waitFor(() => {
+      expect(screen.getByRole("tooltip").textContent).toBe(reason);
+    });
+  });
+
   it("continues to submit unmodified Enter on a fine-pointer device", () => {
     const restoreMatchMedia = mockPointerCoarse(false);
     try {
@@ -2967,6 +2998,81 @@ describe("PromptBoxInternal mention triggers", () => {
     await waitFor(() =>
       expect(threadButton.className).toContain("bg-state-active"),
     );
+  });
+});
+
+describe("PromptBoxInternal selection reveal", () => {
+  async function nextAnimationFrame() {
+    await act(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+  }
+
+  it("reveals the moving selection head, not the anchor, when a selection extends upward", async () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `line ${index}`);
+    const { promptBoxRef } = renderPromptBox(lines.join("\n"));
+
+    await focusPromptEnd(promptBoxRef);
+    await nextAnimationFrame();
+
+    const scrollContainer = document.querySelector(
+      "[data-promptbox-editor-scroll]",
+    );
+    if (!(scrollContainer instanceof HTMLElement)) {
+      throw new Error("Prompt editor scroll container was not rendered");
+    }
+    // jsdom does not lay out, so emulate a 100px viewport scrolled to the
+    // middle of the document. The selection anchor sits below the viewport
+    // (where the drag started) and the head sits above it (where the pointer
+    // is now). The browser's own drag autoscroll has already moved the
+    // viewport up toward the head.
+    let scrollTop = 500;
+    Object.defineProperty(scrollContainer, "scrollTop", {
+      configurable: true,
+      get: () => scrollTop,
+      set: (next: number) => {
+        scrollTop = next;
+      },
+    });
+    const scrollRectSpy = vi
+      .spyOn(scrollContainer, "getBoundingClientRect")
+      .mockReturnValue(new DOMRect(0, 0, 320, 100));
+    let view: EditorView | null = null;
+    const coordsAtPosSpy = vi
+      .spyOn(EditorView.prototype, "coordsAtPos")
+      .mockImplementation(function (this: EditorView, pos: number) {
+        view = this;
+        const { selection } = this.state;
+        if (pos === selection.head && selection.head !== selection.anchor) {
+          return { left: 0, right: 0, top: -30, bottom: -14 };
+        }
+        return { left: 0, right: 0, top: 160, bottom: 176 };
+      });
+
+    try {
+      await waitFor(() => expect(view).not.toBeNull());
+      const liveView = view as unknown as EditorView;
+      const { doc } = liveView.state;
+      // The focusEnd reveal above captured `view`; reset the baseline it set.
+      scrollTop = 500;
+      await act(async () => {
+        liveView.dispatch(
+          liveView.state.tr.setSelection(
+            TextSelection.create(doc, doc.content.size - 1, 1),
+          ),
+        );
+      });
+      await nextAnimationFrame();
+
+      // The reveal must follow the head upward (scrollTop decreases). Before
+      // the fix it revealed `selection.to` (the anchor) and yanked the
+      // viewport back down, fighting the drag autoscroll on every pointer move.
+      expect(scrollTop).toBeLessThan(500);
+    } finally {
+      coordsAtPosSpy.mockRestore();
+      scrollRectSpy.mockRestore();
+    }
   });
 });
 

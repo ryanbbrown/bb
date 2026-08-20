@@ -59,6 +59,7 @@ import {
   pruneResolvedItemDeltas,
   pruneThreadEventsBeforeSequence,
   listLatestOpenBackgroundTaskStateRowsForThread,
+  STORED_TIMELINE_BYTE_PREFLIGHT_EVENT_LIMIT,
 } from "../../src/data/events.js";
 import { createEnvironment } from "../../src/data/environments.js";
 import { createProject } from "../../src/data/projects.js";
@@ -2926,6 +2927,48 @@ describe("events", () => {
     ).toEqual([1, 4]);
   });
 
+  it("bounds each resolved delta prune pass", () => {
+    const { db, thread } = setup();
+    const deltas = Array.from({ length: 502 }, (_, index) => ({
+      threadId: thread.id,
+      sequence: index + 1,
+      scope: turnScope("turn-bounded-prune"),
+      type: "item/agentMessage/delta" as const,
+      itemId: "msg-bounded-prune",
+      itemKind: null,
+      parentToolCallId: null,
+      data: JSON.stringify({
+        itemId: "msg-bounded-prune",
+        delta: `chunk-${index}`,
+      }),
+    }));
+    insertEvents(db, noopNotifier, [
+      ...deltas,
+      {
+        threadId: thread.id,
+        sequence: 503,
+        scope: turnScope("turn-bounded-prune"),
+        type: "item/completed",
+        itemId: "msg-bounded-prune",
+        itemKind: "agentMessage",
+        parentToolCallId: null,
+        data: JSON.stringify({
+          item: {
+            id: "msg-bounded-prune",
+            type: "agentMessage",
+            text: "Complete response",
+          },
+        }),
+      },
+    ]);
+
+    expect(pruneResolvedItemDeltas(db, { threadId: thread.id })).toBe(500);
+    expect(pruneResolvedItemDeltas(db, { threadId: thread.id })).toBe(1);
+    expect(
+      listEvents(db, { threadId: thread.id }).map((event) => event.sequence),
+    ).toEqual([1, 503]);
+  });
+
   it("keeps unresolved assistant deltas", () => {
     const { db, thread } = setup();
 
@@ -4623,6 +4666,44 @@ describe("timeline read-boundary output truncation", () => {
       sequenceStart: 3,
       turnId: null,
     }));
+  });
+
+  it("bounds the byte-total preflight before using the early-stopping iterator", () => {
+    const { db, thread } = setup();
+    const validData = JSON.stringify({ message: "valid" });
+    insertEvents(
+      db,
+      noopNotifier,
+      Array.from(
+        { length: STORED_TIMELINE_BYTE_PREFLIGHT_EVENT_LIMIT + 2 },
+        (_, index) => ({
+          threadId: thread.id,
+          sequence: index + 1,
+          type: "system/error" as const,
+          ...threadEventFields,
+          data: validData,
+        }),
+      ),
+    );
+    db.$client
+      .prepare("UPDATE events SET data = ? WHERE thread_id = ? AND sequence = 1")
+      .run(`{"item":{"resultText":"${"x".repeat(1_100)}`, thread.id);
+
+    expect(
+      findStoredTimelineWindowByteBudgetFloor(db, {
+        maxDataBytes: 1,
+        maxInlineOutputChars: 1_000,
+        sequenceStart: 1,
+        threadId: thread.id,
+      }),
+    ).toEqual({
+      createdAt: expect.any(Number),
+      eventDataBytes: Buffer.byteLength(validData),
+      hasOlderRows: true,
+      kind: "single-event-too-large",
+      sequenceStart: STORED_TIMELINE_BYTE_PREFLIGHT_EVENT_LIMIT + 2,
+      turnId: null,
+    });
   });
 
   it.each(["floor", "single-event-too-large"] as const)(

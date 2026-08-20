@@ -178,6 +178,8 @@ export interface NewThreadPromptBoxUIProps {
   promptBoxRef?: Ref<PromptBoxHandle>;
   isSubmitting: boolean;
   disabled: boolean;
+  /** Explains a disabled submit action on hover and to assistive technology. */
+  disabledReason?: string;
   /** Whether the editor should take passive focus when it mounts. */
   autoFocus?: boolean;
   /** Active root-composer binding for plugin composer hooks and customizations. */
@@ -233,6 +235,7 @@ export const NewThreadPromptBoxUI = memo(function NewThreadPromptBoxUI({
   promptBoxRef: externalPromptBoxRef,
   isSubmitting,
   disabled,
+  disabledReason,
   autoFocus,
   pluginComposerHost,
   textEffects,
@@ -304,6 +307,7 @@ export const NewThreadPromptBoxUI = memo(function NewThreadPromptBoxUI({
           promptBoxRef={promptBoxRef}
           isSubmitting={isSubmitting}
           disabled={disabled}
+          disabledReason={disabledReason}
           autoFocus={autoFocus}
           textEffects={textEffects}
           zenModeStorageKey={zenModeStorageKey}
@@ -342,6 +346,7 @@ export const DefaultNewThreadComposer = memo(function DefaultNewThreadComposer({
   promptBoxRef,
   isSubmitting,
   disabled,
+  disabledReason,
   autoFocus,
   textEffects,
   zenModeStorageKey,
@@ -409,6 +414,7 @@ export const DefaultNewThreadComposer = memo(function DefaultNewThreadComposer({
         submission={{
           isSubmitting,
           disabled,
+          disabledReason,
           title: submitTitle,
         }}
         autoFocus={autoFocus}

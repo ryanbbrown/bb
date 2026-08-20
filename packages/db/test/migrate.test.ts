@@ -413,6 +413,8 @@ const pendingInteractionsMigrationWhen = 1783626227375;
 const permissionModesMigrationWhen = 1784311522462;
 const branchLocalThreadTabsMigrationWhen = 1783633750817;
 const eventParentToolCallMigrationWhen = 1787181956957;
+const eventParentToolCallPreJsonValidMigrationHash =
+  "79d39e7b68d1db8ba02614fe4cc227cc0c154d77c7183f2e37ed2d8475412993";
 const eventLargeValuesPreOptimizationHash =
   "bc111f5134183c37cf135af70231ec5a79823f9868818fdd8377e1ab3c05a23f";
 const queuedMessageSortKeyMigrationPath = resolve(
@@ -618,9 +620,6 @@ function dropSteerActiveThreadOnEnterColumn(db: DbConnection): void {
   }
 }
 
-// Journal `when` for 0085, used to rewind exactly that migration.
-const onboardingMigrationWhen = 1785947206119;
-
 // Migration 0085 adds the onboarding completion timestamp. Rewind scenarios
 // that clear its migration row must drop the column before replay, for the same
 // reason as the preference column above: ALTER TABLE ADD is not re-appliable.
@@ -678,7 +677,22 @@ function dropMarketplaceCatalogSchema(db: DbConnection): void {
   }
 }
 
+function dropEventToolNameColumn(db: DbConnection): void {
+  // Generated columns are omitted from table_info but included in table_xinfo.
+  const columns = db.$client
+    .prepare<[], TableInfoRow>("PRAGMA table_xinfo(events)")
+    .all();
+  if (columns.some((column) => column.name === "tool_name")) {
+    db.$client.exec(
+      "DROP INDEX IF EXISTS events_todo_tool_call_thread_tool_sequence_idx",
+    );
+    db.$client.prepare("ALTER TABLE events DROP COLUMN tool_name").run();
+  }
+}
+
 function dropEventParentToolCallIdColumn(db: DbConnection): void {
+  // Every rewind before 0103 also rewinds the later generated tool-name column.
+  dropEventToolNameColumn(db);
   const columns = db.$client
     .prepare<[], TableInfoRow>("PRAGMA table_info(events)")
     .all();
@@ -1586,7 +1600,6 @@ describe("migrate", () => {
         codexSubagentsDisabled: true,
         claudeCodeSubagentsDisabled: false,
         claudeCodeWorkflowsDisabled: true,
-        onboardingCompletedAt: "2026-08-01T00:00:00.000Z",
       });
       expect(getAppKeybindingOverrides(db)).toEqual([
         { command: "thread.new", shortcut: null },
@@ -1681,72 +1694,6 @@ describe("migrate", () => {
   // Side chats used to be their own origin kind. 0084 hands every existing one
   // to the builtin side-chat plugin, so old side chats keep opening in the
   // plugin's panel instead of stranding on a removed origin kind.
-  it("stamps existing installs as onboarded so upgrades skip the first-run flow", () => {
-    const db = createConnection(":memory:");
-    migrate(db);
-
-    // Rewind 0085 so it replays against an install that already has a project —
-    // exactly what an upgrading user's database looks like.
-    restoreWideExperimentsTable(db);
-    dropOnboardingCompletedAtColumn(db);
-    dropAppSettingsValuesTable(db);
-    dropNewOnboardingExperimentColumn(db);
-    dropEnvironmentRetireRequestedAtColumn(db);
-    dropPluginArtifactGitCheckoutRootColumn(db);
-    dropMarketplaceCatalogSchema(db);
-    dropEventParentToolCallIdColumn(db);
-    // Delete by the journal timestamp, not a hash substring: migration hashes
-    // are hex and can contain "0085" by coincidence.
-    db.$client
-      .prepare<
-        [number]
-      >("DELETE FROM __drizzle_migrations WHERE created_at >= ?")
-      .run(onboardingMigrationWhen);
-    db.$client
-      .prepare(
-        "INSERT INTO projects (id, name, created_at, updated_at, sort_key, kind) VALUES ('proj_a','app',1,1,'V','standard')",
-      )
-      .run();
-    // Deliberately no app_settings row: it is created on first save, so an
-    // existing user can have projects without one.
-    db.$client.prepare("DELETE FROM app_settings").run();
-
-    restoreLegacyThreadOriginColumn(db);
-    migrate(db);
-
-    const row = db.$client
-      .prepare<
-        [],
-        { onboarding_completed_at: string | null }
-      >("SELECT onboarding_completed_at FROM app_settings WHERE id = 'current'")
-      .get();
-    // Non-null means the flow will not open for this install.
-    expect(row?.onboarding_completed_at).toBeTruthy();
-
-    closeConnection(db);
-  });
-
-  it("leaves a fresh install unstamped so onboarding opens", () => {
-    const db = createConnection(":memory:");
-    migrate(db);
-
-    db.$client
-      .prepare(
-        "INSERT OR REPLACE INTO app_settings (id, updated_at) VALUES ('current', 1)",
-      )
-      .run();
-
-    const row = db.$client
-      .prepare<
-        [],
-        { onboarding_completed_at: string | null }
-      >("SELECT onboarding_completed_at FROM app_settings WHERE id = 'current'")
-      .get();
-    expect(row?.onboarding_completed_at).toBeNull();
-
-    closeConnection(db);
-  });
-
   it("adopts legacy side chats as the side-chat plugin's hidden forks", () => {
     const db = createConnection(":memory:");
 
@@ -4042,6 +3989,7 @@ describe("migrate", () => {
         "events_thread_turn_type_item_sequence_idx",
         "events_thread_type_item_kind_sequence_idx",
         "events_thread_type_sequence_idx",
+        "events_todo_tool_call_thread_tool_sequence_idx",
         "events_tool_call_parent_lookup_idx",
       ]);
 
@@ -4387,6 +4335,26 @@ describe("migrate", () => {
         createdAt: eventLargeValuesMigrationWhen,
         hash: eventLargeValuesPreOptimizationHash,
       });
+
+      expect(() => migrate(db)).not.toThrow();
+    } finally {
+      closeConnection(db);
+    }
+  });
+
+  it("accepts the event parent migration hash from before its JSON guard", () => {
+    const db = createConnection(":memory:");
+
+    try {
+      migrate(db);
+      db.$client
+        .prepare(
+          "UPDATE __drizzle_migrations SET hash = ? WHERE created_at = ?",
+        )
+        .run(
+          eventParentToolCallPreJsonValidMigrationHash,
+          eventParentToolCallMigrationWhen,
+        );
 
       expect(() => migrate(db)).not.toThrow();
     } finally {
@@ -5107,6 +5075,18 @@ describe("migrate", () => {
             NULL,
             '{"message":"parentToolCallId is only text here"}',
             3
+          ),
+          (
+            'evt_malformed_parent',
+            '${thread.id}',
+            'thread',
+            NULL,
+            4,
+            'system/error',
+            NULL,
+            NULL,
+            '{"parentToolCallId":',
+            4
           );
       `);
 
@@ -5125,6 +5105,7 @@ describe("migrate", () => {
           .all(),
       ).toEqual([
         { id: "evt_item_parent", parentToolCallId: "parent-item" },
+        { id: "evt_malformed_parent", parentToolCallId: null },
         { id: "evt_no_parent", parentToolCallId: null },
         { id: "evt_top_level_parent", parentToolCallId: "parent-top-level" },
       ]);

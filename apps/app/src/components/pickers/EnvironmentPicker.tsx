@@ -19,7 +19,6 @@ import {
 } from "@bb/shared-ui/coarse-pointer-sizing";
 import { LIST_HOVER_TRANSITION } from "@bb/shared-ui/motion";
 import { MachineStatusDot } from "@/components/machines/MachineStatusDot";
-import { selectPrimaryHost } from "@/hooks/queries/host-queries";
 import { getEnvironmentWorkspaceLabelIconName } from "@/lib/environment-workspace-display";
 import { formatRelativeTime } from "@/lib/relative-time";
 import { formatHostUpdateStatus } from "@/lib/host-update-status";
@@ -145,8 +144,9 @@ export function EnvironmentPickerUI({
 
   const parsed = useMemo(() => parseEnvironmentValue(value), [value]);
 
-  // Mockup A: the composer chip names the machine whenever the selection
-  // isn't on the primary host ("Mac Studio · New worktree").
+  // When the server knows multiple machines, name the selected one in the
+  // full composer chip ("Mac Studio · New worktree"). Single-machine and
+  // compact layouts use the shorter mode-only label.
   const selectedMachineName = useMemo(() => {
     if (
       !isMachineMenu ||
@@ -154,12 +154,6 @@ export function EnvironmentPickerUI({
       (parsed?.type !== "host" && parsed?.type !== "worktree-path")
     )
       return null;
-    if (
-      parsed.hostId ===
-      selectPrimaryHost(machines.hosts, machines.primaryHostId)?.id
-    ) {
-      return null;
-    }
     return (
       machines.hosts.find((machineHost) => machineHost.id === parsed.hostId)
         ?.name ?? null

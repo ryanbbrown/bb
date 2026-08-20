@@ -1,5 +1,6 @@
 import {
   dynamicToolSchema,
+  experimental_buildBridgeToolCallContent,
   type DynamicTool,
 } from "@get-bb/plugin-sdk/provider-bridge";
 import { createConnection } from "node:net";
@@ -34,26 +35,58 @@ export interface BuildAcpMcpServerConfigArgs {
   token: string;
 }
 
-interface BridgeToolCallRequest {
-  arguments: Record<string, unknown>;
-  callId: string;
+interface BridgeRequestBase {
   threadId: string;
   token: string;
-  tool: string;
 }
 
-type BridgeToolCallResponse =
-  | { ok: true; content: string; isError?: boolean }
-  | { ok: false; error: string };
+type BridgeRequest = BridgeRequestBase &
+  (
+    | { kind: "initialized"; toolCount: number }
+    | {
+        kind: "toolCall";
+        arguments: Record<string, unknown>;
+        callId: string;
+        tool: string;
+      }
+  );
+
+type BridgeRequestPayload =
+  | { kind: "initialized"; toolCount: number }
+  | {
+      kind: "toolCall";
+      arguments: Record<string, unknown>;
+      callId: string;
+      tool: string;
+    };
 
 const bridgeToolCallResponseSchema = z.union([
   z.object({
     ok: z.literal(true),
     content: z.string(),
+    contentBlocks: z
+      .array(
+        z.discriminatedUnion("type", [
+          z.object({ type: z.literal("text"), text: z.string() }),
+          z.object({
+            type: z.literal("image"),
+            data: z.string(),
+            mimeType: z.string(),
+          }),
+        ]),
+      )
+      .optional(),
+    // The initialized response and older text-only responses omit images.
+    // Parsing them as an empty list keeps the re-executed packaged artifact
+    // compatible with that legacy socket shape.
+    images: z
+      .array(z.object({ data: z.string(), mimeType: z.string() }))
+      .default([]),
     isError: z.boolean().optional(),
   }),
   z.object({ ok: z.literal(false), error: z.string() }),
 ]);
+type BridgeToolCallResponse = z.infer<typeof bridgeToolCallResponseSchema>;
 
 interface JsonRpcMessage {
   id?: string | number;
@@ -147,14 +180,14 @@ function mcpToolCallId(toolName: string): string {
 
 function callBridge(
   env: McpServerEnvironment,
-  request: Omit<BridgeToolCallRequest, "threadId" | "token">,
+  request: BridgeRequestPayload,
 ): Promise<BridgeToolCallResponse> {
   return new Promise((resolve, reject) => {
     const socket = createConnection({ host: env.host, port: env.port });
     let buffer = "";
     socket.setEncoding("utf8");
     socket.on("connect", () => {
-      const payload: BridgeToolCallRequest = {
+      const payload: BridgeRequest = {
         ...request,
         threadId: env.threadId,
         token: env.token,
@@ -237,6 +270,16 @@ async function handleRequest(
         capabilities: { tools: {} },
         serverInfo: { name: ACP_BRIDGE_MCP_SERVER_NAME, version: "1.0.0" },
       });
+      void callBridge(env, {
+        kind: "initialized",
+        toolCount: env.tools.length,
+      }).catch((error) => {
+        process.stderr.write(
+          `bb-bridge MCP: failed to report initialize: ${
+            error instanceof Error ? error.message : String(error)
+          }\n`,
+        );
+      });
       return;
 
     case "tools/list":
@@ -274,6 +317,7 @@ async function handleRequest(
             });
       try {
         const result = await callBridge(env, {
+          kind: "toolCall",
           arguments: toolArguments,
           callId: mcpToolCallId(tool.name),
           tool: tool.name,
@@ -287,7 +331,7 @@ async function handleRequest(
           return;
         }
         writeResult(message.id, {
-          content: [{ type: "text", text: result.content }],
+          content: experimental_buildBridgeToolCallContent(result),
           ...(result.isError ? { isError: true } : {}),
         });
       } catch (error) {

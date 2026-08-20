@@ -346,7 +346,7 @@ describe("plugin app runtime shim", () => {
     expect(readableCss.length).toBeGreaterThan(minifiedCss.length);
   });
 
-  it("scans only the bundled files of a dependency that opts into Tailwind content", async () => {
+  it("scans bundled Tailwind content from a symlinked workspace dependency by filesystem identity", async () => {
     const dir = await mkdtemp(join(tmpdir(), "bb-plugin-scan-"));
     tempDirs.push(dir);
     // The dependency lives outside node_modules behind a symlink, the way a
@@ -354,6 +354,7 @@ describe("plugin app runtime shim", () => {
     // reports the real path, so the scan must match on real paths too.
     const uiPackageDir = join(dir, "packages", "fixture-ui");
     await mkdir(join(uiPackageDir, "src", "excluded"), { recursive: true });
+    await mkdir(join(uiPackageDir, "actual-src"), { recursive: true });
     await writeFile(
       join(uiPackageDir, "package.json"),
       JSON.stringify({
@@ -364,8 +365,15 @@ describe("plugin app runtime shim", () => {
       }),
     );
     await writeFile(
-      join(uiPackageDir, "src", "used.ts"),
+      join(uiPackageDir, "actual-src", "used.ts"),
       'export const usedClass = "tracking-widest";\n',
+    );
+    // A workspace package may itself expose generated/shared source through a
+    // symlink. Tailwind reports the matched link while esbuild reports its
+    // target, so both sides must be compared by filesystem identity.
+    await symlink(
+      "../actual-src/used.ts",
+      join(uiPackageDir, "src", "used.ts"),
     );
     await writeFile(
       join(uiPackageDir, "src", "unused.ts"),
@@ -413,8 +421,18 @@ describe("plugin app runtime shim", () => {
       'export const ownUnimported = "leading-tight";\n',
     );
 
+    // Build through another symlink too. On platforms where the temp root is
+    // not itself an alias, this still proves the metafile and Tailwind scan
+    // compare canonical paths rather than two spellings of the same file.
+    const aliasContainer = await mkdtemp(
+      join(tmpdir(), "bb-plugin-scan-alias-"),
+    );
+    tempDirs.push(aliasContainer);
+    const aliasedRoot = join(aliasContainer, "fixture");
+    await symlink(dir, aliasedRoot);
+
     const result = await buildPluginApp(
-      pluginDir,
+      join(aliasedRoot, "plugin"),
       "0.9.0-test",
       await testToolchain(),
     );

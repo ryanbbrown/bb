@@ -41,10 +41,14 @@ bb server in local editors. The SSH target is the value that works after
 `ssh`, such as `devbox`, `user@devbox`, or a `Host` entry from `~/.ssh/config`:
 
 ```bash
-npx bb-app client ssh-target set https://bb.example.test devbox
+npx bb-app client ssh-target set https://bb.example.test devbox --host-id host_abc
 npx bb-app client ssh-target list
-npx bb-app client ssh-target remove https://bb.example.test
+npx bb-app client ssh-target remove https://bb.example.test --host-id host_abc
 ```
+
+Use `--host-id` when the server has more than one machine; copy the ID from
+`bb machine list`. Omit it to preserve the single-machine auto-selection for
+`set`, or to remove every mapping for that server with `remove`.
 
 ## Precedence
 
@@ -605,12 +609,39 @@ The tunnel client lives in `plugins/connect/`; the CLI command is proxied to
 the plugin, and Settings → Connect drives the plugin's rpc (including shared
 ports).
 
+### Pairing the bb mobile app
+
+The bb mobile app reaches a paired bb through the same connect route. It
+enrolls as a connect **machine** — its own credential on the getbb.app account,
+separate from the server's pairing secret and individually revocable — so
+pairing starts from the bb, not from the phone. Both pairing surfaces sit
+behind the `mobileApp` experiment (Settings → Experiments → **Mobile app**, or
+`bb settings experiment mobileApp true`) until the app is generally available;
+the connect plugin reads the experiment from `/system/config` on every call,
+so a toggle applies without a plugin reload:
+
+- Settings → Remote access → **Add mobile device** mints a one-time code and
+  shows it as a QR code plus copyable text with a countdown.
+- `bb connect machine-code` prints the same code, server URL, connect apex,
+  and expiry; `bb connect machine-code --json` returns
+  `{code, serverUrl, apex, expiresAt}` (the QR encodes that JSON).
+
+Scan or type the code in the mobile app. The code lasts 10 minutes and works
+once. The phone then appears in the getbb.app dashboard machine list, where you
+can revoke it; every enrollment takes one of the account's machine slots
+(desktop apps, remote execution machines, and phones all count), so a
+machine-limit error asks you to revoke an unused device first. Both surfaces
+need the experiment on, the bb paired (`bb connect --code …`), and the connect
+plugin enabled; with the experiment off the panel hides the section and
+`bb connect machine-code` exits 1 with a pointer to the toggle.
+
 ## Experiments
 
 Experimental surfaces are changed in Settings → Experiments or with
 `bb settings experiment <key> <true|false>`. Most start off; `editMessages`
-starts on and its toggle is the opt-out. The `newOnboarding` experiment exposes
-the first-run agent and project setup guide.
+starts on and its toggle is the opt-out.
+The default-off `changelogPreview` experiment shows the latest release notes
+as a compact, dismissible card on Settings → Updates.
 The `editMessages` experiment is on by default and enables replacing an
 eligible, accepted root user message in a Codex, Claude Code, or Pi thread,
 including failed or incomplete turns. Turn it off to hide the editor. Grouped
@@ -618,6 +649,11 @@ multi-message requests are not yet editable. Opening the editor does not change
 history; if the thread is running, submission stops the current turn and waits
 for it to settle before atomically replacing that message and every later turn
 while keeping workspace changes.
+
+The `mobileApp` experiment turns on pairing for the bb mobile app: the
+**Add mobile device** card under Settings → Remote access and the
+`bb connect machine-code` command (see "Pairing the bb mobile app" above). It
+is off by default while the app is in early access.
 
 The `providerSessionReaping` experiment extends idle session release to every
 restorable provider. BB releases those sessions after 30 idle minutes. The
@@ -753,13 +789,13 @@ the plugin so it can be surfaced as needing attention.
 
 ### Provider retry plugin
 
-The builtin Provider retry plugin is disabled on fresh installations. Enable
-it under Extensions → Plugins or with `bb plugin enable provider-retry`. It
+The builtin Provider retry plugin is enabled on fresh installations. It
 automatically waits for structured Codex and Claude Code subscription-window
 resets when the failed turn was accepted, the provider has stopped its own
 retries, and the original execution settings remain available. Prior output or
 tool activity does not block recovery. Recovery sends one agent-only
-`Please continue.` turn on the existing provider conversation.
+`Please continue.` turn on the existing provider conversation. Disable it
+under Extensions → Plugins or with `bb plugin disable provider-retry`.
 The `maximumWait` setting defaults to `6 hours`; resets beyond that horizon are
 not scheduled. Choose `24 hours` or `No limit` under the plugin settings, or
 configure it from the CLI:
@@ -890,9 +926,9 @@ enrolled to other servers. Atomic reservations under
 
 ## Source Development
 
-For source development only, `pnpm dev` and `pnpm start` load the repo-root
-dotenv cascade. Add a repo-root `.env` only when you need to override the
-defaults described above.
+For source development only, `pnpm dev`, `pnpm start:worktree`, and `pnpm start`
+load the repo-root dotenv cascade. Add a repo-root `.env` only when you need to
+override the defaults described above.
 
 The standard [dotenv-cli](https://github.com/entropitor/dotenv-cli) cascade
 applies to source development. `pnpm dev` loads `.env`, `.env.local`,
@@ -904,6 +940,14 @@ Vite app bind to loopback by default; an explicit `BB_DEV_APP_HOST` still
 overrides the Vite listener. Remote HTTP dev via `BB_DEV_APP_HOST` also requires
 `BB_SERVER_BIND_HOST=0.0.0.0` for realtime updates; the Tailscale Serve HTTPS
 path avoids this because WebSocket traffic goes through the Vite proxy.
+`pnpm start:worktree` loads the same development dotenv cascade and uses the
+same checkout-specific data directory, server port, and host-daemon port. It
+builds production artifacts and serves the frontend bundle from the main
+server, so there is no separate Vite listener or hot reload. Telemetry remains
+disabled for this source-development command. Its worktree data directory,
+ports, inherited skills, listener host, absent Vite port, and telemetry policy
+take precedence over conflicting values saved in that instance's `config.json`
+or `env.json`.
 `pnpm start` loads `.env`, `.env.local`, `.env.production`, and
 `.env.production.local`.
 

@@ -55,11 +55,13 @@ import {
 } from "@bb/config/inference-model";
 import { validateLogLevel } from "@bb/config/log-level";
 import { validateOptionalUrl } from "@bb/config/public-url";
-import { parseServerBindHost } from "@bb/config/server";
+import { parseServerBindHost, type ServerBindHost } from "@bb/config/server";
 import {
   BB_PROD_HOST_DAEMON_PORT,
   BB_LOOPBACK_HOST,
   BB_PROD_SERVER_PORT,
+  parseDataDirEnvValue,
+  parsePortValue,
   resolveConfiguredDataDir,
   resolveDataDirDatabasePath,
   resolvePortFromEnv,
@@ -211,6 +213,26 @@ export interface ResolveBbAppRuntimeContextArgs {
   homeDir: string;
   options: LauncherCliOptions;
   serverUrlMode: "local" | "managed";
+  worktreePolicy?: WorktreeRuntimePolicy;
+}
+
+export interface WorktreeRuntimePolicy {
+  dataDir: string;
+  devAppPort: null;
+  hostDaemonPort: number;
+  inheritedSkillsRoots: string;
+  serverBindHost: ServerBindHost;
+  serverPort: number;
+  telemetry: false;
+}
+
+export interface ResolveWorktreeRuntimePolicyArgs {
+  env: NodeJS.ProcessEnv;
+  homeDir: string;
+}
+
+export interface RunBbAppOptions {
+  worktreePolicy: WorktreeRuntimePolicy | null;
 }
 
 export interface BbAppStartContext {
@@ -564,6 +586,7 @@ interface ResolveBbAppRuntimeStateArgs {
   homeDir: string;
   options: LauncherCliOptions;
   serverUrlMode: "local" | "managed";
+  worktreePolicy?: WorktreeRuntimePolicy;
 }
 
 interface RunConfigCommandArgs {
@@ -581,10 +604,12 @@ interface RunEnvCommandArgs {
 interface RunClientCommandArgs {
   args: string[];
   dataDir: string;
+  hostId?: string;
   json: boolean;
 }
 
 interface ResolveClientSshTargetHostIdArgs {
+  requestedHostId?: string;
   serverOrigin: string;
 }
 
@@ -805,6 +830,72 @@ export function resolveDataDir(args: ResolveDataDirArgs): string {
 
 export function resolvePort(args: ResolvePortArgs): number {
   return resolvePortFromEnv(args);
+}
+
+function requireWorktreePolicyEnvValue(
+  env: NodeJS.ProcessEnv,
+  name: string,
+): string {
+  const value = env[name];
+  if (value === undefined) {
+    throw new Error(`${name} is required for worktree startup`);
+  }
+  return value;
+}
+
+export function resolveWorktreeRuntimePolicy(
+  args: ResolveWorktreeRuntimePolicyArgs,
+): WorktreeRuntimePolicy {
+  const rawDataDir = requireWorktreePolicyEnvValue(args.env, "BB_DATA_DIR");
+  const rawHostDaemonPort = requireWorktreePolicyEnvValue(
+    args.env,
+    "BB_HOST_DAEMON_PORT",
+  );
+  const inheritedSkillsRoots = requireWorktreePolicyEnvValue(
+    args.env,
+    "BB_INHERITED_SKILLS_ROOTS",
+  );
+  const rawServerPort = requireWorktreePolicyEnvValue(
+    args.env,
+    "BB_SERVER_PORT",
+  );
+  return {
+    dataDir: parseDataDirEnvValue({
+      homeDir: args.homeDir,
+      rawDataDir,
+    }),
+    devAppPort: null,
+    hostDaemonPort: parsePortValue({
+      name: "BB_HOST_DAEMON_PORT",
+      rawPort: rawHostDaemonPort,
+    }),
+    inheritedSkillsRoots,
+    serverBindHost: parseServerBindHost(
+      args.env.BB_SERVER_BIND_HOST ?? BB_LOOPBACK_HOST,
+    ),
+    serverPort: parsePortValue({
+      name: "BB_SERVER_PORT",
+      rawPort: rawServerPort,
+    }),
+    telemetry: false,
+  };
+}
+
+function applyWorktreeRuntimePolicy(
+  env: NodeJS.ProcessEnv,
+  policy: WorktreeRuntimePolicy,
+): NodeJS.ProcessEnv {
+  const nextEnv: NodeJS.ProcessEnv = {
+    ...env,
+    BB_DATA_DIR: policy.dataDir,
+    BB_HOST_DAEMON_PORT: String(policy.hostDaemonPort),
+    BB_INHERITED_SKILLS_ROOTS: policy.inheritedSkillsRoots,
+    BB_SERVER_BIND_HOST: policy.serverBindHost,
+    BB_SERVER_PORT: String(policy.serverPort),
+    BB_TELEMETRY: String(policy.telemetry),
+  };
+  delete nextEnv.BB_DEV_APP_PORT;
+  return nextEnv;
 }
 
 function createEnvFromOptions(
@@ -1309,21 +1400,28 @@ export async function resolveBbAppRuntimeState(
   });
   const config = await readManagedConfig({ dataDir: initialContext.dataDir });
   const envFile = await readManagedEnvFile({ dataDir: initialContext.dataDir });
-  const managedEnv = applyManagedConfigEnv({
+  const persistedEnv = applyManagedConfigEnv({
     config,
     envFile,
     env: initialEnv,
   });
+  const applyRuntimePolicy = (env: NodeJS.ProcessEnv): NodeJS.ProcessEnv =>
+    args.worktreePolicy === undefined
+      ? env
+      : applyWorktreeRuntimePolicy(env, args.worktreePolicy);
+  const managedEnv = applyRuntimePolicy(persistedEnv);
 
   if (args.serverUrlMode === "local") {
     const localEnv = { ...managedEnv };
     const localServerEnv = stripThreadContextEnv(
-      createServerBaseEnv({
-        config,
-        envFile,
-        env: initialEnv,
-        serverBindHostOverride: args.options.serverBindHost,
-      }),
+      applyRuntimePolicy(
+        createServerBaseEnv({
+          config,
+          envFile,
+          env: initialEnv,
+          serverBindHostOverride: args.options.serverBindHost,
+        }),
+      ),
     );
     delete localEnv.BB_SERVER_URL;
     delete localServerEnv.BB_SERVER_URL;
@@ -1357,12 +1455,14 @@ export async function resolveBbAppRuntimeState(
     }),
     env: finalEnv,
     serverEnv: stripThreadContextEnv(
-      createServerBaseEnv({
-        config,
-        envFile,
-        env: initialEnv,
-        serverBindHostOverride: args.options.serverBindHost,
-      }),
+      applyRuntimePolicy(
+        createServerBaseEnv({
+          config,
+          envFile,
+          env: initialEnv,
+          serverBindHostOverride: args.options.serverBindHost,
+        }),
+      ),
     ),
   };
 }
@@ -1498,8 +1598,8 @@ function printClientHelp(dataDir: string): void {
 
 Usage:
   bb-app client ssh-target list [--json]
-  bb-app client ssh-target set <server-origin> <ssh-target>
-  bb-app client ssh-target remove <server-origin>
+  bb-app client ssh-target set <server-origin> <ssh-target> [--host-id <id>]
+  bb-app client ssh-target remove <server-origin> [--host-id <id>]
 
 Config file:
   ${formatClientConfigPath(dataDir)}
@@ -1634,6 +1734,9 @@ function formatClientHost(host: ClientHost): string {
 async function resolveClientSshTargetHostId(
   args: ResolveClientSshTargetHostIdArgs,
 ): Promise<string> {
+  if (args.requestedHostId !== undefined) {
+    return args.requestedHostId;
+  }
   const serverOrigin = normalizeClientServerOrigin(args.serverOrigin);
   const hostsUrl = new URL("/api/v1/hosts", serverOrigin);
   const response = await fetch(hostsUrl);
@@ -1658,6 +1761,7 @@ async function resolveClientSshTargetHostId(
     [
       `Expected exactly one host on ${serverOrigin}, but found ${candidates.length}.`,
       `Hosts: ${candidates.map(formatClientHost).join(", ")}`,
+      "Pass --host-id <id> to select one.",
     ].join(" "),
   );
 }
@@ -1687,11 +1791,27 @@ function setClientSshTarget(
 function removeClientSshTarget(
   config: ClientConfig,
   rawServerOrigin: string,
+  hostId?: string,
 ): ClientConfig {
   const serverOrigin = normalizeClientServerOrigin(rawServerOrigin);
   const nextServers = { ...config.servers };
-  delete nextServers[serverOrigin];
-  return { servers: nextServers };
+  if (hostId === undefined) {
+    delete nextServers[serverOrigin];
+    return { servers: nextServers };
+  }
+
+  const serverConfig = nextServers[serverOrigin];
+  if (serverConfig === undefined) {
+    return { servers: nextServers };
+  }
+  const nextHosts = { ...serverConfig.hosts };
+  delete nextHosts[hostId];
+  if (Object.keys(nextHosts).length === 0) {
+    delete nextServers[serverOrigin];
+  } else {
+    nextServers[serverOrigin] = { hosts: nextHosts };
+  }
+  return parseClientConfig({ servers: nextServers });
 }
 
 function formatClientSshTargets(config: ClientConfig, json: boolean): string {
@@ -1974,7 +2094,7 @@ async function runClientCommand(args: RunClientCommandArgs): Promise<void> {
   if (subcommand === SET_COMMAND) {
     if (commandArgs.length !== 4) {
       throw new Error(
-        "Usage: bb-app client ssh-target set <server-origin> <ssh-target>",
+        "Usage: bb-app client ssh-target set <server-origin> <ssh-target> [--host-id <id>]",
       );
     }
     const serverOrigin = commandArgs[2];
@@ -1983,6 +2103,7 @@ async function runClientCommand(args: RunClientCommandArgs): Promise<void> {
       throw new Error("SSH target must not be empty");
     }
     const hostId = await resolveClientSshTargetHostId({
+      ...(args.hostId !== undefined ? { requestedHostId: args.hostId } : {}),
       serverOrigin,
     });
     const nextConfig = setClientSshTarget(
@@ -2003,12 +2124,15 @@ async function runClientCommand(args: RunClientCommandArgs): Promise<void> {
 
   if (subcommand === REMOVE_COMMAND) {
     if (commandArgs.length !== 3) {
-      throw new Error("Usage: bb-app client ssh-target remove <server-origin>");
+      throw new Error(
+        "Usage: bb-app client ssh-target remove <server-origin> [--host-id <id>]",
+      );
     }
     await writeClientConfigFile({
       config: removeClientSshTarget(
         await readClientConfig({ dataDir: args.dataDir }),
         commandArgs[2],
+        args.hostId,
       ),
       dataDir: args.dataDir,
     });
@@ -2878,7 +3002,7 @@ Usage:
   bb-app config set <key> <value>
   bb-app config refresh
   bb-app env set <key> <value>
-  bb-app client ssh-target set <server-origin> <ssh-target>
+  bb-app client ssh-target set <server-origin> <ssh-target> [--host-id <id>]
   bb-app host-daemon [--server-url <url>] [--host-daemon-port <port>] [--host-id <id>] [--host-type <type>] [--enroll-key <key>] [--auto-update]
   bb-app host-daemon join --server-url <url> [--host-daemon-port <port>] [--join-code <code> --host-id <id>] [--auto-update]
 
@@ -3160,6 +3284,7 @@ async function runStopCommand(args: { dataDir: string }): Promise<void> {
 
 export async function runBbApp(
   cliArgs: string[] = process.argv.slice(2),
+  options: RunBbAppOptions = { worktreePolicy: null },
 ): Promise<void> {
   const parsedArgs = parseLauncherArgs(cliArgs);
 
@@ -3191,6 +3316,9 @@ export async function runBbApp(
       command.kind === "host-daemon"
         ? "managed"
         : "local",
+    ...(options.worktreePolicy === null
+      ? {}
+      : { worktreePolicy: options.worktreePolicy }),
   });
 
   if (command.kind === "start") {
@@ -3243,6 +3371,9 @@ export async function runBbApp(
     await runClientCommand({
       args: command.args,
       dataDir: runtime.context.dataDir,
+      ...(parsedArgs.options.hostId !== undefined
+        ? { hostId: parsedArgs.options.hostId }
+        : {}),
       json: parsedArgs.options.json === true,
     });
     return;

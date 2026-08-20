@@ -7,8 +7,7 @@ every window and client sees the same value.
 
 - `bb settings general <key> <value>` accepts any key listed under
   `generalSettings` in `bb settings show`. Boolean preferences take `true`,
-  `false`, `on`, or `off`; `null` clears a preference that can be unset, such
-  as `onboardingCompletedAt`.
+  `false`, `on`, or `off`; `null` clears a preference that can be unset.
 - Unknown keys and values of the wrong shape are rejected; the error names the
   keys bb knows.
 
@@ -51,9 +50,16 @@ every window and client sees the same value.
   stays a newline; iPadOS WebKit preserves the Enter shortcuts for a connected
   Magic Keyboard.
 
-## New onboarding
+## Mobile app
 
-- The `newOnboarding` experiment defaults to false.
-- Enable it with `bb settings experiment newOnboarding true`.
-- Use `bb settings replay-onboarding` to enable the experiment and show the
-  agent and project setup guide again.
+- The `mobileApp` experiment defaults to false while the bb mobile app is in
+  early access.
+- Enable it with `bb settings experiment mobileApp true`. It shows the
+  **Add mobile device** card under Settings → Remote access and enables
+  `bb connect machine-code`.
+
+## Changelog preview
+
+- The `changelogPreview` experiment defaults to false.
+- Enable it with `bb settings experiment changelogPreview true` to show the
+  latest release notes on Settings → Updates.

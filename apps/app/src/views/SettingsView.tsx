@@ -41,6 +41,7 @@ import {
 } from "@/hooks/useTheme";
 import { useHostDaemon, useLocalHostDaemonAccess } from "@/hooks/useHostDaemon";
 import { UsageLimitsSettingsSection } from "@/components/settings/UsageLimitsSettingsSection";
+import { CodeRendererSettings } from "@/components/settings/CodeRendererSettings";
 import { SidebarThreadListSetting } from "@/components/settings/SidebarThreadListSetting";
 import { SplitDimmingSetting } from "@/components/settings/SplitDimmingSetting";
 import { useSettingsNavState } from "@/components/settings/settings-nav";
@@ -176,7 +177,6 @@ export interface AppearanceSettingsSectionProps {
 }
 
 export interface GeneralSettingsSectionProps {
-  onReplayOnboarding: () => void;
   desktopBrowserAvailable: boolean;
   navigateToThreadAfterCreate: boolean;
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
@@ -187,7 +187,6 @@ export interface GeneralSettingsSectionProps {
   openLinksInAppBrowser: boolean;
   rewriteLocalhostLinks: boolean;
   richTextEditing: boolean;
-  replayOnboardingAvailable: boolean;
   steerActiveThreadOnEnter: boolean;
   steerActiveThreadOnEnterDisabled: boolean;
 }
@@ -210,13 +209,13 @@ function appPaletteLabel(
 export interface ExperimentsSettingsSectionProps {
   /** True while the config query hasn't loaded or a toggle write is in flight. */
   disabled: boolean;
-  claudeCodeMockCliTrafficEnabled: boolean;
+  changelogPreviewEnabled: boolean;
   editMessagesEnabled: boolean;
-  newOnboardingEnabled: boolean;
+  mobileAppEnabled: boolean;
   providerSessionReapingEnabled: boolean;
-  onClaudeCodeMockCliTrafficEnabledChange: (enabled: boolean) => void;
+  onChangelogPreviewEnabledChange: (enabled: boolean) => void;
   onEditMessagesEnabledChange: (enabled: boolean) => void;
-  onNewOnboardingEnabledChange: (enabled: boolean) => void;
+  onMobileAppEnabledChange: (enabled: boolean) => void;
   onProviderSessionReapingEnabledChange: (enabled: boolean) => void;
 }
 
@@ -686,6 +685,7 @@ export function AppearanceSettingsSection({
     <SettingsSection title="Appearance">
       <div className="space-y-5">
         <SidebarThreadListSetting />
+        <CodeRendererSettings />
         <SettingsWithControl label="Theme">
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -834,10 +834,8 @@ export function GeneralSettingsSection({
   openLinksInAppBrowser,
   rewriteLocalhostLinks,
   richTextEditing,
-  replayOnboardingAvailable,
   steerActiveThreadOnEnter,
   steerActiveThreadOnEnterDisabled,
-  onReplayOnboarding,
 }: GeneralSettingsSectionProps) {
   return (
     <SettingsSection title="General">
@@ -871,36 +869,8 @@ export function GeneralSettingsSection({
           enabled={rewriteLocalhostLinks}
           onEnabledChange={onRewriteLocalhostLinksChange}
         />
-
-        {replayOnboardingAvailable ? (
-          <ReplayOnboardingSettingsControl onReplay={onReplayOnboarding} />
-        ) : null}
       </div>
     </SettingsSection>
-  );
-}
-
-/**
- * The parent only shows this control when the new-onboarding experiment is on.
- * Clearing `onboardingCompletedAt` then reopens the flow on the spot.
- */
-function ReplayOnboardingSettingsControl({
-  onReplay,
-}: {
-  onReplay: () => void;
-}) {
-  return (
-    <div className="flex items-start justify-between gap-4">
-      <div className="min-w-0">
-        <div className="text-sm">Setup guide</div>
-        <p className="mt-0.5 text-xs text-subtle-foreground">
-          Walk through agent detection and adding projects again.
-        </p>
-      </div>
-      <Button variant="outline" size="sm" onClick={onReplay}>
-        Show again
-      </Button>
-    </div>
   );
 }
 
@@ -994,20 +964,20 @@ export function ProviderSettingsSection({
   );
 }
 
-const CLAUDE_CODE_MOCK_CLI_TRAFFIC_EXPERIMENT_LABEL = "Mock CLI Traffic";
+const CHANGELOG_PREVIEW_EXPERIMENT_LABEL = "Changelog preview";
 const EDIT_MESSAGES_EXPERIMENT_LABEL = "Edit messages";
-const NEW_ONBOARDING_EXPERIMENT_LABEL = "New onboarding";
+const MOBILE_APP_EXPERIMENT_LABEL = "Mobile app";
 const PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL =
   "Idle provider session release";
 export function ExperimentsSettingsSection({
-  claudeCodeMockCliTrafficEnabled,
+  changelogPreviewEnabled,
   disabled,
   editMessagesEnabled,
-  newOnboardingEnabled,
+  mobileAppEnabled,
   providerSessionReapingEnabled,
-  onClaudeCodeMockCliTrafficEnabledChange,
+  onChangelogPreviewEnabledChange,
   onEditMessagesEnabledChange,
-  onNewOnboardingEnabledChange,
+  onMobileAppEnabledChange,
   onProviderSessionReapingEnabledChange,
 }: ExperimentsSettingsSectionProps) {
   return (
@@ -1017,15 +987,14 @@ export function ExperimentsSettingsSection({
     >
       <div className="space-y-5">
         <SettingsWithControl
-          label={CLAUDE_CODE_MOCK_CLI_TRAFFIC_EXPERIMENT_LABEL}
-          labelBadge="dev-only"
-          description="Route Claude Code through CLI-style traffic."
+          label={CHANGELOG_PREVIEW_EXPERIMENT_LABEL}
+          description="Show the latest release notes as a compact preview on the Updates page."
         >
           <Switch
-            checked={claudeCodeMockCliTrafficEnabled}
+            checked={changelogPreviewEnabled}
             disabled={disabled}
-            onCheckedChange={onClaudeCodeMockCliTrafficEnabledChange}
-            aria-label={CLAUDE_CODE_MOCK_CLI_TRAFFIC_EXPERIMENT_LABEL}
+            onCheckedChange={onChangelogPreviewEnabledChange}
+            aria-label={CHANGELOG_PREVIEW_EXPERIMENT_LABEL}
           />
         </SettingsWithControl>
 
@@ -1042,14 +1011,14 @@ export function ExperimentsSettingsSection({
         </SettingsWithControl>
 
         <SettingsWithControl
-          label={NEW_ONBOARDING_EXPERIMENT_LABEL}
-          description="Enable the new first-run guide for agent setup and project selection."
+          label={MOBILE_APP_EXPERIMENT_LABEL}
+          description="Pair the bb mobile app over bb connect: shows Add mobile device under Remote access and enables bb connect machine-code."
         >
           <Switch
-            checked={newOnboardingEnabled}
+            checked={mobileAppEnabled}
             disabled={disabled}
-            onCheckedChange={onNewOnboardingEnabledChange}
-            aria-label={NEW_ONBOARDING_EXPERIMENT_LABEL}
+            onCheckedChange={onMobileAppEnabledChange}
+            aria-label={MOBILE_APP_EXPERIMENT_LABEL}
           />
         </SettingsWithControl>
 
@@ -1210,19 +1179,23 @@ export function SettingsView() {
   } else if (activeSection === "machines") {
     content = <MachinesSettingsSection />;
   } else if (activeSection === "updates") {
-    content = <UpdatesSettingsSection />;
+    content = (
+      <UpdatesSettingsSection
+        showChangelogPreview={experiments.changelogPreview}
+      />
+    );
   } else if (activeSection === "experiments") {
     content = (
       <ExperimentsSettingsSection
-        claudeCodeMockCliTrafficEnabled={experiments.claudeCodeMockCliTraffic}
+        changelogPreviewEnabled={experiments.changelogPreview}
         disabled={
           systemConfigQuery.data === undefined ||
           updateExperimentsMutation.isPending
         }
-        onClaudeCodeMockCliTrafficEnabledChange={(enabled) =>
+        onChangelogPreviewEnabledChange={(enabled) =>
           updateExperimentsMutation.mutate({
             ...experiments,
-            claudeCodeMockCliTraffic: enabled,
+            changelogPreview: enabled,
           })
         }
         editMessagesEnabled={experiments.editMessages}
@@ -1232,11 +1205,11 @@ export function SettingsView() {
             editMessages: enabled,
           })
         }
-        newOnboardingEnabled={experiments.newOnboarding}
-        onNewOnboardingEnabledChange={(enabled) =>
+        mobileAppEnabled={experiments.mobileApp}
+        onMobileAppEnabledChange={(enabled) =>
           updateExperimentsMutation.mutate({
             ...experiments,
-            newOnboarding: enabled,
+            mobileApp: enabled,
           })
         }
         providerSessionReapingEnabled={experiments.providerSessionReaping}
@@ -1263,7 +1236,6 @@ export function SettingsView() {
           openLinksInAppBrowser={openLinksInAppBrowser}
           rewriteLocalhostLinks={rewriteLocalhostLinks}
           richTextEditing={richTextEditing}
-          replayOnboardingAvailable={experiments.newOnboarding}
           steerActiveThreadOnEnter={generalSettings.steerActiveThreadOnEnter}
           steerActiveThreadOnEnterDisabled={
             systemConfigQuery.data === undefined ||
@@ -1271,12 +1243,6 @@ export function SettingsView() {
           }
           onNavigateToThreadAfterCreateChange={setNavigateToThreadAfterCreate}
           onOpenLinksInAppBrowserChange={setOpenLinksInAppBrowser}
-          onReplayOnboarding={() =>
-            updateGeneralSettingsMutation.mutate({
-              ...generalSettings,
-              onboardingCompletedAt: null,
-            })
-          }
           onRewriteLocalhostLinksChange={setRewriteLocalhostLinks}
           onRichTextEditingChange={setRichTextEditing}
           onSteerActiveThreadOnEnterChange={(enabled) =>

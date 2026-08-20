@@ -4,6 +4,7 @@ import {
   mkdtempSync,
   readFileSync,
   rmSync,
+  symlinkSync,
 } from "node:fs";
 import { createConnection } from "node:net";
 import { tmpdir } from "node:os";
@@ -12,7 +13,10 @@ import { fileURLToPath } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createStandaloneBuiltinCompactCommandInput } from "@bb/domain";
 import type { DynamicTool, ReasoningLevel } from "@bb/domain";
-import { PROVIDER_BRIDGE_PROTOCOL_VERSION } from "@bb/provider-bridge-protocol";
+import {
+  PROVIDER_BRIDGE_PROTOCOL_VERSION,
+  THREAD_DELTA_NOTIFICATION_METHOD,
+} from "@bb/provider-bridge-protocol";
 import {
   captureBridgeJsonRpcOutput,
   type BridgeJsonRpcOutputMessage,
@@ -96,8 +100,20 @@ function notifications(method: string): BridgeJsonRpcOutputMessage[] {
  * assembler per call over the full ordered capture keeps ids deterministic.
  */
 function threadEvents(): Record<string, unknown>[] {
-  return assembleCapturedThreadEvents(output.messages, "acp") as unknown as
-    Record<string, unknown>[];
+  return assembleCapturedThreadEvents(
+    output.messages,
+    "acp",
+  ) as unknown as Record<string, unknown>[];
+}
+
+/** The delta kinds the bridge put on the wire, in emission order. */
+function emittedDeltaKinds(): string[] {
+  return notifications(THREAD_DELTA_NOTIFICATION_METHOD).flatMap((message) => {
+    const params = message.params as
+      | { deltas?: { kind?: string }[] }
+      | undefined;
+    return (params?.deltas ?? []).map((delta) => delta.kind ?? "");
+  });
 }
 
 function threadEventsOfType(type: string): Record<string, unknown>[] {
@@ -418,6 +434,7 @@ function callDynamicToolBridge(args: {
     socket.on("connect", () => {
       socket.write(
         `${JSON.stringify({
+          kind: "toolCall",
           arguments: args.toolArguments,
           callId: args.callId,
           threadId: args.threadId,
@@ -1311,6 +1328,42 @@ describe("acp bridge", () => {
     );
   });
 
+  it("approves Cursor session MCP servers for the session lifetime (#2018)", async () => {
+    const cursorAgent = join(workspaceDir, "cursor-agent");
+    const cursorDataDir = join(workspaceDir, "cursor-data");
+    symlinkSync(process.execPath, cursorAgent);
+    const { providerThreadId } = await startThread({
+      agent: { command: cursorAgent, args: [FAKE_AGENT_PATH] },
+      envVars: { CURSOR_DATA_DIR: cursorDataDir },
+      dynamicTools: [
+        {
+          name: "update_environment_directory",
+          description: "Move this thread to another environment directory.",
+          inputSchema: { type: "object", properties: {} },
+        },
+      ],
+    });
+    const projectSlug = workspaceDir
+      .replace(/[^a-zA-Z0-9]/gu, "-")
+      .replace(/-+/gu, "-")
+      .replace(/^-+|-+$/gu, "");
+    const approvalPath = join(
+      cursorDataDir,
+      "projects",
+      projectSlug,
+      "mcp-approvals.json",
+    );
+    const approvals = JSON.parse(readFileSync(approvalPath, "utf8")) as unknown;
+    expect(approvals).toEqual([
+      expect.stringMatching(`^${ACP_BRIDGE_MCP_SERVER_NAME}-[a-f0-9]{16}$`),
+    ]);
+
+    await stopThread(providerThreadId);
+    expect(JSON.parse(readFileSync(approvalPath, "utf8")) as unknown).toEqual(
+      [],
+    );
+  });
+
   it("forwards ACP dynamic tool calls through the runtime tool-call contract", async () => {
     const { bbThreadId, providerThreadId } = await startThread({
       dynamicTools: [
@@ -1397,6 +1450,8 @@ describe("acp bridge", () => {
 
     await expect(bridgeCall).resolves.toEqual({
       content: "environment directory updated",
+      contentBlocks: [{ type: "text", text: "environment directory updated" }],
+      images: [],
       isError: false,
       ok: true,
     });
@@ -1910,6 +1965,51 @@ describe("acp bridge", () => {
     expect(threadEventsOfType("thread/compacted")).toEqual([]);
   });
 
+  it("accepts turn input only after the prompt carrying it goes out", async () => {
+    const { providerThreadId } = await startThread();
+    const turnId = sendTurnRequest("turn/start", providerThreadId, {
+      input: [{ type: "text", text: "hello there", mentions: [] }],
+    });
+    await waitForResponse(turnId);
+    await waitForTurnCompleted();
+
+    // Acceptance means the `session/prompt` request carrying the input went
+    // out, so the bridge emits it after opening the turn. Emitting it first
+    // leaves a pending claim on bb's side that any stale terminal can take,
+    // which is the class #2013 fixed for Claude (#2014).
+    const deltaKinds = emittedDeltaKinds();
+    expect(deltaKinds.indexOf("input.accepted")).toBe(
+      deltaKinds.indexOf("turn.open") + 1,
+    );
+  });
+
+  it("never accepts a queued steer the stopped turn did not send", async () => {
+    const { providerThreadId } = await startThread();
+    const turnId = sendTurnRequest("turn/start", providerThreadId, {
+      input: [{ type: "text", text: "hang", mentions: [] }],
+    });
+    await waitForResponse(turnId);
+
+    const steerId = sendTurnRequest("turn/steer", providerThreadId, {
+      expectedTurnId: "turn-1",
+      input: [{ type: "text", text: "never sent", mentions: [] }],
+    });
+    await waitForResponse(steerId);
+    const stopId = sendRequest("thread/stop", {
+      threadId: bbThreadIdFor(providerThreadId),
+      providerThreadId,
+      intent: "interrupt",
+      activeTurnId: null,
+    });
+    await waitForResponse(stopId);
+    await waitForTurnCompleted();
+
+    // The stop dropped the queued steer before it reached the agent, so the
+    // turn reports the one input the agent was actually given, not two.
+    expect(threadEventsOfType("turn/input/accepted")).toHaveLength(1);
+    startedProviderThreadIds.pop();
+  });
+
   it("rejects steers when no turn is active", async () => {
     const { providerThreadId } = await startThread();
     const steerId = sendTurnRequest("turn/steer", providerThreadId, {
@@ -2132,8 +2232,7 @@ describe("acp bridge", () => {
         return params.threadId === threadId &&
           Array.isArray(params.deltas) &&
           params.deltas.some(
-            (delta) =>
-              (delta as { kind?: unknown }).kind === "session.reset",
+            (delta) => (delta as { kind?: unknown }).kind === "session.reset",
           )
           ? [index]
           : [];

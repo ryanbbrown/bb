@@ -235,6 +235,25 @@
         "*"
       ]
     },
+    "@bb/mobile#test": {
+      "dependsOn": [
+        "//#ensure-native-modules",
+        "topo"
+      ],
+      "inputs": [
+        "$TURBO_DEFAULT$",
+        "$TURBO_ROOT$/vitest.shared.ts",
+        "$TURBO_ROOT$/apps/app/src/components/ui/theme.css",
+        "$TURBO_ROOT$/apps/app/src/lib/themes/**"
+      ]
+    },
+    "@bb/mobile#dev": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "*"
+      ]
+    },
     "storybook": {
       "dependsOn": [
         "@bb/templates#generate:templates"
@@ -571,6 +590,25 @@
       "inputs": [
         "$TURBO_DEFAULT$",
         "$TURBO_ROOT$/vitest.shared.ts"
+      ]
+    },
+    "@bb/integration-tests#e2e:mobile-backend": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "*"
+      ],
+      "dependsOn": [
+        "//#ensure-native-modules",
+        "@get-bb/plugin-sdk#build",
+        "topo"
+      ]
+    },
+    "@bb/integration-tests#e2e:mobile-connect-stub": {
+      "cache": false,
+      "persistent": true,
+      "passThroughEnv": [
+        "*"
       ]
     },
     "@bb/integration-tests#test:smoke": {

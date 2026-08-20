@@ -319,6 +319,7 @@ type ExpectedProjectsKey =
   | "paths"
   | "promptHistory"
   | "reorder"
+  | "sidebarBootstrap"
   | "sources"
   | "update"
   | "worktrees";
@@ -342,8 +343,6 @@ type ExpectedSystemKey =
   | "updateGeneralSettings"
   | "updateKeyboardSettings"
   | "onboardingAgents"
-  | "onboardingEvent"
-  | "onboardingRepos"
   | "usageLimits"
   | "version";
 

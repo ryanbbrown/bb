@@ -5,7 +5,14 @@ export interface SettingsSectionProps {
   action?: ReactNode;
   children: ReactNode;
   description?: string;
-  title: string;
+  title: ReactNode;
+  /** A compact utility that belongs directly beside the section title. */
+  titleAction?: ReactNode;
+  /**
+   * Extra classes for the card, e.g. a section whose whole body is one link
+   * and needs a positioning context and a hover state.
+   */
+  bodyClassName?: string;
 }
 
 export function SettingsSection({
@@ -13,26 +20,38 @@ export function SettingsSection({
   children,
   description,
   title,
+  titleAction,
+  bodyClassName,
 }: SettingsSectionProps) {
   return (
     <section className="space-y-3">
       <div
         className={cn(
-          "flex justify-between gap-4",
-          description ? "items-start" : "items-center",
+          "flex flex-col gap-3 sm:flex-row sm:justify-between sm:gap-4",
+          description ? "sm:items-start" : "sm:items-center",
         )}
       >
-        <div>
-          <h2 className="text-sm font-semibold text-foreground">{title}</h2>
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <h2 className="min-w-0 text-sm font-semibold text-foreground">
+              {title}
+            </h2>
+            {titleAction ? <div className="shrink-0">{titleAction}</div> : null}
+          </div>
           {description ? (
             <p className="mt-0.5 text-xs leading-snug text-subtle-foreground/75">
               {description}
             </p>
           ) : null}
         </div>
-        {action ? <div className="shrink-0">{action}</div> : null}
+        {action ? <div className="shrink-0 self-start">{action}</div> : null}
       </div>
-      <div className="rounded-lg border border-border bg-card px-4 py-3.5">
+      <div
+        className={cn(
+          "rounded-lg border border-border bg-card px-4 py-3.5",
+          bodyClassName,
+        )}
+      >
         {children}
       </div>
     </section>

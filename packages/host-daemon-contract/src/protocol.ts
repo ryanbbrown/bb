@@ -1,6 +1,45 @@
-// Version 137 adds worktree discovery, canonical host path resolution, and
+// Version 144 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
+//
+// Version 143 lets daemons from before session-open's `localApiPort` field
+// reach the protocol-version check by defaulting that field at the server
+// boundary. Without it, those daemons receive `invalid_request` instead of
+// `protocol_version_mismatch`, so their protocol self-updater never runs.
+//
+// Version 142 ships Pi context-window usage after every SDK turn ends, once
+// its assistant response and tool results are both reflected in the session.
+// Older bundled bridges report only after the full agent run ends, leaving the
+// meter stale throughout multi-tool turns.
+//
+// Version 141 extends the consumed-not-queued acceptance rule to the remaining
+// providers. Pi reports `input.accepted` for a turn only once it read the
+// input: a prompt pi queues behind a live run stays unaccepted, and the
+// queue-time settle report that used to accompany it is gone, so it can no
+// longer complete an empty turn for a message pi has not answered. ACP reports
+// acceptance once the `session/prompt` request carrying the input goes out, so
+// a steer the turn drops is no longer reported as accepted. Older daemons emit
+// the queue-time semantics and produce those phantom turns.
+//
+// Version 140 reports each daemon's browser-local editor helper port during
+// session open. The server uses those ports to let a remote browser discover
+// the helper on its own machine instead of assuming every machine uses the
+// primary server host's port.
+//
+// Version 139 keeps a resumed Claude session's provider-owned task-notification
+// result from claiming a newly accepted human input, and delays turn/start
+// acceptance until Claude's SDK prompt iterator consumes the input. Older
+// daemons can still make a sent message appear to complete immediately while
+// its real response continues under a second, unaccepted turn.
+//
+// Version 138 removes the `workspace.discover_repos` command. It existed only
+// for the first-run onboarding flow's project step, which is deleted; no server
+// sends it any more. A newer daemon no longer answers it, so an older server
+// paired with a new daemon would fail that command instead of returning repos.
+//
+// Version 137 removes the `claudeCodeMockCliTraffic` runtime option and the
+// Claude Code mock CLI traffic experiment behind it. Current servers no longer
+// send the field, and current bridges no longer accept it.
 //
 // Version 136 carries the narrow-grammar provider bridge protocol (bridge
 // protocol v2): the provider bridge artifacts a server serves to daemons now
@@ -55,7 +94,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 137 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 144 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

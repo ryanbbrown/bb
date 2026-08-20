@@ -453,19 +453,6 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
       },
     ],
   },
-  "workspace.discover_repos": {
-    repos: [
-      {
-        path: "/home/user/projects/bb",
-        name: "bb",
-        lastActivityAt: "2026-08-05T00:00:00.000Z",
-        originUrl: "https://github.com/example/bb",
-        agentSeen: true,
-        agentSeenAt: "2026-08-04T00:00:00.000Z",
-      },
-    ],
-    truncated: false,
-  },
   "workspace.status": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diff": WORKSPACE_UNAVAILABLE_RESULT,
   "workspace.diffFiles": WORKSPACE_UNAVAILABLE_RESULT,
@@ -793,8 +780,6 @@ const INTENTIONAL_OPTIONAL_HOST_DAEMON_FIELDS: Record<string, string> = {
     "thread.start and turn.submit omit inputGroups for ordinary single user-message turns; presence preserves grouped user messages within one turn.",
   "hostDaemonCommandSchema.disallowedTools":
     "thread runtime context may omit provider-specific built-in tool removals for providers that do not need them.",
-  "hostDaemonCommandSchema.options.claudeCodeMockCliTraffic":
-    "thread runtime options may omit mock CLI traffic settings unless the server explicitly enables Claude traffic replay.",
   "hostDaemonCommandSchema.options.claudeCodePermissionMode":
     "thread runtime options may omit the Claude Code native permission override unless a provider command requests plan mode.",
   "hostDaemonCommandSchema.options.memoryEnabled":
@@ -1133,7 +1118,13 @@ describe("host-daemon command schemas", () => {
   // Version 118 rejects successful provider update results when the daemon
   // cannot verify a version change. Older daemons can report a no-op Claude
   // update as successful, so enrolled machines must update for honest results.
-  // Version 137 adds worktree discovery and managed checkout intents.
+  // Version 144 adds worktree discovery and managed checkout intents.
+  // Version 140 reports the daemon's browser-local helper port during session
+  // open so remote pages can discover helpers on non-primary machines.
+  // Version 139 keeps resumed Claude task notifications from claiming newly
+  // accepted human input before the SDK prompt iterator consumes it.
+  // Version 137 removes the `claudeCodeMockCliTraffic` runtime option with
+  // the Claude Code mock CLI traffic experiment.
   // Version 136 ships the narrow-grammar provider bridges: served bridge
   // artifacts speak bridge-protocol v2 (`thread/delta` only), which an older
   // daemon's runtime would ignore as unknown notifications and render empty
@@ -1158,7 +1149,7 @@ describe("host-daemon command schemas", () => {
   // mixed version. Version 113 carried the Devin Desktop open target rename
   // and remains part of the protocol lineage.
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(137);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(144);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -3201,6 +3192,7 @@ describe("host-daemon session schemas", () => {
         hasMachineCredential: true,
         platform: "darwin",
         dataDir: "/tmp/bb-data",
+        localApiPort: 38_887,
         protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
         activeThreads: [
           {
@@ -3224,6 +3216,7 @@ describe("host-daemon session schemas", () => {
         hasMachineCredential: false,
         platform: "darwin",
         dataDir: "/tmp/bb-data",
+        localApiPort: null,
         protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
         activeThreads: [],
         loadedEnvironments: [
@@ -3249,6 +3242,7 @@ describe("host-daemon session schemas", () => {
         hasMachineCredential: true,
         platform: "darwin",
         dataDir: "/tmp/bb-data",
+        localApiPort: 38_887,
         protocolVersion: HOST_DAEMON_PROTOCOL_VERSION,
         activeThreads: [
           {
@@ -3267,6 +3261,7 @@ describe("host-daemon session schemas", () => {
         hasMachineCredential: true,
         platform: "darwin",
         dataDir: "/tmp/bb-data",
+        localApiPort: 38_887,
         protocolVersion: HOST_DAEMON_PROTOCOL_VERSION - 1,
         activeThreads: [],
       }),
@@ -3283,6 +3278,7 @@ describe("host-daemon session schemas", () => {
         hasMachineCredential: true,
         platform: "darwin",
         dataDir: "/tmp/bb-data",
+        localApiPort: 38_887,
         protocolVersion: 0,
         activeThreads: [],
       }),

@@ -22,6 +22,7 @@ import { PLUGIN_SDK_MAJOR, PLUGIN_SDK_VERSION } from "@bb/domain";
 import type { Logger } from "@bb/logger";
 import {
   createPluginService,
+  dispatchPluginSourceWatchChange,
   type PluginService,
 } from "../../../src/services/plugins/plugin-service.js";
 import { readPluginManifest } from "../../../src/services/plugins/manifest.js";
@@ -178,6 +179,14 @@ describe("builtin plugin reconciliation", () => {
   let db: DbConnection;
   let workDir: string;
   let service: PluginService | undefined;
+
+  it("reloads when the source watcher omits the changed filename", () => {
+    const changes: string[] = [];
+
+    dispatchPluginSourceWatchChange((path) => changes.push(path), null);
+
+    expect(changes).toEqual(["."]);
+  });
 
   beforeEach(async () => {
     delete globals.__builtinFixtureLoads;
@@ -407,6 +416,28 @@ describe("builtin plugin reconciliation", () => {
     ]);
   });
 
+  it("preserves an installed builtin's choice when its default changes", async () => {
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      defaultEnabled: false,
+    });
+    await service.start();
+    await service.stop();
+
+    service = createService({
+      db,
+      dataDir: join(workDir, "data"),
+      defaultEnabled: true,
+    });
+    await service.start();
+
+    expect(service.list()).toMatchObject([
+      { id: "builtin-fixture", enabled: false, status: "disabled" },
+    ]);
+    expect(loadCount()).toBe(0);
+  });
+
   it("ships Workflows disabled on a fresh database", async () => {
     const workflows = BUILTIN_PLUGINS.find(
       (builtin) => builtin.name === "workflows",
@@ -432,11 +463,11 @@ describe("builtin plugin reconciliation", () => {
     ]);
   });
 
-  it("ships Provider retry disabled on a fresh database", async () => {
+  it("ships Provider retry enabled on a fresh database", async () => {
     const providerRetry = BUILTIN_PLUGINS.find(
       (builtin) => builtin.name === "provider-retry",
     );
-    expect(providerRetry?.defaultEnabled).toBe(false);
+    expect(providerRetry?.defaultEnabled).toBe(true);
 
     service = createService({
       db,
@@ -451,8 +482,8 @@ describe("builtin plugin reconciliation", () => {
       {
         id: "provider-retry",
         source: "builtin:provider-retry",
-        enabled: false,
-        status: "disabled",
+        enabled: true,
+        status: "running",
       },
     ]);
   });
