@@ -1,11 +1,25 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, screen } from "@testing-library/react";
 import { loadPluginApp, renderSlot } from "@get-bb/plugin-sdk/testing/app";
 import type {
   PluginSidebarThread,
   PluginSidebarThreadProjection,
 } from "@get-bb/plugin-sdk/app";
+
+const projectionTestState = vi.hoisted(() => ({ calls: 0 }));
+vi.mock("./projection", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./projection")>();
+  return {
+    ...actual,
+    projectFirstmateThreads: (
+      ...args: Parameters<typeof actual.projectFirstmateThreads>
+    ) => {
+      projectionTestState.calls += 1;
+      return actual.projectFirstmateThreads(...args);
+    },
+  };
+});
 
 const app = await loadPluginApp(() => import("../app"));
 const threadList = app.threadLists[0]!;
@@ -99,6 +113,10 @@ function standardThreads() {
     thread("independent"),
   ];
 }
+
+beforeEach(() => {
+  projectionTestState.calls = 0;
+});
 
 afterEach(cleanup);
 
@@ -222,6 +240,16 @@ describe("Firstmate ID projection", () => {
     expect(projection.excludedThreadIds).toEqual([]);
   });
 
+  it("keeps projection construction stable across unchanged rerenders", () => {
+    const rendered = renderFirstmate(standardThreads());
+    const Component = threadList.component;
+    expect(projectionTestState.calls).toBe(1);
+
+    rendered.lifecycle.rerender(<Component {...listProps} />);
+
+    expect(projectionTestState.calls).toBe(1);
+  });
+
   it("uses the SDK harness semantic adapter without custom row markup", () => {
     renderFirstmate(standardThreads());
     expect(
@@ -232,6 +260,19 @@ describe("Firstmate ID projection", () => {
 });
 
 describe("safe deliberate fallback", () => {
+  it("renders Original when the manager setting is missing", () => {
+    const rendered = renderSlot(threadList, listProps, {
+      sidebarThreads: {
+        status: "ready",
+        threads: standardThreads(),
+        projects,
+      },
+    });
+    expect(screen.getByText("Original BB sidebar")).toBeDefined();
+    expect(rendered.inspection.sidebarThreadProjections).toHaveLength(0);
+    expect(projectionTestState.calls).toBe(0);
+  });
+
   it.each([
     ["blank manager", standardThreads(), "", "ready"],
     ["whitespace manager", standardThreads(), " manager ", "ready"],

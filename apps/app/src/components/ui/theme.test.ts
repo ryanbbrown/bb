@@ -321,6 +321,20 @@ describe("theme.css desktop portal hit testing", () => {
   });
 });
 
+describe("theme.css projection sticky ownership", () => {
+  it("recomputes projection-local sticky tiers without the outer offset", () => {
+    const selectorAt = css.indexOf(
+      "> [data-sidebar-projection-sticky-regions] {",
+    );
+    expect(selectorAt).toBeGreaterThan(-1);
+    const rule = css.slice(selectorAt, css.indexOf("}", selectorAt));
+    expect(rule).toContain("--bb-sidebar-sticky-projection-offset: 0px");
+    expect(rule).toContain("--bb-sidebar-sticky-label-top:");
+    expect(rule).toContain("--bb-sidebar-sticky-project-top:");
+    expect(rule).toContain("--bb-sidebar-sticky-parent-base-top:");
+  });
+});
+
 // The sidebar resize drag rewrites --sidebar-width every frame. Registered
 // non-inherited, the change restyles only the elements it is set on; inherited,
 // it restyles their whole subtrees (AppLayout.sidebar-resize.test.tsx covers

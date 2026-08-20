@@ -141,7 +141,7 @@ export function TopLevelSidebarSection({
         ref={dragBindings?.setActivatorNodeRef}
         tier={stickyTier}
         className={cn(
-          "flex shrink-0 items-center outline-none ring-sidebar-ring focus-visible:ring-2",
+          "flex shrink-0 items-center outline-hidden ring-sidebar-ring focus-visible:ring-2",
           SIDEBAR_HOVER_ACTIONS_ROW_CLASS,
           CHROME_SECTION_LABEL_CLASS,
           SIDEBAR_STANDARD_ROW_PADDING_CLASS,
@@ -169,7 +169,7 @@ export function TopLevelSidebarSection({
               }
               className={cn(
                 !collapseControl.isCollapsed && SIDEBAR_HOVER_ACTIONS_CLASS,
-                "relative z-20 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-subtle-foreground outline-none ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2",
+                "relative z-20 inline-flex size-6 shrink-0 cursor-pointer items-center justify-center rounded-md text-subtle-foreground outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2",
                 LIST_HOVER_TRANSITION,
               )}
               onClick={handleCollapseControlClick}

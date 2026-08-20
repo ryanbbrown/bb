@@ -143,7 +143,7 @@ BB rejects the complete projection for malformed fields, blank or duplicate regi
 
 Empty structure is pruned before rendering. `showEmptyProjects: true` takes precedence over the general empty state and renders the requested native project headings and actions. Empty regions without requested project headings are omitted, as are their dividers. The final surviving region never gets a trailing divider. When nothing survives, BB renders one native empty state.
 
-The renderer is bound to the active sidebar and registration. Do not save it globally. Build one projection from normal plugin hooks and memoization, then render it. Active host search, including an open search field with an empty query, bypasses the projection and uses BB's full native Recent, active, archived, and message-search surface.
+The renderer is bound to the active sidebar and registration. Do not save it globally. Build one projection from normal plugin hooks and memoization, keep the projection object identity stable while its inputs are unchanged, then render it. Active host search, including an open search field with an empty query, bypasses the projection and uses BB's full native Recent, active, archived, and message-search surface.
 
 The SDK test harness replaces the bound renderer with a semantic adapter. `renderSlot(...).inspection.sidebarThreadProjections` records submitted values. The adapter exposes region, project ID, and thread ID structure for plugin tests, but it does not model native BB UI. Test native behavior in the app host.
 

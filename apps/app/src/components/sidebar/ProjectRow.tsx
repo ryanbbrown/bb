@@ -251,6 +251,22 @@ interface ChronologicalSectionThreadSectionsProps extends SectionThreadTreeProps
 
 type ProjectThreadTreeVariant = "project" | "section";
 
+export function buildNativeProjectThreadTreeItems({
+  compareThreads,
+  draftThreadIds,
+  groupEnvironmentThreads,
+  threads,
+}: {
+  compareThreads: ThreadComparator;
+  draftThreadIds: ReadonlySet<string>;
+  groupEnvironmentThreads: boolean;
+  threads: readonly ThreadListEntry[];
+}): ProjectThreadItem[] {
+  return groupEnvironmentThreads
+    ? buildProjectThreadGroups(threads, compareThreads, draftThreadIds)
+    : buildChronologicalThreadList(threads, compareThreads, draftThreadIds);
+}
+
 type ProjectThreadListClickCaptureHandler = MouseEventHandler<HTMLDivElement>;
 
 const EMPTY_PROJECT_THREADS: ThreadListEntry[] = [];
@@ -498,6 +514,24 @@ function getProjectThreadTreeEmptyStateMessageClassName(): string {
   // One notch below the section-header label so an empty placeholder never
   // out-emphasizes the header it sits under.
   return "text-xs leading-4 text-subtle-foreground/60";
+}
+
+export function ProjectThreadTreeEmptyState({
+  status,
+  variant,
+}: {
+  status: "ready" | "unavailable";
+  variant: "project" | "section";
+}) {
+  return (
+    <EmptyState
+      message={status === "unavailable" ? "Threads unavailable" : "No threads"}
+      icon={getProjectThreadTreeEmptyStateIcon(variant)}
+      className={getProjectThreadTreeEmptyStateClassName(variant)}
+      iconClassName="size-3.5 text-subtle-foreground/50"
+      messageClassName={getProjectThreadTreeEmptyStateMessageClassName()}
+    />
+  );
 }
 
 function getProjectThreadTreeGroupLineClassName(
@@ -1929,17 +1963,12 @@ export const ProjectThreadTree = memo(function ProjectThreadTree({
   const draftThreadIds = usePromptDraftInputThreadIds(projectThreads);
   const rootItems = useMemo(
     () =>
-      groupEnvironmentThreads
-        ? buildProjectThreadGroups(
-            projectThreads,
-            compareThreads,
-            draftThreadIds,
-          )
-        : buildChronologicalThreadList(
-            projectThreads,
-            compareThreads,
-            draftThreadIds,
-          ),
+      buildNativeProjectThreadTreeItems({
+        compareThreads,
+        draftThreadIds,
+        groupEnvironmentThreads,
+        threads: projectThreads,
+      }),
     [compareThreads, draftThreadIds, groupEnvironmentThreads, projectThreads],
   );
 
@@ -1949,16 +1978,9 @@ export const ProjectThreadTree = memo(function ProjectThreadTree({
 
   if (rootItems.length === 0) {
     const emptyState = (
-      <EmptyState
-        message={
-          threadListState.status === "unavailable"
-            ? "Threads unavailable"
-            : "No threads"
-        }
-        icon={getProjectThreadTreeEmptyStateIcon(variant)}
-        className={getProjectThreadTreeEmptyStateClassName(variant)}
-        iconClassName="size-3.5 text-subtle-foreground/50"
-        messageClassName={getProjectThreadTreeEmptyStateMessageClassName()}
+      <ProjectThreadTreeEmptyState
+        status={threadListState.status}
+        variant={variant}
       />
     );
 

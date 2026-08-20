@@ -20,6 +20,39 @@ import {
 const WINDOW_VIEWPORT_MARGIN_PX = 240;
 // Fallback placeholder row height until a real row height has been measured.
 const DEFAULT_ROW_HEIGHT_PX = 30;
+export const SIDEBAR_WINDOWED_MAX_WRAPPERS = 128;
+
+interface SidebarWindowedUnit {
+  endIndex: number;
+  key: string;
+  startIndex: number;
+}
+
+function buildWindowedUnits(
+  itemKeys: readonly string[],
+): SidebarWindowedUnit[] {
+  const itemsPerUnit = Math.max(
+    1,
+    Math.ceil(itemKeys.length / SIDEBAR_WINDOWED_MAX_WRAPPERS),
+  );
+  const units: SidebarWindowedUnit[] = [];
+  for (
+    let startIndex = 0;
+    startIndex < itemKeys.length;
+    startIndex += itemsPerUnit
+  ) {
+    const endIndex = Math.min(startIndex + itemsPerUnit, itemKeys.length);
+    units.push({
+      startIndex,
+      endIndex,
+      key:
+        itemsPerUnit === 1
+          ? itemKeys[startIndex]!
+          : `${startIndex}:${itemKeys[startIndex]}:${itemKeys[endIndex - 1]}`,
+    });
+  }
+  return units;
+}
 
 interface MeasuredItemHeight {
   height: number;
@@ -59,10 +92,10 @@ const EMPTY_KEY_SET: ReadonlySet<string> = new Set();
 /**
  * Windows a sidebar item list against the sidebar scroll container (#1261).
  *
- * Items near the scrollport render for real; the rest render as fixed-height
- * placeholder divs, so mounted rows scale with the viewport instead of the
- * thread count. Placeholders keep the item's measured (or estimated) height,
- * which keeps the scrollbar and scroll position stable without absolute
+ * Items near the scrollport render for real; the rest render in at most 128
+ * fixed-height placeholder units, so both rich rows and placeholder DOM stay
+ * bounded as the thread count grows. Placeholders keep measured or estimated
+ * height, which keeps the scrollbar and scroll position stable without absolute
  * positioning — rows stay in normal flow, so the CSS sticky-header stack,
  * `space-y` gaps, and drag-and-drop DOM order all behave exactly as in the
  * unwindowed list.
@@ -83,12 +116,24 @@ export function SidebarWindowedItems({
   // A sidebar can contain many short sibling lists. Rendering each short list
   // in full makes their aggregate offscreen subtree large, so every non-empty
   // list participates in the shared-scrollport window.
-  const windowingEnabled =
-    itemKeys.length > 0 && scrollElementRef !== null;
+  const windowingEnabled = itemKeys.length > 0 && scrollElementRef !== null;
+  const windowedUnits = useMemo(() => buildWindowedUnits(itemKeys), [itemKeys]);
+  const alwaysMountedUnitKeys = useMemo(() => {
+    if (alwaysMountedKeys.size === 0) return EMPTY_KEY_SET;
+    const result = new Set<string>();
+    for (const unit of windowedUnits) {
+      for (let index = unit.startIndex; index < unit.endIndex; index += 1) {
+        if (alwaysMountedKeys.has(itemKeys[index]!)) {
+          result.add(unit.key);
+          break;
+        }
+      }
+    }
+    return result;
+  }, [alwaysMountedKeys, itemKeys, windowedUnits]);
 
-  const [realizedKeys, setRealizedKeys] = useState<ReadonlySet<string>>(
-    EMPTY_KEY_SET,
-  );
+  const [realizedKeys, setRealizedKeys] =
+    useState<ReadonlySet<string>>(EMPTY_KEY_SET);
   const measuredHeightsRef = useRef(new Map<string, MeasuredItemHeight>());
   const rowHeightRef = useRef(DEFAULT_ROW_HEIGHT_PX);
   const wrapperByKeyRef = useRef(new Map<string, HTMLDivElement>());
@@ -97,13 +142,11 @@ export function SidebarWindowedItems({
     new Map<string, (node: HTMLDivElement | null) => void>(),
   );
   const observerRef = useRef<IntersectionObserver | null>(null);
-  const alwaysMountedKeysRef = useRef(alwaysMountedKeys);
-  alwaysMountedKeysRef.current = alwaysMountedKeys;
+  const alwaysMountedKeysRef = useRef(alwaysMountedUnitKeys);
+  alwaysMountedKeysRef.current = alwaysMountedUnitKeys;
   const estimateRowsRef = useRef(estimateRows);
   estimateRowsRef.current = estimateRows;
   const rowsByKeyRef = useRef(new Map<string, number>());
-
-  const keySignature = useMemo(() => itemKeys.join("\u0000"), [itemKeys]);
 
   const getWrapperRefCallback = useCallback((key: string) => {
     const callbacks = wrapperRefCallbacksRef.current;
@@ -157,7 +200,7 @@ export function SidebarWindowedItems({
       return;
     }
 
-    const keySet = new Set(itemKeys);
+    const keySet = new Set(windowedUnits.map(({ key }) => key));
     for (const staleMap of [
       measuredHeightsRef.current,
       rowsByKeyRef.current,
@@ -184,8 +227,8 @@ export function SidebarWindowedItems({
     }
 
     if (promoteAll) {
-      for (const key of itemKeys) {
-        next.add(key);
+      for (const unit of windowedUnits) {
+        next.add(unit.key);
       }
     } else {
       const viewport = scrollElement.getBoundingClientRect();
@@ -211,7 +254,7 @@ export function SidebarWindowedItems({
     // The pass re-runs only when the key list (or windowing mode) changes;
     // scroll-driven changes are the observer's job.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [windowingEnabled, keySignature]);
+  }, [windowingEnabled, windowedUnits]);
 
   useEffect(() => {
     if (!windowingEnabled || typeof IntersectionObserver === "undefined") {
@@ -274,36 +317,54 @@ export function SidebarWindowedItems({
 
   return (
     <>
-      {itemKeys.map((key, index) => {
+      {windowedUnits.map((unit) => {
         const isRealized =
-          realizedKeys.has(key) || alwaysMountedKeys.has(key);
-        const rows = Math.max(1, estimateRowsRef.current(index));
-        rowsByKeyRef.current.set(key, rows);
+          realizedKeys.has(unit.key) || alwaysMountedUnitKeys.has(unit.key);
+        let rows = 0;
+        for (let index = unit.startIndex; index < unit.endIndex; index += 1) {
+          rows += Math.max(1, estimateRowsRef.current(index));
+        }
+        rowsByKeyRef.current.set(unit.key, rows);
         let placeholderHeight: number | undefined;
         let navigationValue: string | undefined;
         if (!isRealized) {
-          const measured = measuredHeightsRef.current.get(key);
+          const measured = measuredHeightsRef.current.get(unit.key);
           placeholderHeight =
             measured && measured.rows === rows
               ? measured.height
               : rows * rowHeightRef.current;
-          const entries = getNavigationEntries?.(index);
-          navigationValue =
-            entries && entries.length > 0
-              ? encodeSidebarWindowedNavigationEntries(entries)
-              : undefined;
+          if (getNavigationEntries) {
+            const entries: SidebarWindowedNavigationEntry[] = [];
+            for (
+              let index = unit.startIndex;
+              index < unit.endIndex;
+              index += 1
+            ) {
+              entries.push(...getNavigationEntries(index));
+            }
+            navigationValue =
+              entries.length > 0
+                ? encodeSidebarWindowedNavigationEntries(entries)
+                : undefined;
+          }
+        }
+        const realizedItems: ReactNode[] = [];
+        if (isRealized) {
+          for (let index = unit.startIndex; index < unit.endIndex; index += 1) {
+            realizedItems.push(renderItem(index));
+          }
         }
         return (
           <div
-            key={key}
-            ref={getWrapperRefCallback(key)}
+            key={unit.key}
+            ref={getWrapperRefCallback(unit.key)}
             data-sidebar-windowed-item=""
             {...(navigationValue !== undefined
               ? { [SIDEBAR_WINDOWED_NAV_ATTRIBUTE]: navigationValue }
               : undefined)}
             style={isRealized ? undefined : { height: placeholderHeight }}
           >
-            {isRealized ? renderItem(index) : null}
+            {realizedItems}
           </div>
         );
       })}

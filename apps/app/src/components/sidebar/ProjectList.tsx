@@ -8,7 +8,6 @@ import {
   type PointerEventHandler,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
 import { useAtom, useAtomValue, useSetAtom } from "jotai";
 import type {
   ProjectResponse,
@@ -33,11 +32,9 @@ import { useHosts } from "@/hooks/queries/host-queries";
 import { useDialogState } from "@/hooks/useDialogState";
 import { usePromptDraftInputThreadIds } from "@/hooks/usePromptDraftStorage";
 import { getCollapsedChildActivity } from "@/lib/thread-activity";
-import { getRootComposeRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
 import { getMutationErrorMessage } from "@/lib/mutation-errors";
 import { BbHttpError } from "@bb/sdk/browser";
-import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
 import { cn } from "@bb/shared-ui/lib/utils";
 import { Button } from "@bb/shared-ui/button";
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
@@ -71,6 +68,7 @@ import {
 } from "./ProjectRow";
 import { SidebarThreadSearchPanel } from "./SidebarThreadSearchPanel";
 import { useSidebarProjectPathInvalidity } from "./useSidebarProjectPathInvalidity";
+import { useOpenRootComposeForProject } from "./useOpenRootComposeForProject";
 import type { ProjectThreadListState } from "./ProjectRow";
 import {
   compareByCreatedAtDescending,
@@ -1437,8 +1435,8 @@ function ProjectListComponent({
   isCreatingProject = false,
   threadSearch,
 }: ProjectListProps) {
-  const navigate = useNavigate();
-  const setRootComposeProjectId = useSetRootComposeProjectId();
+  const openRootComposeForProject =
+    useOpenRootComposeForProject(onProjectSelect);
   const sidebarNavigationQuery = useSidebarNavigation();
   const sidebarNavigation = sidebarNavigationQuery.data;
   const sections = sidebarNavigation?.sections ?? EMPTY_SECTION_DEFINITIONS;
@@ -1511,19 +1509,6 @@ function ProjectListComponent({
       );
     },
     [reorderPinnedThreadMutate],
-  );
-  const openRootComposeForProject = useCallback(
-    (projectId: string, sectionId?: string) => {
-      setRootComposeProjectId(projectId);
-      onProjectSelect?.();
-      navigate(getRootComposeRoutePath(), {
-        state: {
-          focusPrompt: true,
-          ...(sectionId ? { sectionId } : {}),
-        },
-      });
-    },
-    [navigate, onProjectSelect, setRootComposeProjectId],
   );
   const handleCreateProjectThread = useCallback(
     (projectId: string) => {

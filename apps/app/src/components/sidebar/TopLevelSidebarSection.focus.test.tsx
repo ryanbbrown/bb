@@ -38,9 +38,10 @@ describe("TopLevelSidebarSection keyboard focus", () => {
         content
       </TopLevelSidebarSection>,
     );
-    expect(
-      screen.getByRole("button", { name: "Draggable" }).className,
-    ).toContain("focus-visible:ring-2");
+    const label = screen.getByRole("button", { name: "Draggable" });
+    expect(label.className).toContain("focus-visible:ring-2");
+    expect(label.className).toContain("outline-hidden");
+    expect(label.className).not.toContain("outline-none");
   });
 
   it("keeps a visible focus ring on a projected collapse label control", () => {
@@ -52,9 +53,11 @@ describe("TopLevelSidebarSection keyboard focus", () => {
         content
       </TopLevelSidebarSection>,
     );
-    expect(
-      screen.getByRole("button", { name: "Collapse Projected section" })
-        .className,
-    ).toContain("focus-visible:ring-2");
+    const control = screen.getByRole("button", {
+      name: "Collapse Projected section",
+    });
+    expect(control.className).toContain("focus-visible:ring-2");
+    expect(control.className).toContain("outline-hidden");
+    expect(control.className).not.toContain("outline-none");
   });
 });

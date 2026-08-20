@@ -2220,10 +2220,6 @@ export type SidebarStickyTierKind = "label" | "project" | "parent";
 type SidebarStickyStackProps = React.ComponentProps<"div">;
 type SidebarProjectionStickyRegionsProps = React.ComponentProps<"div">;
 
-type SidebarProjectionStickyStyle = React.CSSProperties & {
-  "--bb-sidebar-sticky-projection-offset": string;
-};
-
 interface SidebarStickyTierProps extends React.ComponentProps<"div"> {
   tier: SidebarStickyTierKind;
   // Depth among pinned parents (0 = first parent under the project/label).
@@ -2292,16 +2288,12 @@ const SidebarProjectionStickyRegions = React.forwardRef<
     };
   }, []);
 
-  const stickyStyle: SidebarProjectionStickyStyle = {
-    ...style,
-    "--bb-sidebar-sticky-projection-offset": "0px",
-  };
   return (
     <div
       ref={setRef}
       data-sidebar-projection-sticky-regions=""
       {...props}
-      style={stickyStyle}
+      style={style}
     />
   );
 });

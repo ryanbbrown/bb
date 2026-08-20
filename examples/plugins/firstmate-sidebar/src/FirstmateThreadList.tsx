@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import {
   experimental_useSidebarThreads as useSidebarThreads,
   useSettings,
@@ -10,11 +11,21 @@ export function FirstmateThreadList(props: PluginThreadListProps) {
   const settings = useSettings();
   const managerThreadId = settings.values?.managerThreadId;
 
+  const result = useMemo(
+    () =>
+      !settings.isLoading && typeof managerThreadId === "string"
+        ? projectFirstmateThreads(state, managerThreadId)
+        : ({
+            kind: "fallback",
+            reason: "manager-setting-unavailable",
+          } as const),
+    [managerThreadId, settings.isLoading, state],
+  );
+
   if (settings.isLoading || typeof managerThreadId !== "string") {
     return <props.experimental_Original />;
   }
 
-  const result = projectFirstmateThreads(state, managerThreadId);
   if (result.kind === "fallback") {
     return <props.experimental_Original />;
   }

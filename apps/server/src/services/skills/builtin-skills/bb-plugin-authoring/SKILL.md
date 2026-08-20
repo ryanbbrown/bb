@@ -1461,7 +1461,7 @@ return (
 
 Filter with `thread.visibility === "visible" && !thread.isArchived`. Account for every resulting eligible thread exactly once in a region or `excludedThreadIds`. Omit hidden, archived, and deleted IDs from both places. Sticky regions must precede flow regions. A headerless region cannot be collapsible. Region and thread order are authoritative; `flat` ignores parents, while `native` applies BB's shared parent tree and cross-project rules. `showEmptyProjects: true` keeps requested empty native project headings; other empty regions and their dividers are pruned. Limits are 64 regions, 50,000 combined thread references, 10,000 combined project references, and 256 characters per string. An invalid or stale projection atomically renders `experimental_Original`, reports one bounded deduplicated failure, and retries a later value. Active host search bypasses the projection, even when its query is empty.
 
-The test harness records submissions at `inspection.sidebarThreadProjections` and renders a semantic ID adapter. It does not simulate native UI. Use the raw custom-markup path below only when custom presentation is the product requirement.
+Keep the projection object identity stable with `useMemo` while its inputs are unchanged. The test harness records submissions at `inspection.sidebarThreadProjections` and renders a semantic ID adapter. It does not simulate native UI. Use the raw custom-markup path below only when custom presentation is the product requirement.
 
 **Reading and acting on threads.** These hooks back a native projection or raw replaced list:
 

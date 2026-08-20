@@ -34,7 +34,6 @@ export interface CanonicalSidebarProjectionRegion extends PluginSidebarThreadPro
 
 export interface CanonicalSidebarThreadProjection extends PluginSidebarThreadProjection {
   regions: readonly CanonicalSidebarProjectionRegion[];
-  key: string;
 }
 
 export type SidebarThreadProjectionValidationResult =
@@ -144,25 +143,6 @@ function resolveNativeProjectGroups(
     else groups.set(projectId, [threadId]);
   }
   return groups;
-}
-
-function canonicalProjectionKey(
-  regions: readonly CanonicalSidebarProjectionRegion[],
-  excludedThreadIds: readonly string[],
-): string {
-  return JSON.stringify({
-    regions: regions.map((region) => ({
-      id: region.id,
-      label: region.label,
-      placement: region.placement,
-      dividerAfter: region.dividerAfter,
-      collapsible: region.collapsible,
-      nesting: region.nesting,
-      grouping: region.grouping,
-      threadOrder: region.threadOrder,
-    })),
-    excludedThreadIds,
-  });
 }
 
 export function buildSidebarProjectionCollapseKey({
@@ -508,7 +488,6 @@ export function validateSidebarThreadProjection({
       projection: {
         regions: canonicalRegions,
         excludedThreadIds,
-        key: canonicalProjectionKey(canonicalRegions, excludedThreadIds),
       },
     };
   } catch (error) {

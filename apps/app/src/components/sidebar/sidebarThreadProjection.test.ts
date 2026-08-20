@@ -60,7 +60,6 @@ describe("validateSidebarThreadProjection", () => {
     if (result.kind === "valid") {
       expect(result.projection.regions[0]!.threadOrder).toEqual(["two"]);
       expect(result.projection.excludedThreadIds).toEqual(["one"]);
-      expect(result.projection.key).toContain('"two"');
     }
   });
 

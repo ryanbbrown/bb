@@ -9,14 +9,13 @@ import {
   type ComponentType,
   type ReactNode,
 } from "react";
-import { useNavigate } from "react-router-dom";
 import type {
   PluginSidebarThreadProjection,
   PluginSidebarThreadProjectionRegion,
 } from "@get-bb/plugin-sdk";
 import type { ThreadListEntry } from "@bb/domain";
+import { compareCodepoint } from "@bb/client-core";
 import type { ProjectResponse } from "@bb/server-contract";
-import { EmptyState } from "@bb/shared-ui/empty-state";
 import { toast } from "sonner";
 import { SidebarProjectionStickyRegions } from "@/components/ui/sidebar.js";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
@@ -26,15 +25,24 @@ import {
   usePromptDraftInputThreadIds,
 } from "@/hooks/usePromptDraftStorage";
 import { getCollapsedChildActivity } from "@/lib/thread-activity";
-import { useSetRootComposeProjectId } from "@/lib/root-compose-selection";
-import { getRootComposeRoutePath } from "@/lib/route-paths";
 import { SidebarWindowedItems } from "./SidebarWindowedItems";
 import { ProjectListShell } from "./ProjectList";
-import { ProjectRow, ProjectThreadTree } from "./ProjectRow";
+import {
+  buildNativeProjectThreadTreeItems,
+  ProjectRow,
+  ProjectThreadTree,
+  ProjectThreadTreeEmptyState,
+} from "./ProjectRow";
 import { ThreadRow, type ThreadRowOptions } from "./ThreadRow";
 import { TopLevelSidebarSection } from "./TopLevelSidebarSection";
-import type { ThreadComparator } from "./projectThreadGroups";
+import {
+  collectProjectThreadItemNavigationEntries,
+  countProjectThreadItemRows,
+  type ProjectThreadItemRowCountContext,
+  type ThreadComparator,
+} from "./projectThreadGroups";
 import { useSidebarProjectPathInvalidity } from "./useSidebarProjectPathInvalidity";
+import { useOpenRootComposeForProject } from "./useOpenRootComposeForProject";
 import {
   buildSidebarProjectionCollapseKey,
   validateSidebarThreadProjection,
@@ -93,12 +101,13 @@ function createRankComparator(threadIds: readonly string[]): ThreadComparator {
   return (left, right) =>
     (rank.get(left.id) ?? Number.MAX_SAFE_INTEGER) -
       (rank.get(right.id) ?? Number.MAX_SAFE_INTEGER) ||
-    left.id.localeCompare(right.id);
+    compareCodepoint(left.id, right.id);
 }
 
 const EMPTY_PROJECTS: readonly ProjectResponse[] = [];
 const EMPTY_THREADS: readonly ThreadListEntry[] = [];
 const EMPTY_REGIONS: readonly CanonicalSidebarProjectionRegion[] = [];
+const EMPTY_ID_SET: ReadonlySet<string> = new Set();
 
 const FLAT_THREAD_ROW_OPTIONS: ThreadRowOptions = {
   kind: "default",
@@ -373,6 +382,12 @@ const ProjectionProjectGroup = memo(function ProjectionProjectGroup({
   );
 });
 
+interface ProjectionProjectGroupWindowMetadata {
+  group: CanonicalSidebarProjectionProjectGroup;
+  navigationEntries: readonly { projectId: string; threadId: string }[];
+  rows: number;
+}
+
 function ProjectionProjectGroups(props: ProjectionRegionProps) {
   const {
     activeThreadId,
@@ -385,37 +400,110 @@ function ProjectionProjectGroups(props: ProjectionRegionProps) {
     region,
     threadsById,
   } = props;
+  const groupMetadata = useMemo<ProjectionProjectGroupWindowMetadata[]>(() => {
+    return region.projectGroups.map((group) => {
+      const projectCollapseKey = buildSidebarProjectionCollapseKey({
+        pluginId: binding.pluginId,
+        registrationId: binding.registrationId,
+        regionId: region.id,
+        projectId: group.projectId,
+        itemId: "project",
+      });
+      if (
+        region.grouping.kind === "project" &&
+        region.grouping.collapsible &&
+        collapsedKeys.has(projectCollapseKey)
+      ) {
+        return { group, navigationEntries: [], rows: 1 };
+      }
+
+      const groupThreads = group.threadIds.map((threadId) => {
+        const thread = threadsById.get(threadId)!;
+        return region.nesting === "flat" ? asFlatThread(thread) : thread;
+      });
+      const compareThreads = createRankComparator(group.threadIds);
+      const collapsedThreadIds = new Set<string>();
+      const collapsedEnvironmentIds = new Set<string>();
+      for (const thread of groupThreads) {
+        const threadCollapseKey = buildSidebarProjectionCollapseKey({
+          pluginId: binding.pluginId,
+          registrationId: binding.registrationId,
+          regionId: region.id,
+          projectId: thread.projectId,
+          itemId: `thread:${thread.id}`,
+        });
+        if (collapsedKeys.has(threadCollapseKey)) {
+          collapsedThreadIds.add(thread.id);
+        }
+        if (thread.environmentId !== null) {
+          const environmentCollapseKey = buildSidebarProjectionCollapseKey({
+            pluginId: binding.pluginId,
+            registrationId: binding.registrationId,
+            regionId: region.id,
+            projectId: group.projectId,
+            itemId: `environment:${thread.environmentId}`,
+          });
+          if (collapsedKeys.has(environmentCollapseKey)) {
+            collapsedEnvironmentIds.add(thread.environmentId);
+          }
+        }
+      }
+      const rowCountContext: ProjectThreadItemRowCountContext = {
+        collapsedThreadIds,
+        collapsedEnvironmentIds,
+        collapsedSectionKeys: EMPTY_ID_SET,
+      };
+      const rootItems = buildNativeProjectThreadTreeItems({
+        compareThreads,
+        draftThreadIds: EMPTY_ID_SET,
+        groupEnvironmentThreads: region.nesting === "native",
+        threads: groupThreads,
+      });
+      const navigationEntries = rootItems.flatMap((item) =>
+        collectProjectThreadItemNavigationEntries(item, rowCountContext),
+      );
+      const childRows =
+        rootItems.length === 0
+          ? 1
+          : rootItems.reduce(
+              (total, item) =>
+                total + countProjectThreadItemRows(item, rowCountContext),
+              0,
+            );
+      return { group, navigationEntries, rows: 1 + childRows };
+    });
+  }, [
+    binding.pluginId,
+    binding.registrationId,
+    collapsedKeys,
+    region,
+    threadsById,
+  ]);
   const itemKeys = useMemo(
-    () => region.projectGroups.map((group) => group.projectId),
-    [region.projectGroups],
+    () => groupMetadata.map(({ group }) => group.projectId),
+    [groupMetadata],
   );
   const activeGroupKey = useMemo(() => {
     if (!activeThreadId) return undefined;
-    return region.projectGroups.find((group) =>
-      group.threadIds.includes(activeThreadId),
-    )?.projectId;
-  }, [activeThreadId, region.projectGroups]);
+    return groupMetadata.find(({ navigationEntries }) =>
+      navigationEntries.some((entry) => entry.threadId === activeThreadId),
+    )?.group.projectId;
+  }, [activeThreadId, groupMetadata]);
   const alwaysMountedKeys = useMemo(
     () => (activeGroupKey ? new Set([activeGroupKey]) : undefined),
     [activeGroupKey],
   );
   const estimateRows = useCallback(
-    (index: number) => 1 + (region.projectGroups[index]?.threadIds.length ?? 0),
-    [region.projectGroups],
+    (index: number) => groupMetadata[index]?.rows ?? 1,
+    [groupMetadata],
   );
   const getNavigationEntries = useCallback(
-    (index: number) =>
-      (region.projectGroups[index]?.threadIds ?? []).flatMap((threadId) => {
-        const thread = threadsById.get(threadId);
-        return thread
-          ? [{ projectId: thread.projectId, threadId: thread.id }]
-          : [];
-      }),
-    [region.projectGroups, threadsById],
+    (index: number) => groupMetadata[index]?.navigationEntries ?? [],
+    [groupMetadata],
   );
   const renderItem = useCallback(
     (index: number): ReactNode => {
-      const group = region.projectGroups[index];
+      const group = groupMetadata[index]?.group;
       if (!group) return null;
       const project = projectsById.get(group.projectId);
       if (!project) return null;
@@ -440,6 +528,7 @@ function ProjectionProjectGroups(props: ProjectionRegionProps) {
       activeThreadId,
       binding,
       collapsedKeys,
+      groupMetadata,
       invalidLocalPathProjectIds,
       onCreateProjectThread,
       onToggleKey,
@@ -470,15 +559,30 @@ function useRegionThreads(
   );
 }
 
-function ProjectionUngroupedContent(props: ProjectionRegionProps) {
-  const {
-    activeThreadId,
-    binding,
-    collapsedKeys,
-    onToggleKey,
-    region,
-    threadsById,
-  } = props;
+function ProjectionFlatUngroupedContent({
+  activeThreadId,
+  binding,
+  region,
+  threadsById,
+}: ProjectionRegionProps) {
+  const regionThreads = useRegionThreads(region, threadsById);
+  return (
+    <ProjectionFlatThreadRows
+      threads={regionThreads}
+      activeThreadId={activeThreadId}
+      onNavigate={binding.onNavigate}
+    />
+  );
+}
+
+function ProjectionNativeUngroupedContent({
+  activeThreadId,
+  binding,
+  collapsedKeys,
+  onToggleKey,
+  region,
+  threadsById,
+}: ProjectionRegionProps) {
   const regionThreads = useRegionThreads(region, threadsById);
   const comparator = useMemo(
     () => createRankComparator(region.threadOrder),
@@ -562,15 +666,6 @@ function ProjectionUngroupedContent(props: ProjectionRegionProps) {
     [binding, onToggleKey, region.id, regionThreads],
   );
 
-  if (region.nesting === "flat") {
-    return (
-      <ProjectionFlatThreadRows
-        threads={regionThreads}
-        activeThreadId={activeThreadId}
-        onNavigate={binding.onNavigate}
-      />
-    );
-  }
   return (
     <ProjectThreadTree
       threadListState={threadListState}
@@ -583,6 +678,14 @@ function ProjectionUngroupedContent(props: ProjectionRegionProps) {
       onToggleThreadCollapsed={toggleThread}
       onToggleEnvironmentCollapsed={toggleEnvironment}
     />
+  );
+}
+
+function ProjectionUngroupedContent(props: ProjectionRegionProps) {
+  return props.region.nesting === "flat" ? (
+    <ProjectionFlatUngroupedContent {...props} />
+  ) : (
+    <ProjectionNativeUngroupedContent {...props} />
   );
 }
 
@@ -681,24 +784,15 @@ function SidebarThreadProjectionHost({
   projection: PluginSidebarThreadProjection;
 }) {
   const navigationQuery = useSidebarNavigation();
-  const navigate = useNavigate();
-  const setRootComposeProjectId = useSetRootComposeProjectId();
+  const onCreateProjectThread = useOpenRootComposeForProject(
+    binding.onNavigate,
+  );
   const [collapsedKeys, setCollapsedKeys] = useState<ReadonlySet<string>>(
     () => new Set(),
   );
   const onToggleKey = useCallback(
     (key: string) => setCollapsedKeys((current) => toggleKey(current, key)),
     [],
-  );
-  const onCreateProjectThread = useCallback(
-    (projectId: string) => {
-      setRootComposeProjectId(projectId);
-      binding.onNavigate();
-      void navigate(getRootComposeRoutePath(), {
-        state: { focusPrompt: true },
-      });
-    },
-    [binding, navigate, setRootComposeProjectId],
   );
   const data = navigationQuery.data;
   const hostSnapshot = useMemo(() => {
@@ -812,13 +906,7 @@ function SidebarThreadProjectionHost({
   return (
     <ProjectListShell>
       {survivingRegions.length === 0 ? (
-        <EmptyState
-          message="No threads"
-          icon="MessageSquare"
-          className="px-2 py-1.5"
-          iconClassName="size-3.5 text-subtle-foreground/50"
-          messageClassName="text-xs text-subtle-foreground/60"
-        />
+        <ProjectThreadTreeEmptyState status="ready" variant="section" />
       ) : (
         <>
           {stickyRegions.length > 0 ? (

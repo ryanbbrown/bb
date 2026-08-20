@@ -27,6 +27,7 @@ const mocks = vi.hoisted(() => ({
   rename: vi.fn(),
   openInSplit: vi.fn(),
   splitPointerDown: vi.fn(),
+  setRootComposeProjectId: vi.fn(),
 }));
 
 vi.mock("sonner", () => ({ toast: { error: mocks.toastError } }));
@@ -131,9 +132,13 @@ vi.mock("./useSidebarProjectPathInvalidity", () => ({
   useSidebarProjectPathInvalidity: () => testState.invalidProjectIds,
 }));
 vi.mock("@/lib/root-compose-selection", () => ({
-  useSetRootComposeProjectId: () => vi.fn(),
+  useSetRootComposeProjectId: () => mocks.setRootComposeProjectId,
 }));
 
+const { getSidebarThreadNavigationTargets } =
+  await import("./sidebarThreadShortcuts");
+const { SIDEBAR_WINDOWED_MAX_WRAPPERS } =
+  await import("./SidebarWindowedItems");
 const {
   BoundSidebarThreadProjection,
   SIDEBAR_PROJECTION_MAX_REPORTED_FAILURES,
@@ -292,6 +297,29 @@ function renderProjection(
   return render(<ProjectionTree projection={projection} {...options} />);
 }
 
+function enableOffscreenWindowing(): void {
+  const scrollElement = document.createElement("div");
+  Object.defineProperty(scrollElement, "clientHeight", { value: 500 });
+  testState.scrollElementRef.current = scrollElement;
+  vi.stubGlobal(
+    "IntersectionObserver",
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
+    function (this: HTMLElement) {
+      if (this === scrollElement) return new DOMRect(0, 0, 300, 500);
+      if (this.hasAttribute("data-sidebar-windowed-item")) {
+        return new DOMRect(0, 2_000, 300, 30);
+      }
+      return new DOMRect();
+    },
+  );
+}
+
 beforeEach(() => {
   const a = makeThread("thread-a", "project-a", { title: "Manager" });
   const b = makeThread("thread-b", "project-a", { title: "Independent" });
@@ -437,9 +465,12 @@ describe("BoundSidebarThreadProjection", () => {
       excludedThreadIds: [],
     });
     expect(screen.getByTitle("Project A")).toBeDefined();
-    expect(
-      screen.getByRole("button", { name: "New thread in Project A" }),
-    ).toBeDefined();
+    const newThread = screen.getByRole("button", {
+      name: "New thread in Project A",
+    });
+    expect(newThread).toBeDefined();
+    fireEvent.click(newThread);
+    expect(mocks.setRootComposeProjectId).toHaveBeenCalledWith("project-a");
     expect(
       document.querySelector('[data-sidebar-projection-region="omitted"]'),
     ).toBeNull();
@@ -478,12 +509,13 @@ describe("BoundSidebarThreadProjection", () => {
     renderProjection({
       regions: [
         region("manager", ["thread-a"], {
-          label: null,
+          label: "Manager",
           placement: "sticky",
         }),
         region("second sticky", ["thread-b"], {
-          label: null,
+          label: "Grouped sticky",
           placement: "sticky",
+          grouping: projectGrouping(["project-a"]),
         }),
         region("flow", ["thread-c"]),
       ],
@@ -501,11 +533,22 @@ describe("BoundSidebarThreadProjection", () => {
     ).toHaveLength(2);
     expect(sticky?.className).not.toContain("z-[70]");
     expect(
+      (sticky as HTMLElement | null)?.style.getPropertyValue(
+        "--bb-sidebar-sticky-projection-offset",
+      ),
+    ).toBe("");
+    expect(
       stack?.style.getPropertyValue("--bb-sidebar-sticky-projection-offset"),
     ).toBe(`${stickyHeight}px`);
     expect(
-      document.querySelector('[data-sidebar-sticky-tier="label"]'),
+      sticky?.querySelector('[data-sidebar-sticky-tier="label"]'),
     ).not.toBeNull();
+    expect(
+      sticky?.querySelector('[data-sidebar-sticky-tier="project"]'),
+    ).not.toBeNull();
+    expect(
+      sticky?.querySelector('[data-sidebar-projection-region="flow"]'),
+    ).toBeNull();
   });
 
   it("renders native nesting, cross-project identity, and source indentation", () => {
@@ -535,6 +578,40 @@ describe("BoundSidebarThreadProjection", () => {
     expect(
       screen.getByRole("img", { name: "In another project" }),
     ).toBeDefined();
+  });
+
+  it("keeps flat project order and passes flattened copies to native actions", () => {
+    const parent = makeThread("parent", "project-a", { title: "Parent" });
+    const child = makeThread("child", "project-a", {
+      title: "Child",
+      parentThreadId: "parent",
+    });
+    setNavigation([makeProject("project-a", "Project A", [parent, child])]);
+    const rendered = renderProjection({
+      regions: [
+        region("flat projects", ["child", "parent"], {
+          grouping: projectGrouping(["project-a"]),
+        }),
+      ],
+      excludedThreadIds: [],
+    });
+
+    expect(
+      [...rendered.container.querySelectorAll("[data-sidebar-thread-id]")].map(
+        (element) => element.getAttribute("data-sidebar-thread-id"),
+      ),
+    ).toEqual(["child", "parent"]);
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Archive thread" })[0]!,
+    );
+    expect(mocks.archive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "child",
+        parentThreadId: null,
+        projectId: "project-a",
+        title: "Child",
+      }),
+    );
   });
 
   it("passes native active, split, draft, status, action, and keyboard state", () => {
@@ -636,6 +713,141 @@ describe("BoundSidebarThreadProjection", () => {
     expect(testState.rowDraftCalls).toBe(rowCallsAfterMount);
   });
 
+  it("removes project-group height and navigation when its region section collapses", () => {
+    enableOffscreenWindowing();
+    renderProjection(
+      {
+        regions: [
+          region("Collapsible", ["thread-a", "thread-b"], {
+            collapsible: true,
+            nesting: "native",
+            grouping: projectGrouping(["project-a"]),
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+      { activeThreadId: "thread-b" },
+    );
+    expect(
+      screen.getByRole("link", { name: "Open Independent" }),
+    ).toBeDefined();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Collapsible section" }),
+    );
+
+    expect(document.querySelector("[data-sidebar-windowed-item]")).toBeNull();
+    expect(getSidebarThreadNavigationTargets(document.body)).toEqual([]);
+  });
+
+  it("uses one off-screen row and no child navigation for a collapsed project", () => {
+    enableOffscreenWindowing();
+    renderProjection(
+      {
+        regions: [
+          region("project collapse", ["thread-a", "thread-b"], {
+            nesting: "native",
+            grouping: projectGrouping(["project-a"], { collapsible: true }),
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+      { activeThreadId: "thread-b" },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Project A section" }),
+    );
+
+    const placeholder = document.querySelector<HTMLElement>(
+      "[data-sidebar-windowed-item]",
+    );
+    expect(placeholder?.style.height).toBe("30px");
+    expect(placeholder?.hasAttribute("data-sidebar-windowed-nav")).toBe(false);
+    expect(getSidebarThreadNavigationTargets(document.body)).toEqual([]);
+  });
+
+  it("publishes native parent order and updates off-screen thread collapse metadata", () => {
+    const parent = makeThread("parent", "project-a", { title: "Parent" });
+    const child = makeThread("child", "project-a", {
+      title: "Child",
+      parentThreadId: "parent",
+    });
+    setNavigation([makeProject("project-a", "Project A", [parent, child])]);
+    enableOffscreenWindowing();
+    const projection = {
+      regions: [
+        region("native order", ["child", "parent"], {
+          nesting: "native",
+          grouping: projectGrouping(["project-a"]),
+        }),
+      ],
+      excludedThreadIds: [],
+    } satisfies PluginSidebarThreadProjection;
+
+    const offscreen = renderProjection(projection);
+    expect(
+      getSidebarThreadNavigationTargets(offscreen.container).map(
+        ({ threadId }) => threadId,
+      ),
+    ).toEqual(["parent", "child"]);
+    expect(
+      offscreen.container.querySelector<HTMLElement>(
+        "[data-sidebar-windowed-item]",
+      )?.style.height,
+    ).toBe("90px");
+
+    cleanup();
+    renderProjection(projection, { activeThreadId: "child" });
+    expect(screen.getByRole("link", { name: "Open Child" })).toBeDefined();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Parent threads" }),
+    );
+    const collapsedPlaceholder = document.querySelector<HTMLElement>(
+      "[data-sidebar-windowed-item]",
+    );
+    expect(collapsedPlaceholder?.style.height).toBe("60px");
+    expect(
+      getSidebarThreadNavigationTargets(document.body).map(
+        ({ threadId }) => threadId,
+      ),
+    ).toEqual(["parent"]);
+  });
+
+  it("updates off-screen environment collapse height and navigation", () => {
+    const first = makeThread("env-first", "project-a", {
+      environmentId: "environment-a",
+      environmentName: "Feature tree",
+      environmentWorkspaceDisplayKind: "managed-worktree",
+    });
+    const second = makeThread("env-second", "project-a", {
+      environmentId: "environment-a",
+      environmentName: "Feature tree",
+      environmentWorkspaceDisplayKind: "managed-worktree",
+    });
+    setNavigation([makeProject("project-a", "Project A", [first, second])]);
+    enableOffscreenWindowing();
+    renderProjection(
+      {
+        regions: [
+          region("environment", ["env-first", "env-second"], {
+            nesting: "native",
+            grouping: projectGrouping(["project-a"]),
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+      { activeThreadId: "env-second" },
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Feature tree threads" }),
+    );
+
+    const placeholder = document.querySelector<HTMLElement>(
+      "[data-sidebar-windowed-item]",
+    );
+    expect(placeholder?.style.height).toBe("60px");
+    expect(getSidebarThreadNavigationTargets(document.body)).toEqual([]);
+  });
+
   it("windows flat rows with placeholder navigation and active retention", () => {
     const scrollElement = document.createElement("div");
     Object.defineProperty(scrollElement, "clientHeight", { value: 500 });
@@ -731,20 +943,21 @@ describe("BoundSidebarThreadProjection", () => {
     expect(
       rendered.container.querySelectorAll("[data-sidebar-windowed-item]")
         .length,
-    ).toBeLessThanOrEqual(10_002);
+    ).toBeLessThanOrEqual(SIDEBAR_WINDOWED_MAX_WRAPPERS * 2);
     expect(
-      rendered.container.querySelectorAll("[data-sidebar-project-id]"),
-    ).toHaveLength(1);
+      rendered.container.querySelectorAll("[data-sidebar-project-id]").length,
+    ).toBeLessThan(100);
     expect(
-      rendered.container.querySelectorAll("[data-sidebar-thread-id]"),
-    ).toHaveLength(1);
+      rendered.container.querySelectorAll("[data-sidebar-thread-id]").length,
+    ).toBeLessThan(100);
     expect(
       rendered.container.querySelector(
         '[data-sidebar-thread-id="thread-9999"]',
       ),
     ).not.toBeNull();
-    expect(
-      rendered.container.querySelectorAll("[data-sidebar-windowed-nav]").length,
-    ).toBeGreaterThan(9_000);
+    expect(getSidebarThreadNavigationTargets(rendered.container)).toHaveLength(
+      10_000,
+    );
+    expect(rendered.container.querySelectorAll("*").length).toBeLessThan(5_000);
   });
 });
