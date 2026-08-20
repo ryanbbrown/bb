@@ -1,0 +1,42 @@
+{
+  "name": "bb-plugin-firstmate-sidebar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "A project-grouped sidebar for a Firstmate manager and its managed sessions.",
+  "engines": {
+    "bb": ">=0.0",
+    "bbPluginSdk": ">=0.4.3"
+  },
+  "bb": {
+    "name": "Firstmate sidebar",
+    "description": "Keep one Firstmate manager above managed sessions and independent threads grouped by project.",
+    "branding": {
+      "icon": "PanelLeft"
+    },
+    "app": "./app.tsx",
+    "server": "./server.ts"
+  },
+  "keywords": [
+    "bb-plugin"
+  ],
+  "scripts": {
+    "lint": "eslint . --ext .ts,.tsx",
+    "test": "vitest run --config vitest.config.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@get-bb/plugin-sdk": "workspace:*",
+    "@testing-library/react": "^16.3.2",
+    "@types/better-sqlite3": "^7.6.12",
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "better-sqlite3": "12.10.0",
+    "jsdom": "^29.0.1",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "typescript": "npm:@typescript/typescript6@^6.0.2",
+    "vitest": "^4.1.1"
+  }
+}

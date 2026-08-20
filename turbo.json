@@ -760,6 +760,12 @@
         "topo"
       ]
     },
+    "bb-plugin-firstmate-sidebar#typecheck": {
+      "dependsOn": [
+        "@get-bb/plugin-sdk#build:types",
+        "topo"
+      ]
+    },
     "bb-plugin-thread-chat-demo#typecheck": {
       "dependsOn": [
         "@get-bb/plugin-sdk#build:types",
