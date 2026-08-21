@@ -1,3 +1,8 @@
+// Version 149 keeps Pi assistant `message_start` events out of the translated
+// protocol, so consecutive assistant output without a tool boundary remains on
+// one canonical item. Version 148 daemons split those outputs into distinct
+// items and can send a different timeline to the server.
+//
 // Version 147 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
@@ -114,7 +119,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 147 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 149 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —
