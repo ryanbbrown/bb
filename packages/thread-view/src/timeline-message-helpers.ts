@@ -1,25 +1,4 @@
-import type { SystemMessageKind } from "@bb/domain";
 import type { EventProjectionMessage } from "./event-projection-types.js";
-
-const CHILD_LIFECYCLE_SYSTEM_MESSAGE_KINDS = new Set<SystemMessageKind>([
-  "child-needs-attention",
-  "child-completed",
-  "child-failed",
-  "child-interrupted",
-  "child-outcome-batch",
-]);
-
-export function isChildLifecycleSystemSteerMessage(
-  message: EventProjectionMessage,
-): boolean {
-  return (
-    message.kind === "user" &&
-    message.initiator === "system" &&
-    message.turnRequest.kind === "steer" &&
-    message.turnRequest.status === "accepted" &&
-    CHILD_LIFECYCLE_SYSTEM_MESSAGE_KINDS.has(message.systemMessageKind)
-  );
-}
 
 export function isTimelineTerminalMessage(
   message: EventProjectionMessage,
@@ -33,9 +12,7 @@ export function isTimelineSummaryGroupableSteerMessage(
   return (
     message.kind === "user" &&
     message.turnRequest.kind === "steer" &&
-    (message.initiator === "agent" ||
-      (message.initiator === "system" &&
-        !isChildLifecycleSystemSteerMessage(message)))
+    (message.initiator === "agent" || message.initiator === "system")
   );
 }
 
