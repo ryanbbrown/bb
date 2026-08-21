@@ -33,6 +33,7 @@ import {
   buildManagedBranchName,
   SETUP_TIMEOUT_MS,
   requireSourceForHost,
+  storedBaseBranchNameToSpec,
 } from "../threads/thread-create-helpers.js";
 import {
   resolveManagedTargetPath,
@@ -601,11 +602,13 @@ export function settleEnvironmentProvisionCommandResult(
         ...resolveProvisionedEnvironmentBranchMetadata(args.command),
       },
     );
-    const provisionedOutcome =
-      applyLoggedEnvironmentLifecycleEventInTransaction(args.deps, {
+    const provisionedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
+      args.deps,
+      {
         environmentId: args.command.environmentId,
         event: { type: "provision.succeeded" },
-      });
+      },
+    );
     if (provisionedOutcome.applied) {
       args.deps.hub.notifyEnvironment(
         args.command.environmentId,
@@ -1047,21 +1050,12 @@ export async function dispatchManagedEnvironmentReprovision(
           const branchName =
             args.environment.branchName ??
             buildManagedBranchName({ threadId: args.threadId });
-          const checkout =
-            args.environment.baseBranch === null
-              ? {
-                  kind: "existing-branch" as const,
-                  branchName,
-                  startPoint: branchName,
-                  upstream: null,
-                }
-              : {
-                  kind: "new-branch" as const,
-                  branchName,
-                  baseBranch: args.environment.baseBranch,
-                };
+          const baseBranch = storedBaseBranchNameToSpec(
+            args.environment.baseBranch,
+          );
           return buildEnvironmentProvisionCommand({
-            checkout,
+            branchName,
+            baseBranch,
             environmentId: args.environment.id,
             hostId: args.environment.hostId,
             initiator,

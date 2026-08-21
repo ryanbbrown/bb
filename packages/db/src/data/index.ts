@@ -207,7 +207,6 @@ export {
   getEnvironment,
   findProjectEnvironmentByHostPath,
   listEnvironments,
-  listActiveEnvironmentsWithPathsOnHost,
   findForeignManagedEnvironmentAtHostPath,
   listRetiredLoadedEnvironmentIdsOnHost,
   updateEnvironmentMetadata,

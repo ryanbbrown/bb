@@ -83,28 +83,11 @@ export const baseBranchSpecSchema = z.discriminatedUnion("kind", [
 ]);
 export type BaseBranchSpec = z.infer<typeof baseBranchSpecSchema>;
 
-export const managedCheckoutIntentSchema = z.discriminatedUnion("kind", [
-  z
-    .object({
-      kind: z.literal("new-branch"),
-      baseBranch: baseBranchSpecSchema,
-    })
-    .strict(),
-  z
-    .object({
-      kind: z.literal("existing-branch"),
-      name: gitBranchNameSchema,
-    })
-    .strict(),
-]);
-export type ManagedCheckoutIntent = z.infer<typeof managedCheckoutIntentSchema>;
-
-export const managedWorktreeWorkspaceSchema = z
-  .object({
-    type: z.literal("managed-worktree"),
-    checkout: managedCheckoutIntentSchema,
-  })
-  .strict();
+export const managedWorktreeWorkspaceSchema = z.object({
+  type: z.literal("managed-worktree"),
+  /** Branch the new worktree should be based on. */
+  baseBranch: baseBranchSpecSchema,
+});
 
 export const personalWorkspaceSchema = z.object({
   type: z.literal("personal"),

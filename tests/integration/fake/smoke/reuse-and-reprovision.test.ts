@@ -40,7 +40,7 @@ async function visibleProvisioningStatuses(
 }
 
 describe.sequential("fake provider smoke reuse integration", () => {
-  it("rejects a missing unmanaged workspace before creating a thread", () =>
+  it("moves a thread to error and records failure events when environment provisioning fails", () =>
     withHarness(async (harness) => {
       const project = await createProjectFixture(
         harness,
@@ -52,16 +52,42 @@ describe.sequential("fake provider smoke reuse integration", () => {
       );
       await fs.rm(missingPath, { recursive: true, force: true });
 
-      await expect(
-        createHostThread(harness.api, {
-          hostId: harness.hostId,
-          projectId: project.id,
-          workspace: {
-            type: "unmanaged",
-            path: missingPath,
-          },
-        }),
-      ).rejects.toThrow(`Workspace path does not exist: ${missingPath}`);
+      const thread = await createHostThread(harness.api, {
+        hostId: harness.hostId,
+        projectId: project.id,
+        workspace: {
+          type: "unmanaged",
+          path: missingPath,
+        },
+      });
+      const erroredThread = await waitForThreadStatus(
+        harness.api,
+        thread.id,
+        "error",
+        TURN_TIMEOUT_MS,
+      );
+      const environmentId = erroredThread.environmentId;
+      if (!environmentId) {
+        throw new Error("Provisioning thread was missing an environment");
+      }
+
+      const environment = await getEnvironment(harness.api, environmentId);
+      const events = await getThreadEvents(harness.api, thread.id);
+      expect(environment.status).toBe("error");
+      expect(
+        events.some(
+          (event) =>
+            event.type === "system/thread-provisioning" &&
+            event.data.status === "failed",
+        ),
+      ).toBe(true);
+      expect(
+        events.some(
+          (event) =>
+            event.type === "system/error" &&
+            event.data.code === "thread_provisioning_failed",
+        ),
+      ).toBe(true);
     }));
 
   it("reuses the same unmanaged environment when two host threads target the same path", () =>
@@ -133,11 +159,11 @@ describe.sequential("fake provider smoke reuse integration", () => {
       // row — otherwise the timeline shows "Provisioned thread" for a start
       // that only attached to a ready environment. The first thread did
       // provision, so it keeps its row.
+      expect(await visibleProvisioningStatuses(harness.api,thread.id)).not.toEqual(
+        [],
+      );
       expect(
-        await visibleProvisioningStatuses(harness.api, thread.id),
-      ).not.toEqual([]);
-      expect(
-        await visibleProvisioningStatuses(harness.api, reusedThread.thread.id),
+        await visibleProvisioningStatuses(harness.api,reusedThread.thread.id),
       ).toEqual([]);
     }));
 

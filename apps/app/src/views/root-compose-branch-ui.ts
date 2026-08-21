@@ -172,14 +172,13 @@ function buildWorktreeBranchUiState(
   const defaultTriggerLabel = `Branch from: ${defaultBaseBranch ?? "default"}`;
 
   if (args.selectedBranch) {
-    const prefix = args.selectedBranch.isNew ? "Branch from" : "Continue";
     return {
       currentBranch: defaultBaseBranch ?? null,
       currentOptionLabel: defaultOptionLabel,
       mutationBlocker: null,
       placeholder: "Branch from: default",
-      triggerLabel: `${prefix}: ${args.selectedBranch.name}`,
-      triggerTitle: `${prefix}: ${args.selectedBranch.name}`,
+      triggerLabel: `Branch from: ${args.selectedBranch.name}`,
+      triggerTitle: `Branch from: ${args.selectedBranch.name}`,
     };
   }
 

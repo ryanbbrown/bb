@@ -108,11 +108,8 @@ describe("workspace provisioning", () => {
       createWorktree({
         sourcePath: sourceDir,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "feature",
-          baseBranch: "main",
-        },
+        branchName: "feature",
+        baseBranch: null,
         timeoutMs: 900000,
       }),
     ).rejects.toMatchObject({
@@ -135,11 +132,8 @@ describe("workspace provisioning", () => {
       createWorktree({
         sourcePath: sourceRepo,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "feature",
-          baseBranch: "main",
-        },
+        branchName: "feature",
+        baseBranch: null,
         timeoutMs: 900000,
       }),
     ).rejects.toMatchObject({
@@ -160,21 +154,15 @@ describe("workspace provisioning", () => {
     const first = await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
     const second = await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
 
@@ -198,11 +186,8 @@ describe("workspace provisioning", () => {
       createWorktree({
         sourcePath: root,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "feature",
-          baseBranch: "main",
-        },
+        branchName: "feature",
+        baseBranch: null,
         timeoutMs: 900000,
       }),
     ).resolves.toEqual({ path: targetPath });
@@ -230,11 +215,8 @@ describe("workspace provisioning", () => {
     await createWorktree({
       sourcePath: repoPath,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "origin/main",
-      },
+      branchName: "feature",
+      baseBranch: "origin/main",
       timeoutMs: 900000,
     });
 
@@ -245,182 +227,6 @@ describe("workspace provisioning", () => {
       cwd: targetPath,
     });
     expect(worktreeHead.stdout.trim()).toBe(remoteHead);
-  });
-
-  it("reuses an equal local branch for a remote branch and configures push tracking", async () => {
-    const { repoPath } = await initRemoteBackedRepo();
-    await runGit(["branch", "bb/pr-123", "main"], { cwd: repoPath });
-    await runGit(["push", "origin", "bb/pr-123"], { cwd: repoPath });
-    const parentDir = await makeTempDir("bb-continue-worktree-parent-");
-    const targetPath = path.join(parentDir, "continued");
-
-    await createWorktree({
-      sourcePath: repoPath,
-      targetPath,
-      checkout: {
-        kind: "existing-branch",
-        branchName: "bb/pr-123",
-        startPoint: "origin/bb/pr-123",
-        upstream: "origin/bb/pr-123",
-      },
-      timeoutMs: 900000,
-    });
-    expect(
-      (
-        await runGit(["rev-parse", "--abbrev-ref", "@{upstream}"], {
-          cwd: targetPath,
-        })
-      ).stdout.trim(),
-    ).toBe("origin/bb/pr-123");
-    await fs.writeFile(path.join(targetPath, "continued.txt"), "continued\n");
-    await runGit(["add", "continued.txt"], { cwd: targetPath });
-    await runGit(["commit", "-m", "Continue PR"], { cwd: targetPath });
-    await runGit(["push"], { cwd: targetPath });
-    const pushedHead = (
-      await runGit(["rev-parse", "origin/bb/pr-123"], { cwd: repoPath })
-    ).stdout.trim();
-    const worktreeHead = (
-      await runGit(["rev-parse", "HEAD"], { cwd: targetPath })
-    ).stdout.trim();
-    expect(pushedHead).toBe(worktreeHead);
-
-    await removeWorktree({ path: targetPath, force: true });
-    expect(
-      (
-        await runGit(["show-ref", "--verify", "refs/heads/bb/pr-123"], {
-          cwd: repoPath,
-        })
-      ).exitCode,
-    ).toBe(0);
-  });
-
-  it("creates a local branch for a remote-only branch", async () => {
-    const { repoPath } = await initRemoteBackedRepo();
-    await runGit(["branch", "bb/pr-remote", "main"], { cwd: repoPath });
-    await runGit(["push", "origin", "bb/pr-remote"], { cwd: repoPath });
-    await runGit(["branch", "-D", "bb/pr-remote"], { cwd: repoPath });
-    const targetPath = path.join(
-      await makeTempDir("bb-continue-remote-only-parent-"),
-      "continued",
-    );
-
-    await createWorktree({
-      sourcePath: repoPath,
-      targetPath,
-      checkout: {
-        kind: "existing-branch",
-        branchName: "bb/pr-remote",
-        startPoint: "origin/bb/pr-remote",
-        upstream: "origin/bb/pr-remote",
-      },
-      timeoutMs: 900000,
-    });
-
-    expect(
-      (await runGit(["rev-parse", "HEAD"], { cwd: targetPath })).stdout,
-    ).toBe(
-      (await runGit(["rev-parse", "origin/bb/pr-remote"], { cwd: repoPath }))
-        .stdout,
-    );
-    expect(
-      (
-        await runGit(["rev-parse", "--abbrev-ref", "@{upstream}"], {
-          cwd: targetPath,
-        })
-      ).stdout.trim(),
-    ).toBe("origin/bb/pr-remote");
-  });
-
-  it("rejects a remote branch when its same-name local branch diverges", async () => {
-    const { repoPath } = await initRemoteBackedRepo();
-    await runGit(["branch", "bb/pr-diverged", "main"], { cwd: repoPath });
-    await runGit(["push", "origin", "bb/pr-diverged"], { cwd: repoPath });
-    await fs.writeFile(path.join(repoPath, "local-only.txt"), "local\n");
-    await runGit(["add", "local-only.txt"], { cwd: repoPath });
-    await runGit(["commit", "-m", "Local-only commit"], { cwd: repoPath });
-    await runGit(["branch", "-f", "bb/pr-diverged", "HEAD"], {
-      cwd: repoPath,
-    });
-    const targetPath = path.join(
-      await makeTempDir("bb-continue-diverged-parent-"),
-      "continued",
-    );
-
-    await expect(
-      createWorktree({
-        sourcePath: repoPath,
-        targetPath,
-        checkout: {
-          kind: "existing-branch",
-          branchName: "bb/pr-diverged",
-          startPoint: "origin/bb/pr-diverged",
-          upstream: "origin/bb/pr-diverged",
-        },
-        timeoutMs: 900000,
-      }),
-    ).rejects.toMatchObject({
-      code: "branch_ref_conflict",
-      message: expect.stringContaining("points to a different commit"),
-    });
-    await expect(fs.stat(targetPath)).rejects.toThrow();
-  });
-
-  it("continues a local branch without changing its upstream", async () => {
-    const { repoPath } = await initRemoteBackedRepo();
-    await runGit(["branch", "local-topic", "main"], { cwd: repoPath });
-    const targetPath = path.join(
-      await makeTempDir("bb-continue-local-parent-"),
-      "continued",
-    );
-
-    await createWorktree({
-      sourcePath: repoPath,
-      targetPath,
-      checkout: {
-        kind: "existing-branch",
-        branchName: "local-topic",
-        startPoint: "local-topic",
-        upstream: null,
-      },
-      timeoutMs: 900000,
-    });
-
-    expect(await new Workspace(targetPath).currentBranch).toBe("local-topic");
-    expect(
-      (
-        await runGit(["rev-parse", "--abbrev-ref", "@{upstream}"], {
-          allowFailure: true,
-          cwd: targetPath,
-        })
-      ).exitCode,
-    ).not.toBe(0);
-  });
-
-  it("points to the worktree that already checks out a continued branch", async () => {
-    const sourceRepo = await initRepoWithOptionalSetup();
-    const parentDir = await makeTempDir("bb-occupied-worktree-parent-");
-    const occupiedPath = path.join(parentDir, "occupied");
-    const attemptedPath = path.join(parentDir, "attempted");
-    await runGit(["worktree", "add", "-b", "occupied", occupiedPath, "main"], {
-      cwd: sourceRepo,
-    });
-
-    await expect(
-      createWorktree({
-        sourcePath: sourceRepo,
-        targetPath: attemptedPath,
-        checkout: {
-          kind: "existing-branch",
-          branchName: "occupied",
-          startPoint: "occupied",
-          upstream: null,
-        },
-        timeoutMs: 900000,
-      }),
-    ).rejects.toMatchObject({
-      code: "branch_already_checked_out",
-      message: expect.stringContaining(occupiedPath),
-    });
   });
 
   it("rolls back failed worktree setup scripts", async () => {
@@ -434,11 +240,8 @@ describe("workspace provisioning", () => {
       createWorktree({
         sourcePath: sourceRepo,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "broken",
-          baseBranch: "main",
-        },
+        branchName: "broken",
+        baseBranch: "main",
         timeoutMs: 900000,
       }),
     ).rejects.toThrow(/Setup script failed/u);
@@ -470,21 +273,15 @@ describe("workspace provisioning", () => {
       createWorktree({
         sourcePath: sourceRepo,
         targetPath: firstTargetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "feature-a",
-          baseBranch: "main",
-        },
+        branchName: "feature-a",
+        baseBranch: "main",
         timeoutMs: 900000,
       }),
       createWorktree({
         sourcePath: sourceRepo,
         targetPath: secondTargetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "feature-b",
-          baseBranch: "main",
-        },
+        branchName: "feature-b",
+        baseBranch: "main",
         timeoutMs: 900000,
       }),
     ]);
@@ -521,11 +318,8 @@ describe("workspace provisioning", () => {
     await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
 
@@ -663,11 +457,8 @@ describe("workspace provisioning", () => {
     const provision = createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "cancelled",
-        baseBranch: "main",
-      },
+      branchName: "cancelled",
+      baseBranch: "main",
       timeoutMs: 900000,
       signal: abortController.signal,
     });
@@ -821,11 +612,8 @@ describe("workspace provisioning", () => {
     await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
     await fs.writeFile(path.join(targetPath, "local.txt"), "dirty\n", "utf8");
@@ -845,11 +633,8 @@ describe("workspace provisioning", () => {
     await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature-orphan-gitfile",
-        baseBranch: "main",
-      },
+      branchName: "feature-orphan-gitfile",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
     await fs.rm(path.join(targetPath, ".git"), { force: true });
@@ -876,11 +661,8 @@ describe("workspace provisioning", () => {
     await createWorktree({
       sourcePath: sourceRepo,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature-metadata-failure",
-        baseBranch: "main",
-      },
+      branchName: "feature-metadata-failure",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
     await fs.writeFile(path.join(targetPath, "local.txt"), "dirty\n", "utf8");

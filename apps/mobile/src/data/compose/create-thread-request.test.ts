@@ -119,13 +119,7 @@ describe("buildCreateThreadRequest", () => {
     expect(worktreeDefault.request?.environment).toEqual({
       type: "host",
       hostId: "host_1",
-      workspace: {
-        type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
-      },
+      workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     });
     const worktreeConfigured = buildCreateThreadRequest({
       projectId: "proj_1",
@@ -143,10 +137,7 @@ describe("buildCreateThreadRequest", () => {
       hostId: "host_1",
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "named", name: "develop" },
-        },
+        baseBranch: { kind: "named", name: "develop" },
       },
     });
     const worktreePicked = buildCreateThreadRequest({
@@ -159,12 +150,7 @@ describe("buildCreateThreadRequest", () => {
       },
     });
     expect(worktreePicked.request?.environment).toMatchObject({
-      workspace: {
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "named", name: "feature/x" },
-        },
-      },
+      workspace: { baseBranch: { kind: "named", name: "feature/x" } },
     });
     expect(parseAsSent(worktreePicked.request!).success).toBe(true);
 

@@ -148,12 +148,7 @@ export function EnvironmentPickerUI({
   // full composer chip ("Mac Studio · New worktree"). Single-machine and
   // compact layouts use the shorter mode-only label.
   const selectedMachineName = useMemo(() => {
-    if (
-      !isMachineMenu ||
-      !machines ||
-      (parsed?.type !== "host" && parsed?.type !== "worktree-path")
-    )
-      return null;
+    if (!isMachineMenu || !machines || parsed?.type !== "host") return null;
     return (
       machines.hosts.find((machineHost) => machineHost.id === parsed.hostId)
         ?.name ?? null
@@ -181,7 +176,7 @@ export function EnvironmentPickerUI({
         icon: "Laptop" as const,
       };
     }
-    if (parsed.type === "reuse" || parsed.type === "worktree-path") {
+    if (parsed.type === "reuse") {
       return {
         modeLabel: "Reuse worktree",
         compactModeLabel: "Reuse",
@@ -373,9 +368,7 @@ function EnvironmentOptionsSection({
             label="Existing worktree"
             description={reuseDisabledReason ?? undefined}
             icon={getEnvironmentWorkspaceLabelIconName("managed-worktree")}
-            selected={
-              selectedType === "reuse" || selectedType === "worktree-path"
-            }
+            selected={selectedType === "reuse"}
             disabled={reuseDisabledReason !== null}
             onSelect={() => onChange(REUSE_VALUE_WITHOUT_ENVIRONMENT)}
           />
@@ -451,9 +444,7 @@ function MachineGroupedEnvironmentOptions({
           label="Existing worktree"
           description={reuseDisabledReason ?? undefined}
           icon={getEnvironmentWorkspaceLabelIconName("managed-worktree")}
-          selected={
-            selectedType === "reuse" || selectedType === "worktree-path"
-          }
+          selected={selectedType === "reuse"}
           disabled={reuseDisabledReason !== null}
           onSelect={() => onChange(REUSE_VALUE_WITHOUT_ENVIRONMENT)}
         />

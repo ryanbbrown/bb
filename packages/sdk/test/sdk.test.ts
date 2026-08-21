@@ -215,39 +215,6 @@ describe("@bb/sdk", () => {
     );
   });
 
-  it("lists project worktrees through the portable project API", async () => {
-    const result = {
-      worktrees: [
-        {
-          hostId: "host_remote",
-          path: "/srv/project-personal",
-          branchName: "personal",
-          environmentId: null,
-          environmentName: null,
-        },
-      ],
-    };
-    const queue = createFetchQueue([{ body: result }]);
-    const sdk = createBbSdk({
-      transport: createHttpTransport({
-        baseUrl: "http://bb.test",
-        fetch: queue.fetch,
-        runtime: "node",
-      }),
-    });
-
-    await expect(
-      sdk.projects.worktrees({ projectId: "proj_remote" }),
-    ).resolves.toEqual(result);
-    expect(queue.requests).toEqual([
-      {
-        bodyText: undefined,
-        method: "GET",
-        url: "http://bb.test/api/v1/projects/proj_remote/worktrees",
-      },
-    ]);
-  });
-
   it("sends a complete appearance selection through the theme transport", async () => {
     const appearance = {
       themeId: "nord",

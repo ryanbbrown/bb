@@ -48,8 +48,6 @@ const mocks = vi.hoisted(() => ({
   copyAttachments: vi.fn(),
   uploadAttachment: vi.fn(),
   projectThreads: [] as ThreadListEntry[],
-  projectWorktrees: [] as Array<Record<string, unknown>>,
-  worktreesLoading: false,
   sidebarNavigationSettled: true,
   // When true, the settled data is a replayed placeholder from the last page
   // load (TanStack reports `isSuccess` for placeholders too).
@@ -223,10 +221,6 @@ vi.mock("@/hooks/queries/project-queries", () => ({
     mocks.promptHistoryQueryOptions.push(options);
     return { data: [] };
   },
-  useProjectWorktrees: () => ({
-    data: { worktrees: mocks.projectWorktrees },
-    isLoading: mocks.worktreesLoading,
-  }),
   useProjectSourceBranches: () => ({
     data: {
       branches: ["main", "release"],
@@ -387,10 +381,7 @@ const STORED_REQUEST: NewThreadRequest = {
     hostId: "host_1",
     workspace: {
       type: "managed-worktree",
-      checkout: {
-        kind: "new-branch",
-        baseBranch: { kind: "named", name: "release" },
-      },
+      baseBranch: { kind: "named", name: "release" },
     },
   },
   input: [{ type: "text", text: "review every PR for slop", mentions: [] }],
@@ -409,8 +400,6 @@ describe("PluginNewThreadComposer seeding", () => {
     mocks.copyAttachments.mockReset();
     mocks.uploadAttachment.mockReset();
     mocks.projectThreads = [];
-    mocks.projectWorktrees = [];
-    mocks.worktreesLoading = false;
     mocks.sidebarNavigationSettled = true;
     mocks.sidebarNavigationReplayed = false;
     mocks.extraProjects = [];
@@ -684,10 +673,7 @@ describe("PluginNewThreadComposer seeding", () => {
       hostId: "host_1",
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
+        baseBranch: { kind: "default" },
       },
     });
   });
@@ -761,8 +747,10 @@ describe("PluginNewThreadComposer seeding", () => {
     );
   });
 
-  it("derives reuse threads from the sidebar while discovered worktrees load", async () => {
-    mocks.worktreesLoading = true;
+  it("derives reuse options from the sidebar bootstrap so a fork keeps its seeded worktree", async () => {
+    // No separate `GET /threads?projectId=` backs the worktree picker: the
+    // sidebar bootstrap rows are the source, so the seeded reuse environment
+    // resolves as soon as the bootstrap holds the source thread.
     mocks.projectThreads = [
       makeThreadListEntry({
         id: "thr_source",
@@ -900,15 +888,6 @@ describe("PluginNewThreadComposer seeding", () => {
         environmentBranchName: "feature/source",
         environmentWorkspaceDisplayKind: "managed-worktree",
       }),
-    ];
-    mocks.projectWorktrees = [
-      {
-        hostId: "host_1",
-        path: "/repo/.bb/worktrees/source",
-        branchName: "feature/source",
-        environmentId: "env-source",
-        environmentName: "source",
-      },
     ];
     rerender(element());
 

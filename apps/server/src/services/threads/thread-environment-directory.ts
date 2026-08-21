@@ -2,6 +2,7 @@ import { z } from "zod";
 import {
   createEnvironment,
   createEventId,
+  findProjectEnvironmentByHostPath,
   getEnvironment,
   getThread,
   updateThread,
@@ -18,7 +19,7 @@ import { runLiveHostCommand } from "../hosts/live-command.js";
 import { appendThreadEventInTransaction } from "./thread-events.js";
 import { buildEnvironmentProvisionCommand } from "./thread-create-helpers.js";
 import { findHostDataDir } from "../lib/entity-lookup.js";
-import { resolveUnmanagedAttach } from "./workspace-path-claims.js";
+import { unmanagedAttachRefusal } from "./workspace-path-claims.js";
 
 export const UPDATE_ENVIRONMENT_DIRECTORY_TOOL_NAME =
   "update_environment_directory";
@@ -289,31 +290,25 @@ export async function handleUpdateEnvironmentDirectoryToolCall(
     );
   }
 
-  let attachResolution;
-  try {
-    attachResolution = await resolveUnmanagedAttach(deps, {
-      checksOutBranch: false,
-      dataDir: findHostDataDir(deps, args.currentEnvironment.hostId),
-      hostId: args.currentEnvironment.hostId,
-      path: normalizedPath,
-      projectId: args.thread.projectId,
-    });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    return toolCallFailure(message);
-  }
-  if (attachResolution.refusal) {
-    return toolCallFailure(
-      `${attachResolution.refusal.message}. Use a different directory.`,
-    );
+  // The claim is project-scoped, but attaching in place to another project's
+  // bb-managed worktree is unsafe: its cleanup deletes the directory.
+  const refusal = unmanagedAttachRefusal(deps.db, {
+    checksOutBranch: false,
+    dataDir: findHostDataDir(deps, args.currentEnvironment.hostId),
+    hostId: args.currentEnvironment.hostId,
+    path: normalizedPath,
+    projectId: args.thread.projectId,
+  });
+  if (refusal) {
+    return toolCallFailure(`${refusal.message}. Use a different directory.`);
   }
 
-  const existingEnvironment = attachResolution.existingProjectEnvironment;
-  if (existingEnvironment?.id === args.currentEnvironment.id) {
-    return toolCallSuccess(
-      `This thread is already using ${attachResolution.canonicalPath} as its environment directory.`,
-    );
-  }
+  const existingEnvironment = findProjectEnvironmentByHostPath(
+    deps.db,
+    args.thread.projectId,
+    args.currentEnvironment.hostId,
+    normalizedPath,
+  );
   let createdEnvironment = false;
   let targetEnvironment: ReadyEnvironment;
 
@@ -328,7 +323,7 @@ export async function handleUpdateEnvironmentDirectoryToolCall(
       deps,
       {
         currentEnvironment: args.currentEnvironment,
-        path: attachResolution.canonicalPath,
+        path: normalizedPath,
         thread: args.thread,
       },
     );

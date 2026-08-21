@@ -934,12 +934,7 @@ export async function getWorkspaceGitOperation(
     // --no-optional-locks: status must not take index.lock, or background
     // polling races concurrent commits in the same checkout.
     runGit(
-      [
-        "--no-optional-locks",
-        "status",
-        "--porcelain=v1",
-        "--untracked-files=all",
-      ],
+      ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
       { cwd, ...options },
     ),
   ]);
@@ -1156,10 +1151,7 @@ function resolvePreferredLocalDefaultBranch(
   localBranches: readonly string[],
   originDefaultBranchName: string | undefined,
 ): string | undefined {
-  if (
-    originDefaultBranchName &&
-    localBranches.includes(originDefaultBranchName)
-  ) {
+  if (originDefaultBranchName && localBranches.includes(originDefaultBranchName)) {
     return originDefaultBranchName;
   }
   if (localBranches.includes("main")) {
@@ -1285,12 +1277,7 @@ async function readDefaultBranchRelation(
     return "equal";
   }
 
-  const localIsAncestor = await isAncestorRef(
-    cwd,
-    localRef,
-    originRef,
-    options,
-  );
+  const localIsAncestor = await isAncestorRef(cwd, localRef, originRef, options);
   if (localIsAncestor === true) {
     return "local-behind";
   }
@@ -1298,12 +1285,7 @@ async function readDefaultBranchRelation(
     return "unknown";
   }
 
-  const originIsAncestor = await isAncestorRef(
-    cwd,
-    originRef,
-    localRef,
-    options,
-  );
+  const originIsAncestor = await isAncestorRef(cwd, originRef, localRef, options);
   if (originIsAncestor === true) {
     return "local-ahead";
   }
@@ -1373,10 +1355,7 @@ export async function fetchRemoteBranches(
     });
     return { status: result.exitCode === 0 ? "fetched" : "failed" };
   } catch (error) {
-    if (
-      error instanceof WorkspaceError &&
-      error.code === "git_command_timeout"
-    ) {
+    if (error instanceof WorkspaceError && error.code === "git_command_timeout") {
       return { status: "failed" };
     }
     throw error;
@@ -1599,56 +1578,13 @@ export async function listBranchRefsWithDefaults(
   };
 }
 
-export interface GitWorktreeEntry {
-  path: string;
-  branchName: string | null;
-}
-
-export async function listGitWorktrees(
-  cwd: string,
-  options: GitProcessOptions = {},
-): Promise<GitWorktreeEntry[]> {
-  await ensureGitRepo(cwd, options);
-  const result = await runGit(["worktree", "list", "--porcelain", "-z"], {
-    cwd,
-    ...options,
-  });
-  const records = result.stdout.split("\0\0").filter(Boolean);
-  const entries = await Promise.all(
-    records.map(async (record): Promise<GitWorktreeEntry | null> => {
-      let worktreePath: string | null = null;
-      let branchName: string | null = null;
-      for (const field of record.split("\0")) {
-        if (field.startsWith("worktree ")) {
-          worktreePath = field.slice("worktree ".length);
-        } else if (field.startsWith("branch refs/heads/")) {
-          branchName = field.slice("branch refs/heads/".length);
-        }
-      }
-      if (worktreePath === null) return null;
-      return {
-        path: await fs
-          .realpath(worktreePath)
-          .catch(() => path.resolve(worktreePath)),
-        branchName,
-      };
-    }),
-  );
-  return entries.filter((entry): entry is GitWorktreeEntry => entry !== null);
-}
-
 export async function hasUncommittedChanges(
   cwd: string,
   options: GitProcessOptions = {},
 ): Promise<boolean> {
   await ensureGitRepo(cwd, options);
   const status = await runGit(
-    [
-      "--no-optional-locks",
-      "status",
-      "--porcelain=v1",
-      "--untracked-files=all",
-    ],
+    ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"],
     { cwd, ...options },
   );
   return status.stdout.trim().length > 0;

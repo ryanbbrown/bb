@@ -252,9 +252,7 @@ export const STORY_BRANCH_OPTIONS: readonly string[] = [
 
 export const STORY_WORKTREE_OPTIONS: readonly ReuseThreadOption[] = [
   {
-    value: "reuse:env_review_flow",
     environmentId: "env_review_flow",
-    path: "/workspace/review-flow",
     branchName: "bb/review-flow-thr_4hge9xn14m",
     name: null,
     threads: [
@@ -263,9 +261,7 @@ export const STORY_WORKTREE_OPTIONS: readonly ReuseThreadOption[] = [
     ],
   },
   {
-    value: "reuse:env_timeline",
     environmentId: "env_timeline",
-    path: "/workspace/timeline",
     branchName: "bb/timeline-pagination-thr_qfk8ksbxkk",
     name: "Timeline workspace",
     threads: [{ id: "thr_timeline", title: "Timeline pagination" }],

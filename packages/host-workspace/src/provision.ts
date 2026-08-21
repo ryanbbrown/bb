@@ -1,6 +1,9 @@
 import { mkdir, realpath, rm } from "node:fs/promises";
 import path from "node:path";
-import type { ProvisioningTranscriptEntry, WorkspaceStatus } from "@bb/domain";
+import type {
+  ProvisioningTranscriptEntry,
+  WorkspaceStatus,
+} from "@bb/domain";
 import type {
   CommitOptions,
   CommitResult,
@@ -90,19 +93,16 @@ interface ManagedWorkspaceBaseOpts extends ProvisionBase {
   sourcePath: string;
   /** Target path for worktree/clone creation */
   targetPath: string;
-  checkout: ManagedWorktreeCheckoutOpts;
+  /** Name of the new branch to create on the workspace. */
+  branchName: string;
+  /**
+   * Branch on the source repo that the new branch should be based on. Pass
+   * `null` to use the source's default branch.
+   */
+  baseBranch: string | null;
   /** Setup script timeout in ms. Controlled by the server. */
   timeoutMs: number;
 }
-
-type ManagedWorktreeCheckoutOpts =
-  | { kind: "new-branch"; branchName: string; baseBranch: string }
-  | {
-      kind: "existing-branch";
-      branchName: string;
-      startPoint: string;
-      upstream: string | null;
-    };
 
 interface ManagedWorktreeOpts extends ManagedWorkspaceBaseOpts {
   workspaceProvisionType: "managed-worktree";
@@ -721,7 +721,8 @@ async function provisionWorktree(
   const { path: wsPath } = await createWorktree({
     sourcePath: opts.sourcePath,
     targetPath: opts.targetPath,
-    checkout: opts.checkout,
+    branchName: opts.branchName,
+    baseBranch: opts.baseBranch,
     timeoutMs: opts.timeoutMs,
     shellPath: opts.shellPath,
     onProgress: opts.onProgress,

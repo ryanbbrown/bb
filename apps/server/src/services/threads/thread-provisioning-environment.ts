@@ -14,7 +14,7 @@ import {
   type ProvisioningTranscriptEntry,
   type Thread,
 } from "@bb/domain";
-import type { UnmanagedBranchSpec } from "@bb/server-contract";
+import type { BaseBranchSpec, UnmanagedBranchSpec } from "@bb/server-contract";
 import type { AppDeps } from "../../types.js";
 import type { CommandResultSideEffectsDeps } from "../../internal/command-result-side-effects.js";
 import { ApiError } from "../../errors.js";
@@ -28,6 +28,7 @@ import {
   appendThreadProvisioningEventInTransaction,
 } from "./thread-events.js";
 import {
+  baseBranchSpecToStoredName,
   buildEnvironmentProvisionCommand,
   buildManagedBranchName,
   SETUP_TIMEOUT_MS,
@@ -222,10 +223,7 @@ interface ManagedEnvironmentPlanArgs {
   dataDir: string;
   hostId: string;
   sourcePath: string;
-  checkout: Extract<
-    ThreadProvisionEnvironmentIntent,
-    { type: "direct-managed" }
-  >["checkout"];
+  baseBranch: BaseBranchSpec;
   thread: Thread;
   workspaceProvisionType: "managed-worktree";
 }
@@ -394,7 +392,6 @@ function shouldPrepareEnvironmentBeforeMetadata(
   return (
     isMetadataPendingContext(context) &&
     context.request.environmentIntent.type === "direct-managed" &&
-    context.request.environmentIntent.checkout.kind === "new-branch" &&
     !context.request.titleProvided
   );
 }
@@ -435,8 +432,7 @@ async function resolveMetadataIfNeeded(
   }
 
   const needsBranch =
-    args.context.request.environmentIntent.type === "direct-managed" &&
-    args.context.request.environmentIntent.checkout.kind === "new-branch";
+    args.context.request.environmentIntent.type === "direct-managed";
   if (!needsBranch) {
     if (!args.context.request.titleProvided) {
       void inferThreadMetadata(deps, {
@@ -463,7 +459,8 @@ async function resolveMetadataIfNeeded(
           if (
             !titledThread ||
             !environment ||
-            (titledThread.status !== "active" && titledThread.status !== "idle")
+            (titledThread.status !== "active" &&
+              titledThread.status !== "idle")
           ) {
             return;
           }
@@ -677,10 +674,14 @@ function createPreparedProvisioningEnvironment(
         );
       }
 
-      const environment = createEnvironment(tx, deps.hub, {
-        ...args.environmentInput,
-        status: "ready",
-      });
+      const environment = createEnvironment(
+        tx,
+        deps.hub,
+        {
+          ...args.environmentInput,
+          status: "ready",
+        },
+      );
       if (args.thread.environmentId !== environment.id) {
         updateThread(tx, deps.hub, args.thread.id, {
           environmentId: environment.id,
@@ -806,28 +807,16 @@ function buildManagedEnvironmentPlan(
       hostId: args.hostId,
       managed: true,
       workspaceProvisionType: args.workspaceProvisionType,
-      branchName:
-        args.checkout.kind === "existing-branch"
-          ? args.checkout.branchName
-          : null,
-      baseBranch:
-        args.checkout.kind === "new-branch" ? args.checkout.baseBranch : null,
+      baseBranch: baseBranchSpecToStoredName(args.baseBranch),
       status: "provisioning",
     },
     buildRequest: ({ context, environment }) => {
-      const checkout =
-        args.checkout.kind === "new-branch"
-          ? {
-              kind: "new-branch" as const,
-              branchName: buildManagedBranchName({
-                branchSlug: context.request.branchSlug,
-                threadId: args.thread.id,
-              }),
-              baseBranch: args.checkout.baseBranch,
-            }
-          : args.checkout;
       const command = buildEnvironmentProvisionCommand({
-        checkout,
+        branchName: buildManagedBranchName({
+          branchSlug: context.request.branchSlug,
+          threadId: args.thread.id,
+        }),
+        baseBranch: args.baseBranch,
         environmentId: environment.id,
         hostId: args.hostId,
         initiator: {
@@ -896,7 +885,7 @@ async function resolveEnvironmentCreationPlan(
         dataDir: hostSession.dataDir,
         hostId: args.intent.hostId,
         sourcePath: args.intent.sourcePath,
-        checkout: args.intent.checkout,
+        baseBranch: args.intent.baseBranch,
         thread: args.thread,
         workspaceProvisionType: args.intent.workspaceProvisionType,
       });
@@ -966,14 +955,13 @@ function requestCheckoutUnmanagedEnvironmentProvision(
         threadId: args.thread.id,
         context,
       });
-      const requestedOutcome =
-        applyLoggedEnvironmentLifecycleEventInTransaction(
-          { db: tx, logger: deps.logger },
-          {
-            environmentId: args.environment.id,
-            event: { type: "provision.requested" },
-          },
-        );
+      const requestedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
+        { db: tx, logger: deps.logger },
+        {
+          environmentId: args.environment.id,
+          event: { type: "provision.requested" },
+        },
+      );
       if (requestedOutcome.applied) {
         deps.hub.notifyEnvironment(
           args.environment.id,
@@ -1075,14 +1063,13 @@ async function requestPreparedEnvironmentProvision(
         context,
         environment,
       });
-      const requestedOutcome =
-        applyLoggedEnvironmentLifecycleEventInTransaction(
-          { db: tx, logger: deps.logger },
-          {
-            environmentId: environment.id,
-            event: { type: "provision.requested" },
-          },
-        );
+      const requestedOutcome = applyLoggedEnvironmentLifecycleEventInTransaction(
+        { db: tx, logger: deps.logger },
+        {
+          environmentId: environment.id,
+          event: { type: "provision.requested" },
+        },
+      );
       if (requestedOutcome.applied) {
         deps.hub.notifyEnvironment(environment.id, requestedOutcome.changes);
       }

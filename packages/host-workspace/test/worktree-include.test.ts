@@ -221,11 +221,8 @@ describe("createWorktree with .worktreeinclude", () => {
     await createWorktree({
       sourcePath,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
 
@@ -246,11 +243,8 @@ describe("createWorktree with .worktreeinclude", () => {
     await createWorktree({
       sourcePath,
       targetPath,
-      checkout: {
-        kind: "new-branch",
-        branchName: "feature",
-        baseBranch: "main",
-      },
+      branchName: "feature",
+      baseBranch: "main",
       timeoutMs: 900000,
     });
 

@@ -16,8 +16,8 @@ import {
 import { Workspace } from "./workspace.js";
 import { tryWithCheckoutMutationLock } from "./checkout-mutation-lock.js";
 import {
-  listGitWorktrees,
   pathExists,
+  readDefaultBranch,
   readGitRepositoryState,
   runGit,
   WorkspaceError,
@@ -46,14 +46,14 @@ interface CreateWorkspaceArgs {
   /** Local repo path for worktrees */
   sourcePath: string;
   targetPath: string;
-  checkout:
-    | { kind: "new-branch"; branchName: string; baseBranch: string }
-    | {
-        kind: "existing-branch";
-        branchName: string;
-        startPoint: string;
-        upstream: string | null;
-      };
+  /** Name of the new branch to create on the workspace. */
+  branchName: string;
+  /**
+   * Branch to base the new branch on (start point for git worktree add / git
+   * checkout). Pass `null` to use the source's default branch (resolved by
+   * the daemon).
+   */
+  baseBranch: string | null;
   /** Setup script timeout in ms. Controlled by the server. */
   timeoutMs: number;
   /** Resolved user-shell PATH for the setup script. */
@@ -334,7 +334,7 @@ export async function createWorktree(
   if (
     await ensureExistingWorkspaceMatches(
       args.targetPath,
-      args.checkout.branchName,
+      args.branchName,
       args.shellPath,
     )
   ) {
@@ -365,97 +365,34 @@ export async function createWorktree(
   await ensureWorkspaceParentDirectory(args.targetPath);
 
   throwIfProvisionAborted(args.signal);
-  const startPoint =
-    args.checkout.kind === "new-branch"
-      ? args.checkout.baseBranch
-      : args.checkout.startPoint;
+  const baseBranch =
+    args.baseBranch ??
+    (await readDefaultBranch(args.sourcePath, {
+      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
+    }));
+  if (!baseBranch) {
+    throw new WorkspaceError(
+      "missing_default_branch",
+      `Cannot resolve default branch for source: ${args.sourcePath}`,
+    );
+  }
   throwIfProvisionAborted(args.signal);
   await fetchRemoteBaseBranch({
     sourcePath: args.sourcePath,
-    baseBranch: startPoint,
+    baseBranch,
     onProgress: args.onProgress,
     shellPath: args.shellPath,
     signal: args.signal,
   });
 
-  if (args.checkout.kind === "existing-branch") {
-    const existingWorktree = (
-      await listGitWorktrees(args.sourcePath, {
-        ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
-      })
-    ).find((worktree) => worktree.branchName === args.checkout.branchName);
-    if (existingWorktree) {
-      throw new WorkspaceError(
-        "branch_already_checked_out",
-        `Cannot continue branch ${args.checkout.branchName}; it is already checked out at ${existingWorktree.path}`,
-      );
-    }
-  }
-  const localBranchExists =
-    args.checkout.kind === "existing-branch" &&
-    (
-      await runGit(
-        [
-          "show-ref",
-          "--verify",
-          "--quiet",
-          `refs/heads/${args.checkout.branchName}`,
-        ],
-        {
-          cwd: args.sourcePath,
-          allowFailure: true,
-          ...(args.shellPath !== undefined
-            ? { shellPath: args.shellPath }
-            : {}),
-          signal: args.signal,
-        },
-      )
-    ).exitCode === 0;
-  if (
-    args.checkout.kind === "existing-branch" &&
-    localBranchExists &&
-    args.checkout.upstream !== null
-  ) {
-    const localHead = await runGit(
-      ["rev-parse", `refs/heads/${args.checkout.branchName}`],
-      {
-        cwd: args.sourcePath,
-        ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
-        signal: args.signal,
-      },
-    );
-    const remoteHead = await runGit(["rev-parse", args.checkout.startPoint], {
-      cwd: args.sourcePath,
-      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
-      signal: args.signal,
-    });
-    if (localHead.stdout.trim() !== remoteHead.stdout.trim()) {
-      throw new WorkspaceError(
-        "branch_ref_conflict",
-        `Cannot continue ${args.checkout.startPoint} because local branch ${args.checkout.branchName} points to a different commit`,
-      );
-    }
-  }
-  const gitArgs =
-    args.checkout.kind === "new-branch"
-      ? [
-          "worktree",
-          "add",
-          "-B",
-          args.checkout.branchName,
-          args.targetPath,
-          startPoint,
-        ]
-      : localBranchExists
-        ? ["worktree", "add", args.targetPath, args.checkout.branchName]
-        : [
-            "worktree",
-            "add",
-            "-b",
-            args.checkout.branchName,
-            args.targetPath,
-            startPoint,
-          ];
+  const gitArgs = [
+    "worktree",
+    "add",
+    "-B",
+    args.branchName,
+    args.targetPath,
+    baseBranch,
+  ];
   const worktreeStartedAt = Date.now();
   emitStep({
     onProgress: args.onProgress,
@@ -481,26 +418,6 @@ export async function createWorktree(
       metadata: { durationMs: Date.now() - worktreeStartedAt },
     });
     worktreeCreated = true;
-    if (
-      args.checkout.kind === "existing-branch" &&
-      args.checkout.upstream !== null
-    ) {
-      await runGit(
-        [
-          "branch",
-          "--set-upstream-to",
-          args.checkout.upstream,
-          args.checkout.branchName,
-        ],
-        {
-          cwd: args.targetPath,
-          ...(args.shellPath !== undefined
-            ? { shellPath: args.shellPath }
-            : {}),
-          signal: args.signal,
-        },
-      );
-    }
     emitCwd({
       onProgress: args.onProgress,
       keySuffix: "target",

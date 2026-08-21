@@ -110,7 +110,6 @@ import type {
   ProjectAttachmentUploadForm,
   ProjectBranchesQuery,
   ProjectBranchesResponse,
-  ProjectWorktreesResponse,
   ProjectCommandsQuery,
   ProjectDefaultExecutionOptionsQuery,
   ProjectFileContentQuery,
@@ -486,12 +485,6 @@ export const publicApiRoutes = {
         projectBranchesQuerySchema,
       ),
       response: jsonResponse<ProjectBranchesResponse>(),
-    }),
-    worktrees: defineRoute({
-      path: "/projects/:id/worktrees",
-      method: "get",
-      request: noRequest<PathProjectId>(),
-      response: jsonResponse<ProjectWorktreesResponse>(),
     }),
     uploadAttachment: defineRoute({
       path: "/projects/:id/attachments",

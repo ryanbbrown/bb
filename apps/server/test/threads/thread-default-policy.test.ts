@@ -204,10 +204,7 @@ describe("resolveCreateThreadEnvironment", () => {
     ).toEqual({
       type: "host",
       hostId: "host-1",
-      workspace: {
-        type: "managed-worktree",
-        checkout: { kind: "new-branch", baseBranch: { kind: "default" } },
-      },
+      workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     });
   });
 
@@ -225,10 +222,7 @@ describe("resolveCreateThreadEnvironment", () => {
     ).toEqual({
       type: "host",
       hostId: "host-1",
-      workspace: {
-        type: "managed-worktree",
-        checkout: { kind: "new-branch", baseBranch: { kind: "default" } },
-      },
+      workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     });
   });
 

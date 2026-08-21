@@ -1596,9 +1596,10 @@ export interface NewThreadComposerProps {
    *   selection submits `path: null` (the host's configured checkout). The
    *   composer itself never produces a non-null `path`, so real round trips
    *   are unaffected.
-   * - A `managed-worktree` with `checkout.kind` set to `new-branch` seeds New
-   *   branch mode and its base. An `existing-branch` checkout seeds Continue
-   *   branch mode and its selected branch.
+   * - A `managed-worktree` with `baseBranch: { kind: "default" }` leaves the
+   *   branch picker on its default, which may resolve to a named base branch
+   *   when the project configures a dedicated worktree base — the same branch
+   *   the original `default` submission would have created from.
    */
   defaultEnvironment?: CreateThreadEnvironmentArgs;
   /** Seeds the draft, only while the draft is still empty. */

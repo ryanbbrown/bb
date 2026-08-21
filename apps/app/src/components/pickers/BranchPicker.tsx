@@ -26,7 +26,11 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { Input } from "@bb/shared-ui/input";
 import { blurActiveKeyboardInputWithin } from "@bb/shared-ui/overlay-trigger";
-import { Popover, PopoverContent, PopoverTrigger } from "@bb/shared-ui/popover";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@bb/shared-ui/popover";
 import {
   OPTION_BASE_CLASS_NAME,
   OPTION_INTERACTIVE_CLASS_NAME,
@@ -95,7 +99,6 @@ const BRANCH_LABEL_PREFIXES = [
   "Checkout:",
   "New branch from:",
   "Branch from:",
-  "Continue:",
 ] as const;
 const CURRENT_PARENTHESES_LABEL_PREFIX = "Current (";
 const DETACHED_LABEL_PREFIX = "Detached";
@@ -150,7 +153,7 @@ interface BranchPickerSectionHeaderProps {
   className?: string;
 }
 
-export type BranchPickerMenuKind = "checkout" | "base" | "managed";
+export type BranchPickerMenuKind = "checkout" | "base";
 
 interface BranchPickerMenuCopy {
   title: string | null;
@@ -178,13 +181,6 @@ const BASE_BRANCH_MENU_COPY: BranchPickerMenuCopy = {
   currentSectionLabel: null,
   optionsSectionLabel: null,
   optionsUnavailableFallback: "Base branch selection is unavailable right now.",
-};
-
-const MANAGED_BRANCH_MENU_COPY: BranchPickerMenuCopy = {
-  title: null,
-  currentSectionLabel: null,
-  optionsSectionLabel: null,
-  optionsUnavailableFallback: "Branch selection is unavailable right now.",
 };
 
 interface BranchPickerUnavailableRowProps {
@@ -585,8 +581,6 @@ function getBranchPickerMenuCopy(
       return CHECKOUT_BRANCH_MENU_COPY;
     case "base":
       return BASE_BRANCH_MENU_COPY;
-    case "managed":
-      return MANAGED_BRANCH_MENU_COPY;
     case undefined:
       return GENERIC_BRANCH_MENU_COPY;
   }
@@ -665,7 +659,6 @@ export interface BranchPickerProps {
   triggerTitle?: string;
   emphasizeTriggerValue?: boolean;
   menuKind?: BranchPickerMenuKind;
-  managedMode?: "new" | "continue";
   currentOptionLabel?: string | null;
   currentOptionTitle?: string;
   onChange: (branch: string) => void;
@@ -684,7 +677,6 @@ export interface BranchPickerProps {
    * captures the user's intent.
    */
   onCreate?: () => void;
-  onContinue?: () => void;
   /**
    * When true, the trigger renders the create-new affordance instead of a
    * branch name. Pair with onCreate.
@@ -714,7 +706,6 @@ export function BranchPicker({
   triggerTitle,
   emphasizeTriggerValue = true,
   menuKind,
-  managedMode = "new",
   currentOptionLabel,
   currentOptionTitle,
   onChange,
@@ -726,7 +717,6 @@ export function BranchPicker({
   createDisabledReason,
   createDisabledTitle,
   onCreate,
-  onContinue,
   isCreatingNew = false,
   onOpenChange,
   className,
@@ -755,22 +745,17 @@ export function BranchPicker({
   );
   const menuCopy = getBranchPickerMenuCopy(menuKind);
   const isCheckoutMenu = menuKind === "checkout";
-  const isManagedMenu = menuKind === "managed";
   const activeCheckoutIntent = isCheckoutMenu
     ? checkoutIntent
-    : isManagedMenu
-      ? managedMode === "new"
-        ? "new"
-        : "checkout"
-      : selectedCheckoutIntent;
+    : selectedCheckoutIntent;
   const showBranchChooser =
-    (!isCheckoutMenu && !isManagedMenu) || activeCheckoutIntent !== "current";
+    !isCheckoutMenu || activeCheckoutIntent !== "current";
   const checkoutBranchSectionLabel =
-    activeCheckoutIntent === "new" ? "Branch from:" : "Continue:";
+    activeCheckoutIntent === "new" ? "Branch from:" : "Checkout:";
   const branchOptionsDisabled = Boolean(optionDisabledReason);
   const createDisabled = Boolean(createDisabledReason);
   const branchChooserDisabled =
-    (isCheckoutMenu || isManagedMenu) && activeCheckoutIntent === "new"
+    isCheckoutMenu && activeCheckoutIntent === "new"
       ? createDisabled
       : branchOptionsDisabled;
   const branchOptionGroups = useMemo(
@@ -804,17 +789,10 @@ export function BranchPicker({
   const filteredCheckoutTargetOptions = useMemo(
     () =>
       orderBranchPickerOptions({
-        options: isManagedMenu
-          ? filteredCombinedBranchOptions
-          : filteredLocalBranchOptions,
+        options: filteredLocalBranchOptions,
         selectedValue: value,
       }),
-    [
-      filteredCombinedBranchOptions,
-      filteredLocalBranchOptions,
-      isManagedMenu,
-      value,
-    ],
+    [filteredLocalBranchOptions, value],
   );
   const filteredBranchOptions = useMemo(
     () =>
@@ -825,7 +803,7 @@ export function BranchPicker({
     [filteredCombinedBranchOptions, value],
   );
   const activeEnterOptions =
-    (isCheckoutMenu || isManagedMenu) && activeCheckoutIntent === "checkout"
+    isCheckoutMenu && activeCheckoutIntent === "checkout"
       ? filteredCheckoutTargetOptions
       : filteredBranchOptions;
   const firstFilteredOption = activeEnterOptions[0];
@@ -903,7 +881,7 @@ export function BranchPicker({
     updateOpen(false);
   };
   const selectBranchAndClose = (branch: string) => {
-    if ((isCheckoutMenu || isManagedMenu) && activeCheckoutIntent === "new") {
+    if (isCheckoutMenu && activeCheckoutIntent === "new") {
       (onCreateBaseChange ?? onChange)(branch);
     } else {
       onChange(branch);
@@ -915,10 +893,7 @@ export function BranchPicker({
     closePicker();
   };
   const selectEnterBranch = (branch: string) => {
-    if (
-      (isCheckoutMenu || isManagedMenu) &&
-      activeCheckoutIntent === "checkout"
-    ) {
+    if (isCheckoutMenu && activeCheckoutIntent === "checkout") {
       selectCheckoutTarget(branch);
       return;
     }
@@ -1060,11 +1035,9 @@ export function BranchPicker({
                 sticky={!isCheckoutMenu}
               />
             ) : null}
-            {isCheckoutMenu || isManagedMenu ? (
+            {isCheckoutMenu ? (
               <>
-                {isCheckoutMenu &&
-                currentOptionItemLabel !== null &&
-                onClear ? (
+                {currentOptionItemLabel !== null && onClear ? (
                   <BranchPickerRowButton
                     icon="GitMerge"
                     label={currentOptionItemLabel}
@@ -1092,20 +1065,12 @@ export function BranchPicker({
                 ) : null}
                 <BranchPickerRowButton
                   icon="GitMerge"
-                  label={isManagedMenu ? "Continue branch" : "Checkout"}
-                  title={
-                    optionDisabledTitle ??
-                    (isManagedMenu
-                      ? "Continue an existing branch"
-                      : "Checkout an existing branch")
-                  }
+                  label="Checkout"
+                  title={optionDisabledTitle ?? "Checkout an existing branch"}
                   selected={activeCheckoutIntent === "checkout"}
                   disabled={branchOptionsDisabled}
                   onSelect={() => {
-                    if (isCheckoutMenu) {
-                      setCheckoutIntent("checkout");
-                    }
-                    onContinue?.();
+                    setCheckoutIntent("checkout");
                   }}
                 />
                 {showBranchChooser ? (
@@ -1142,9 +1107,7 @@ export function BranchPicker({
                               <p className="px-2 py-3 text-center text-xs text-muted-foreground">
                                 {loading
                                   ? "Loading branches..."
-                                  : isManagedMenu
-                                    ? "No branches found."
-                                    : "No local branches found."}
+                                  : "No local branches found."}
                               </p>
                             ) : null}
                           </>

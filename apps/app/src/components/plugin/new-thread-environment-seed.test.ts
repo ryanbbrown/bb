@@ -18,7 +18,6 @@ function roundTrip(
     defaultBranch: "main",
     defaultWorktreeBaseBranch: null,
     environmentValue: seed.selectionValue,
-    managedMode: seed.branch?.isNew === false ? "continue" : "new",
     projectId: PROJECT_ID,
     selectedBranch: seed.branch,
   });
@@ -39,10 +38,7 @@ describe("newThreadEnvironmentArgsToSeed round trip", () => {
       hostId: "host_1",
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "named", name: "release" },
-        },
+        baseBranch: { kind: "named", name: "release" },
       },
     };
     expect(roundTrip(environment)).toEqual(environment);
@@ -54,10 +50,7 @@ describe("newThreadEnvironmentArgsToSeed round trip", () => {
       hostId: "host_1",
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
+        baseBranch: { kind: "default" },
       },
     };
     expect(roundTrip(environment)).toEqual(environment);

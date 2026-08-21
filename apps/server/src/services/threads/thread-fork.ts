@@ -89,12 +89,9 @@ function resolveForkEnvironment(
     hostId: sourceEnvironment.hostId,
     workspace: {
       type: "managed-worktree",
-      checkout: {
-        kind: "new-branch",
-        baseBranch: sourceBranchName
-          ? { kind: "named", name: sourceBranchName }
-          : { kind: "default" },
-      },
+      baseBranch: sourceBranchName
+        ? { kind: "named", name: sourceBranchName }
+        : { kind: "default" },
     },
   };
 }

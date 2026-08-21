@@ -210,13 +210,10 @@ async function presetSpawnEnvironment(
     hostId,
     workspace: {
       type: "managed-worktree",
-      checkout: {
-        kind: "new-branch",
-        baseBranch:
-          preset.baseBranch === null
-            ? { kind: "default" }
-            : { kind: "named", name: preset.baseBranch },
-      },
+      baseBranch:
+        preset.baseBranch === null
+          ? { kind: "default" }
+          : { kind: "named", name: preset.baseBranch },
     },
   };
 }

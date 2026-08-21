@@ -210,10 +210,7 @@ describe("task delegation", () => {
             hostId: "host_remote",
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "named", name: "release/next" },
-              },
+              baseBranch: { kind: "named", name: "release/next" },
             },
           },
         }),
@@ -271,10 +268,7 @@ describe("task delegation", () => {
             hostId: "host_primary",
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),

@@ -72,7 +72,7 @@ async function createAndCaptureProvision(
   const managed = requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
   return {
     provision: {
-      baseBranch: managed.command.checkout.baseBranch,
+      baseBranch: managed.command.baseBranch,
       sourcePath: managed.command.sourcePath,
       workspaceProvisionType: managed.command.workspaceProvisionType,
     },
@@ -98,10 +98,7 @@ describe("project-default thread environment", () => {
           hostId: host.id,
           workspace: {
             type: "managed-worktree",
-            checkout: {
-              kind: "new-branch",
-              baseBranch: { kind: "default" },
-            },
+            baseBranch: { kind: "default" },
           },
         },
       });

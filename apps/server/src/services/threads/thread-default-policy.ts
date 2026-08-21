@@ -259,10 +259,7 @@ export async function resolveProjectDefaultThreadEnvironment(
       type: "managed-worktree",
       // Pin the inspected ref so downstream provisioning does not need to
       // inspect again or race a changing default branch.
-      checkout: {
-        kind: "new-branch",
-        baseBranch: { kind: "named", name: baseBranch },
-      },
+      baseBranch: { kind: "named", name: baseBranch },
     },
   };
 }
@@ -296,10 +293,7 @@ export function resolveCreateThreadEnvironment(
     return {
       type: "host",
       hostId: requireHostEnvironmentId(args.requestedEnvironment),
-      workspace: {
-        type: "managed-worktree",
-        checkout: { kind: "new-branch", baseBranch: { kind: "default" } },
-      },
+      workspace: { type: "managed-worktree", baseBranch: { kind: "default" } },
     };
   }
 

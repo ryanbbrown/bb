@@ -404,37 +404,6 @@ export function registerProjectCommands(
       }),
     );
 
-  project
-    .command("worktrees <id>")
-    .description("List Git worktrees for every project source machine")
-    .option("--json", "Print machine-readable JSON output")
-    .action(
-      action(async (id: string, opts: ProjectShowCommandOptions) => {
-        const result = await createCliBbSdk(getUrl()).projects.worktrees({
-          projectId: id,
-        });
-        if (outputJson(opts, result)) return;
-        if (result.worktrees.length === 0) {
-          console.log("No worktrees found.");
-          return;
-        }
-        console.log(
-          renderBorderlessTable(
-            {
-              head: ["BRANCH", "PATH", "MACHINE"],
-              colWidths: [32, 64, 28],
-              trimTrailingWhitespace: true,
-            },
-            result.worktrees.map((worktree) => [
-              worktree.branchName ?? "-",
-              worktree.path,
-              worktree.hostId,
-            ]),
-          ),
-        );
-      }),
-    );
-
   addProjectWorkspaceRoutingOptions(project.command("paths <id>"))
     .description("Search project workspace files and directories")
     .option("--query <query>", "Fuzzy path query")

@@ -6,13 +6,11 @@ interface BranchSelectionScopeArgs {
   projectId: string | undefined;
 }
 
-export interface UseScopedBranchSelectionResult {
-  managedMode: "new" | "continue";
+interface UseScopedBranchSelectionResult {
   onBranchChange: (name: string) => void;
   onClearBranch: () => void;
   onCreateBranch: (currentBranch: string | null) => void;
   onCreateBranchFrom: (name: string) => void;
-  onContinueBranch: () => void;
   selectedBranch: RootComposeSelectedBranch | null;
 }
 
@@ -50,7 +48,6 @@ export function useScopedBranchSelection(
   const scopeUsable = scopeKey !== null;
   const [selectedBranchState, setSelectedBranchState] =
     useState<RootComposeSelectedBranch | null>(null);
-  const [managedMode, setManagedMode] = useState<"new" | "continue">("new");
   const [trackedScopeKey, setTrackedScopeKey] = useState<string | null>(
     scopeKey,
   );
@@ -68,15 +65,11 @@ export function useScopedBranchSelection(
     if (selectedBranchState !== null) {
       setSelectedBranchState(null);
     }
-    if (managedMode !== "new") {
-      setManagedMode("new");
-    }
   }
 
   const onBranchChange = useCallback(
     (name: string) => {
       if (!scopeUsable) return;
-      setManagedMode("continue");
       setSelectedBranchState({ name, isNew: false });
     },
     [scopeUsable],
@@ -85,7 +78,6 @@ export function useScopedBranchSelection(
   const onCreateBranch = useCallback(
     (currentBranch: string | null) => {
       if (!scopeUsable) return;
-      setManagedMode("new");
       const branchName = selectedBranch?.name ?? currentBranch;
       setSelectedBranchState(
         branchName ? { name: branchName, isNew: true } : null,
@@ -97,7 +89,6 @@ export function useScopedBranchSelection(
   const onCreateBranchFrom = useCallback(
     (name: string) => {
       if (!scopeUsable) return;
-      setManagedMode("new");
       setSelectedBranchState({ name, isNew: true });
     },
     [scopeUsable],
@@ -108,19 +99,11 @@ export function useScopedBranchSelection(
     setSelectedBranchState(null);
   }, [scopeUsable]);
 
-  const onContinueBranch = useCallback(() => {
-    if (!scopeUsable) return;
-    setManagedMode("continue");
-    setSelectedBranchState(null);
-  }, [scopeUsable]);
-
   return {
-    managedMode,
     onBranchChange,
     onClearBranch,
     onCreateBranch,
     onCreateBranchFrom,
-    onContinueBranch,
     selectedBranch,
   };
 }

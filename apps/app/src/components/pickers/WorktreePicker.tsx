@@ -26,11 +26,11 @@ import {
 
 const REUSE_THREAD_PREVIEW_LIMIT = 2;
 
-/** One discovered or environment-backed worktree row. */
+/** One row in the worktree picker dropdown. Each row represents a worktree
+ * env in the project, surfaced through a representative thread so the user
+ * can identify which worktree they want by recognizing thread titles. */
 export interface ReuseThreadOption {
-  value: string;
-  environmentId: string | null;
-  path: string;
+  environmentId: string;
   branchName: string | null;
   name: string | null;
   /** Name of the machine this worktree lives on. Only set when more than one
@@ -42,9 +42,10 @@ export interface ReuseThreadOption {
 
 interface WorktreePickerProps {
   options: readonly ReuseThreadOption[];
-  /** Encoded selected worktree value, or null before selection. */
+  /** Currently-selected env id, or null when reuse mode is active but no
+   * worktree has been chosen yet. */
   value: string | null;
-  onChange: (value: string) => void;
+  onChange: (environmentId: string) => void;
   /** Match the dim hover-to-foreground treatment used inside the prompt box. */
   muted?: boolean;
   /** Render as a non-interactive label while preserving the selected worktree. */
@@ -71,7 +72,7 @@ export function WorktreePicker({
 }: WorktreePickerProps) {
   const branchIcon = getEnvironmentWorkspaceLabelIconName("managed-worktree");
   const activeOption = useMemo(
-    () => options.find((option) => option.value === value) ?? null,
+    () => options.find((option) => option.environmentId === value) ?? null,
     [options, value],
   );
   const triggerLabel =
@@ -127,9 +128,9 @@ export function WorktreePicker({
         ) : (
           options.map((option) => (
             <WorktreeMenuItem
-              key={option.value}
+              key={option.environmentId}
               option={option}
-              isSelected={option.value === value}
+              isSelected={option.environmentId === value}
               onSelect={onChange}
             />
           ))
@@ -142,7 +143,7 @@ export function WorktreePicker({
 interface WorktreeMenuItemProps {
   option: ReuseThreadOption;
   isSelected: boolean;
-  onSelect: (value: string) => void;
+  onSelect: (environmentId: string) => void;
 }
 
 function WorktreeMenuItem({
@@ -157,7 +158,7 @@ function WorktreeMenuItem({
   const branchDetail = option.name ? option.branchName : null;
   return (
     <DropdownMenuItem
-      onSelect={() => onSelect(option.value)}
+      onSelect={() => onSelect(option.environmentId)}
       className={cn(
         "flex flex-col items-stretch gap-1 py-2",
         LIST_HOVER_TRANSITION,
@@ -206,12 +207,6 @@ function WorktreeMenuItem({
           ) : null}
         </span>
       ) : null}
-      <span
-        className="truncate pl-6 text-xs text-muted-foreground"
-        title={option.path}
-      >
-        {option.path}
-      </span>
     </DropdownMenuItem>
   );
 }

@@ -229,23 +229,6 @@ export type ProjectBranchesResponse = z.infer<
   typeof projectBranchesResponseSchema
 >;
 
-export const projectWorktreeSchema = z
-  .object({
-    hostId: z.string().min(1),
-    path: z.string().min(1),
-    branchName: z.string().min(1).nullable(),
-    environmentId: z.string().min(1).nullable(),
-    environmentName: z.string().min(1).nullable(),
-  })
-  .strict();
-export const projectWorktreesResponseSchema = z.object({
-  worktrees: z.array(projectWorktreeSchema),
-});
-export type ProjectWorktree = z.infer<typeof projectWorktreeSchema>;
-export type ProjectWorktreesResponse = z.infer<
-  typeof projectWorktreesResponseSchema
->;
-
 export const projectAttachmentContentQuerySchema = z.object({
   path: z.string().min(1),
 });

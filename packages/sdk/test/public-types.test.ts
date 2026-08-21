@@ -321,8 +321,7 @@ type ExpectedProjectsKey =
   | "reorder"
   | "sidebarBootstrap"
   | "sources"
-  | "update"
-  | "worktrees";
+  | "update";
 
 type ExpectedProjectSourcesKey = "add" | "delete" | "update";
 type ExpectedProjectAttachmentsKey = "copy" | "read" | "upload";

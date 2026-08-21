@@ -27,8 +27,6 @@ import {
 import {
   listHostBranchOptions,
   listHostBranches,
-  listHostWorktrees,
-  resolveHostPaths,
 } from "./command-handlers/host-branches.js";
 import {
   installGlobalSkills,
@@ -633,8 +631,6 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
     readGlobalSkillsStatus(command, {}),
   "host.list_branch_options": listHostBranchOptions,
   "host.list_branches": listHostBranches,
-  "host.list_worktrees": listHostWorktrees,
-  "host.resolve_paths": resolveHostPaths,
   "host.file_metadata": readHostFileMetadata,
   "host.read_file": readHostFile,
   "host.read_file_relative": readHostRelativeFile,

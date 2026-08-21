@@ -10,14 +10,6 @@ Environment commands
 Environments determine where threads run. Multiple threads can share an environment
 (e.g., a coding thread and a review thread in the same worktree).
 
-The Existing worktree picker lists every Git worktree for the project. It also
-lists user-managed worktrees that no active bb thread uses. bb opens these paths
-as unmanaged environments and never removes them during thread cleanup.
-
-New worktrees create a generated bb branch by default. Select Continue branch
-in the branch picker to check out a local or remote branch directly. Cleanup
-removes the managed worktree and preserves the continued branch.
-
 Making your repo work with bb:
 
   Commit a .bb-env-setup.sh script at the repo root when new bb worktrees need

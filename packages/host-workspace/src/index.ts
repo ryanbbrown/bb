@@ -20,7 +20,6 @@ export {
   hasUncommittedChanges,
   listBranchRefsWithDefaults,
   listBranches,
-  listGitWorktrees,
   listRemoteBranches,
   readDefaultBranchRefs,
   readGitBlob,

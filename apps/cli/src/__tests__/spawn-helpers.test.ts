@@ -141,10 +141,7 @@ describe("buildSpawnEnvironment", () => {
       hostId: HOST_ID,
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
+        baseBranch: { kind: "default" },
       },
     });
   });
@@ -161,29 +158,7 @@ describe("buildSpawnEnvironment", () => {
       hostId: HOST_ID,
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "named", name: "release-1.2" },
-        },
-      },
-    });
-  });
-
-  it("returns existing branch intent for --continue-branch", () => {
-    expect(
-      buildSpawnEnvironment({
-        defaultPersonalWorkspace: false,
-        newEnvironmentKind: "worktree",
-        hostId: HOST_ID,
-        continueBranch: "origin/bb/pr-123",
-      }),
-    ).toMatchObject({
-      workspace: {
-        type: "managed-worktree",
-        checkout: {
-          kind: "existing-branch",
-          name: "origin/bb/pr-123",
-        },
+        baseBranch: { kind: "named", name: "release-1.2" },
       },
     });
   });
@@ -278,10 +253,7 @@ describe("buildSpawnEnvironment", () => {
       hostId: HOST_ID,
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
+        baseBranch: { kind: "default" },
       },
     });
   });

@@ -307,17 +307,6 @@ const ONLINE_RPC_RESPONSE_RESULT_FIXTURES: OnlineRpcResponseResultFixtures = {
       kind: "local",
     },
   },
-  "host.list_worktrees": {
-    worktrees: [{ path: "/workspace/project", branchName: "main" }],
-  },
-  "host.resolve_paths": {
-    paths: [
-      {
-        path: "/workspace/project",
-        canonicalPath: "/private/workspace/project",
-      },
-    ],
-  },
   "host.file_metadata": {
     path: "/tmp/report.html",
     modifiedAtMs: 1234,
@@ -1111,8 +1100,11 @@ describe("host-daemon command schemas", () => {
   // Version 118 rejects successful provider update results when the daemon
   // cannot verify a version change. Older daemons can report a no-op Claude
   // update as successful, so enrolled machines must update for honest results.
-  // Version 149 keeps Pi assistant starts on the legacy canonical item.
-  // Version 147 adds worktree discovery and managed checkout intents.
+  // Version 153 restores the upstream managed-worktree wire contract.
+  // Version 152 keeps Pi assistant starts on the legacy canonical item.
+  // Version 134 keeps replayed Codex resume/fork usage snapshots off turn ids
+  // bb never stored a turn/started for (token usage dropped, context usage
+  // thread-scoped).
   // Version 140 reports the daemon's browser-local helper port during session
   // open so remote pages can discover helpers on non-primary machines.
   // Version 139 keeps resumed Claude task notifications from claiming newly
@@ -1124,12 +1116,10 @@ describe("host-daemon command schemas", () => {
   // daemon's runtime would ignore as unknown notifications and render empty
   // timelines, so enrolled machines must update before receiving the new
   // artifacts.
-  // Version 134 keeps replayed Codex resume/fork usage snapshots off turn ids
-  // bb never stored a turn/started for (token usage dropped, context usage
-  // thread-scoped). Version 133 suppresses Claude's terminal-failure drain
-  // before it can open a provider-only turn. Version 132 deduplicates exact
-  // Codex terminal-item retries before they cross the daemon boundary. Version
-  // 131 preserves Pi provider identity on bridge resume. Version 117 adds
+  // Version 133 suppresses Claude's terminal-failure drain before it can open
+  // a provider-only turn. Version 132 deduplicates exact Codex terminal-item
+  // retries before they cross the daemon boundary. Version 131 preserves Pi
+  // provider identity on bridge resume. Version 117 adds
   // thread/context/cleared to the provider event wire model.
   // Version 116 reports provider exits that happen while a turn start is
   // pending. Older daemons can leave the server thread active until the live
@@ -1143,7 +1133,7 @@ describe("host-daemon command schemas", () => {
   // mixed version. Version 113 carried the Devin Desktop open target rename
   // and remains part of the protocol lineage.
   it("uses the current host-daemon protocol version", () => {
-    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(152);
+    expect(HOST_DAEMON_PROTOCOL_VERSION).toBe(153);
     expect(HOST_ARTIFACT_MAX_BYTES).toBe(256 * 1024 * 1024);
   });
 
@@ -1323,11 +1313,8 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-123",
-          baseBranch: "main",
-        },
+        branchName: "bb/env-123",
+        baseBranch: null,
         setupTimeoutMs: 900000,
       }),
     ).toMatchObject({
@@ -2799,10 +2786,7 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-123",
-        },
+        branchName: "bb/env-123",
         setupTimeoutMs: 900000,
       }),
     ).toThrow();
@@ -2852,11 +2836,8 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env lock",
-          baseBranch: "main",
-        },
+        branchName: "bb/env lock",
+        baseBranch: null,
         setupTimeoutMs: 900000,
       }).success,
     ).toBe(false);
@@ -2869,11 +2850,8 @@ describe("host-daemon command schemas", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: "/tmp/project",
         targetPath: "/tmp/project/.bb/env",
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-123",
-          baseBranch: "release lock",
-        },
+        branchName: "bb/env-123",
+        baseBranch: "release lock",
         setupTimeoutMs: 900000,
       }).success,
     ).toBe(false);

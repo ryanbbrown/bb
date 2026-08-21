@@ -134,10 +134,7 @@ function toWorkspaceArgs(
   if (workspace.type === "unmanaged") {
     return workspace;
   }
-  return {
-    ...workspace,
-    checkout: { kind: "new-branch", baseBranch: { kind: "default" } },
-  };
+  return { ...workspace, baseBranch: { kind: "default" } };
 }
 
 export function requireEnvironmentMergeBaseBranch(

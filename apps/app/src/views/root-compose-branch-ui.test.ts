@@ -142,7 +142,7 @@ describe("buildRootComposeBranchUiState", () => {
     });
   });
 
-  it("labels a continued worktree branch as a direct checkout", () => {
+  it("labels worktree branch selection as a base branch", () => {
     expect(
       buildRootComposeBranchUiState({
         checkout: cleanMainCheckout,
@@ -157,7 +157,7 @@ describe("buildRootComposeBranchUiState", () => {
     ).toMatchObject({
       currentBranch: "main",
       currentOptionLabel: "main",
-      triggerLabel: "Continue: release/1.2",
+      triggerLabel: "Branch from: release/1.2",
       mutationBlocker: null,
     });
   });

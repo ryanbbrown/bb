@@ -24,6 +24,7 @@ import type {
 import type { ProjectSelectorCreateProjectConfig } from "@/components/pickers/ProjectSelector";
 import {
   encodeHostValue,
+  encodeReuseValue,
   parseEnvironmentValue,
 } from "@/components/pickers/environment-picker-value";
 import { formatModelLoadErrorText } from "@/components/pickers/model-load-error-message";
@@ -44,7 +45,6 @@ import {
   stripProjectThreads,
   useProjectPromptHistory,
   useProjectSourceBranches,
-  useProjectWorktrees,
   type SidebarProject,
 } from "@/hooks/queries/project-queries";
 import { useSidebarNavigation } from "@/hooks/queries/sidebar-navigation-query";
@@ -452,8 +452,9 @@ export function NewThreadComposer({
       : new Map(hosts.map((host) => [host.id, host.name]));
   }, [hostsQuery.data]);
   // The sidebar bootstrap already carries every unarchived thread of the
-  // selected project. Discovery adds user-managed worktrees that have no bb
-  // environment yet.
+  // selected project (`projectId` always resolves to a project in it once it
+  // has loaded), so the worktree-reuse options derive from that cache instead
+  // of a second, refetch-prone `GET /threads?projectId=` per composer mount.
   const projectThreads = useMemo(() => {
     const navigation = sidebarNavigationQuery.data;
     if (!navigation) return undefined;
@@ -461,21 +462,13 @@ export function NewThreadComposer({
     return navigation.projects.find((project) => project.id === projectId)
       ?.threads;
   }, [isProjectless, projectId, sidebarNavigationQuery.data]);
-  const worktreesQuery = useProjectWorktrees(projectId, {
-    enabled: !isProjectless,
-  });
+  // While the bootstrap is still in flight the picker shows a loading label
+  // and no per-project request is issued (see B28).
   const reuseThreadOptionsLoading =
-    !isProjectless &&
-    (worktreesQuery.isLoading ||
-      (projectThreads === undefined && !sidebarNavigationSettled));
+    projectThreads === undefined && !sidebarNavigationSettled;
   const reuseThreadOptions = useMemo(
-    () =>
-      buildReuseThreadOptions(
-        projectThreads ?? [],
-        worktreesQuery.data?.worktrees ?? [],
-        worktreeHostNameById,
-      ),
-    [projectThreads, worktreeHostNameById, worktreesQuery.data?.worktrees],
+    () => buildReuseThreadOptions(projectThreads ?? [], worktreeHostNameById),
+    [projectThreads, worktreeHostNameById],
   );
 
   const seedSignature = JSON.stringify([
@@ -666,13 +659,11 @@ export function NewThreadComposer({
         ? "worktree"
         : "other";
   const {
-    managedMode: pickedManagedMode,
     selectedBranch: pickedBranch,
     onBranchChange,
     onClearBranch,
     onCreateBranch,
     onCreateBranchFrom,
-    onContinueBranch,
   } = useScopedBranchSelection({
     environmentValue: effectiveEnvironmentValue,
     projectId,
@@ -684,8 +675,6 @@ export function NewThreadComposer({
     effectiveEnvironmentValue === environmentSeed.selectionValue
       ? environmentSeed.branch
       : null);
-  const managedMode =
-    selectedBranch?.isNew === false ? "continue" : pickedManagedMode;
   const [branchSearchQuery, setBranchSearchQuery] = useState("");
   useEffect(() => {
     setBranchSearchQuery("");
@@ -812,11 +801,6 @@ export function NewThreadComposer({
     },
     [onCreateBranchFrom, selectedBranch, snapshotDraftBeforeOptionChange],
   );
-  const handleContinueBranch = useCallback(() => {
-    snapshotDraftBeforeOptionChange();
-    setBranchSeedOverridden(true);
-    onContinueBranch();
-  }, [onContinueBranch, snapshotDraftBeforeOptionChange]);
   const selectedEnvironment = useMemo(
     () =>
       resolveRootComposeThreadEnvironment({
@@ -824,7 +808,6 @@ export function NewThreadComposer({
         defaultWorktreeBaseBranch:
           branchesQuery.data?.defaultWorktreeBaseBranch,
         environmentValue: effectiveEnvironmentValue,
-        managedMode,
         projectId,
         selectedBranch,
       }),
@@ -832,7 +815,6 @@ export function NewThreadComposer({
       branchesQuery.data?.defaultBranch,
       branchesQuery.data?.defaultWorktreeBaseBranch,
       effectiveEnvironmentValue,
-      managedMode,
       projectId,
       selectedBranch,
     ],
@@ -949,11 +931,6 @@ export function NewThreadComposer({
   const reuseEnvironmentId =
     parsedEnvironment?.type === "reuse"
       ? parsedEnvironment.environmentId
-      : null;
-  const selectedWorktreeValue =
-    parsedEnvironment?.type === "reuse" ||
-    parsedEnvironment?.type === "worktree-path"
-      ? effectiveEnvironmentValue
       : null;
   const projectRouting = resolveRootComposeProjectRouting(
     parsedEnvironment,
@@ -1231,8 +1208,8 @@ export function NewThreadComposer({
     [refetchBranches],
   );
   const handleWorktreeChange = useCallback(
-    (value: string) => {
-      changeEnvironment(value);
+    (environmentId: string) => {
+      changeEnvironment(encodeReuseValue(environmentId));
     },
     [changeEnvironment],
   );
@@ -1307,35 +1284,19 @@ export function NewThreadComposer({
             },
             branch: {
               value:
-                branchEnvironmentMode === "worktree" &&
-                managedMode === "continue"
-                  ? (selectedBranch?.name ?? null)
-                  : (selectedBranch?.name ??
-                    (branchEnvironmentMode === "worktree"
-                      ? branchUiState.currentBranch
-                      : null)),
+                selectedBranch?.name ??
+                (branchEnvironmentMode === "worktree"
+                  ? branchUiState.currentBranch
+                  : null),
               currentBranch: branchUiState.currentBranch,
-              isNew:
-                branchEnvironmentMode === "worktree"
-                  ? managedMode === "new"
-                  : (selectedBranch?.isNew ?? false),
+              isNew: selectedBranch?.isNew ?? false,
               hidden: worktreeUnavailable,
               options: branchOptions,
               remoteOptions: remoteBranchOptions,
               loading: branchesQuery.isFetching,
               placeholder: branchUiState.placeholder,
-              triggerLabel:
-                branchEnvironmentMode === "worktree" &&
-                managedMode === "continue" &&
-                selectedBranch === null
-                  ? "Continue: Select branch"
-                  : branchUiState.triggerLabel,
-              triggerTitle:
-                branchEnvironmentMode === "worktree" &&
-                managedMode === "continue" &&
-                selectedBranch === null
-                  ? "Continue: Select branch"
-                  : branchUiState.triggerTitle,
+              triggerLabel: branchUiState.triggerLabel,
+              triggerTitle: branchUiState.triggerTitle,
               currentOptionLabel:
                 branchEnvironmentMode === "local"
                   ? branchUiState.currentOptionLabel
@@ -1352,15 +1313,13 @@ export function NewThreadComposer({
               onChange: handleBranchChange,
               onClear: handleClearBranch,
               onCreate: handleCreateBranch,
-              onContinue: handleContinueBranch,
-              managedMode,
               onCreateBaseChange: handleCreateBranchFrom,
               onOpenChange: handleBranchOpenChange,
               onSearchQueryChange: setBranchSearchQuery,
             },
             worktree: {
               options: reuseThreadOptions,
-              value: selectedWorktreeValue,
+              value: reuseEnvironmentId,
               onChange: handleWorktreeChange,
               disabled: locks.environment,
             },
@@ -1441,7 +1400,6 @@ export function NewThreadComposer({
       handleClearBranch,
       handleCreateBranch,
       handleCreateBranchFrom,
-      handleContinueBranch,
       handleEditorFocus,
       handleModelChange,
       handlePermissionChange,
@@ -1457,7 +1415,6 @@ export function NewThreadComposer({
       isProjectless,
       isSubmitting,
       isUploading,
-      managedMode,
       modelLoadError,
       modelLoadFailed,
       modelOptions,
@@ -1476,7 +1433,7 @@ export function NewThreadComposer({
       reasoningLevel,
       reasoningOptions,
       remoteBranchOptions,
-      selectedWorktreeValue,
+      reuseEnvironmentId,
       reuseThreadOptions,
       selectedBranch,
       selectedModel,

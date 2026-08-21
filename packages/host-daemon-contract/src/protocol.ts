@@ -1,3 +1,6 @@
+// Version 153 uses the upstream managed-worktree provisioning contract and
+// command set. Version 152 daemons expose incompatible personal-only fields.
+//
 // Version 152 preserves Pi's legacy canonical-item semantics while including
 // all wire changes through version 151.
 //
@@ -5,10 +8,6 @@
 // protocol, so consecutive assistant output without a tool boundary remains on
 // one canonical item. Version 148 daemons split those outputs into distinct
 // items and can send a different timeline to the server.
-//
-// Version 147 adds worktree discovery, canonical host path resolution, and
-// explicit managed checkout intents for new and continued branches. Older
-// daemons reject these commands and provisioning fields.
 //
 // Version 151 lets the daemon re-resolve an auto/steer turn target from its
 // live runtime after the server observed an active thread but before it had a
@@ -172,7 +171,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 152 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 153 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

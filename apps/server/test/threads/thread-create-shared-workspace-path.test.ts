@@ -3,7 +3,6 @@ import { PERSONAL_PROJECT_ID } from "@bb/domain";
 import { describe, expect, it } from "vitest";
 import { createThreadFromRequest } from "../../src/services/threads/thread-create.js";
 import { waitForQueuedCommand } from "../helpers/commands.js";
-import { registerHostRpcResponder } from "../helpers/host-rpc.js";
 import { textInput } from "../helpers/prompt-input.js";
 import {
   seedEnvironment,
@@ -16,62 +15,6 @@ import { withTestHarness } from "../helpers/test-app.js";
 const SHARED_PATH = "/tmp/shared-workspace-path-repo";
 
 describe("thread creation on a path another project already uses", () => {
-  it("reuses a project environment stored under an alias", async () => {
-    await withTestHarness(async (harness) => {
-      const { host, session } = seedHostSession(harness.deps, {
-        id: "host-canonical-environment-reuse",
-      });
-      const aliasPath = "/tmp/personal-worktree-alias";
-      const canonicalPath = "/tmp/personal-worktree";
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/project-source",
-      });
-      const environment = seedEnvironment(harness.deps, {
-        hostId: host.id,
-        projectId: project.id,
-        path: aliasPath,
-      });
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        restoreCommandCaptureAfterResponse: true,
-        handle: (request) => {
-          if (request.command.type !== "host.resolve_paths") {
-            throw new Error(`Unexpected command: ${request.command.type}`);
-          }
-          return {
-            ok: true,
-            result: {
-              paths: request.command.paths.map((candidate) => ({
-                path: candidate,
-                canonicalPath:
-                  candidate === aliasPath ? canonicalPath : candidate,
-              })),
-            },
-          };
-        },
-      });
-
-      const thread = await createThreadFromRequest(harness.deps, {
-        environment: {
-          type: "host",
-          hostId: host.id,
-          workspace: { type: "unmanaged", path: canonicalPath },
-        },
-        input: textInput("Use my personal worktree"),
-        model: "gpt-5",
-        origin: "app",
-        projectId: project.id,
-        providerId: "codex",
-        startedOnBehalfOf: null,
-      });
-
-      expect(thread.environmentId).toBe(environment.id);
-      expect(listEnvironments(harness.deps.db, project.id)).toHaveLength(1);
-    });
-  });
-
   it("creates a project-owned environment instead of failing on the personal claim", async () => {
     await withTestHarness(async (harness) => {
       const { host } = seedHostSession(harness.deps, {
@@ -178,11 +121,10 @@ describe("thread creation on a path another project already uses", () => {
 
   it("refuses to attach in place to another project's managed worktree", async () => {
     await withTestHarness(async (harness) => {
-      const { host, session } = seedHostSession(harness.deps, {
+      const { host } = seedHostSession(harness.deps, {
         id: "host-managed-alias",
       });
       const worktreePath = "/tmp/bb-worktrees/env_owner/repo";
-      const aliasPath = "/tmp/owner-worktree-alias";
       const { project: owner } = seedProjectWithSource(harness.deps, {
         hostId: host.id,
         name: "Owning Project",
@@ -200,37 +142,16 @@ describe("thread creation on a path another project already uses", () => {
         name: "Aliasing Project",
         path: "/tmp/aliasing-project",
       });
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        restoreCommandCaptureAfterResponse: true,
-        handle: (request) => {
-          if (request.command.type !== "host.resolve_paths") {
-            throw new Error(`Unexpected command: ${request.command.type}`);
-          }
-          return {
-            ok: true,
-            result: {
-              paths: request.command.paths.map((candidate) => ({
-                path: candidate,
-                canonicalPath:
-                  candidate === aliasPath ? worktreePath : candidate,
-              })),
-            },
-          };
-        },
-      });
 
       await expect(
         createThreadFromRequest(harness.deps, {
           environment: {
             type: "host",
             hostId: host.id,
-            workspace: { type: "unmanaged", path: aliasPath },
+            workspace: { type: "unmanaged", path: worktreePath },
           },
           input: textInput("Attach to the managed worktree"),
           origin: "app",
-          model: "gpt-5",
           projectId: project.id,
           providerId: "codex",
           startedOnBehalfOf: null,

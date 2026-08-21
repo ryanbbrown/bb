@@ -71,10 +71,7 @@ async function createNamedBaseBranchThread(
         hostId: host.id,
         workspace: {
           type: "managed-worktree",
-          checkout: {
-            kind: "new-branch",
-            baseBranch: { kind: "named", name: args.baseBranch },
-          },
+          baseBranch: { kind: "named", name: args.baseBranch },
         },
       },
     }),
@@ -86,7 +83,7 @@ async function createNamedBaseBranchThread(
     ({ command }) => command.type === "environment.provision",
   );
   return requireManagedWorktreeEnvironmentProvisionLiveCommand(queued).command
-    .checkout.baseBranch;
+    .baseBranch;
 }
 
 describe("named managed-worktree base branch", () => {
@@ -184,7 +181,7 @@ describe("named managed-worktree base branch", () => {
       );
       expect(
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued).command
-          .checkout.baseBranch,
+          .baseBranch,
       ).toBe("main");
     });
   });

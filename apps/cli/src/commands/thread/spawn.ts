@@ -37,7 +37,6 @@ interface ThreadSpawnCommandOptions {
   environment?: string;
   newEnvironment?: string;
   baseBranch?: string;
-  continueBranch?: string;
   parentThread?: string;
   provider?: string;
   model?: string;
@@ -106,7 +105,6 @@ export function buildSpawnEnvironment(args: {
   newEnvironmentKind?: string;
   hostId: string | null;
   baseBranch?: string;
-  continueBranch?: string;
 }): EnvironmentArgs {
   const environmentValue = args.environmentValue?.trim();
   const newEnvironmentKind = args.newEnvironmentKind?.trim();
@@ -114,7 +112,6 @@ export function buildSpawnEnvironment(args: {
   const baseBranch: BaseBranchSpec = trimmedBaseBranch
     ? { kind: "named", name: trimmedBaseBranch }
     : { kind: "default" };
-  const continueBranch = args.continueBranch?.trim();
 
   if (environmentValue && newEnvironmentKind) {
     throw new Error("Cannot combine --environment with --new-environment.");
@@ -122,23 +119,12 @@ export function buildSpawnEnvironment(args: {
   if (trimmedBaseBranch && newEnvironmentKind !== "worktree") {
     throw new Error("--base-branch requires --new-environment worktree.");
   }
-  if (continueBranch && newEnvironmentKind !== "worktree") {
-    throw new Error("--continue-branch requires --new-environment worktree.");
-  }
-  if (continueBranch && trimmedBaseBranch) {
-    throw new Error("Cannot combine --continue-branch with --base-branch.");
-  }
   if (newEnvironmentKind) {
     if (newEnvironmentKind === "worktree") {
       return {
         type: "host",
         hostId: requireHostId(args.hostId),
-        workspace: {
-          type: "managed-worktree",
-          checkout: continueBranch
-            ? { kind: "existing-branch", name: continueBranch }
-            : { kind: "new-branch", baseBranch },
-        },
+        workspace: { type: "managed-worktree", baseBranch },
       };
     }
     throw new Error(
@@ -195,10 +181,6 @@ export function registerSpawnCommand(
     .option(
       "--base-branch <branch>",
       "Base branch for new managed worktrees. Omit to let bb choose the project's default worktree base; naming the default branch fetches and prefers origin the same way.",
-    )
-    .option(
-      "--continue-branch <branch>",
-      "Check out an existing branch directly in the new managed worktree",
     )
     .option(
       "--machine <id-or-name>",
@@ -285,7 +267,6 @@ export function registerSpawnCommand(
           newEnvironmentKind: opts.newEnvironment,
           hostId,
           baseBranch: opts.baseBranch,
-          continueBranch: opts.continueBranch,
         });
         const reasoningLevel = parseReasoningLevel(opts.reasoningLevel);
         const serviceTier = parseServiceTier(opts.serviceTier);

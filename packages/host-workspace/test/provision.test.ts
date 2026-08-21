@@ -460,11 +460,8 @@ describe("provisionWorkspace", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: repoPath,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-test",
-          baseBranch: "main",
-        },
+        branchName: "bb/env-test",
+        baseBranch: "main",
         timeoutMs: 900000,
       });
 
@@ -484,11 +481,8 @@ describe("provisionWorkspace", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: repoPath,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-roots",
-          baseBranch: "main",
-        },
+        branchName: "bb/env-roots",
+        baseBranch: "main",
         timeoutMs: 900000,
       });
       const gitDir = (
@@ -519,11 +513,8 @@ describe("provisionWorkspace", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: repoPath,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-destroy",
-          baseBranch: "main",
-        },
+        branchName: "bb/env-destroy",
+        baseBranch: "main",
         timeoutMs: 900000,
       });
 
@@ -538,34 +529,6 @@ describe("provisionWorkspace", () => {
       expect(worktrees.stdout).not.toContain(targetPath);
     });
 
-    it("destroy() preserves a continued branch", async () => {
-      const repoPath = await initRepo();
-      await runGit(["branch", "continued-pr"], { cwd: repoPath });
-      const parentDir = await makeTempDir("bb-provision-continued-destroy-");
-      const targetPath = path.join(parentDir, "bb");
-      const ws = await provisionWorkspace({
-        workspaceProvisionType: "managed-worktree",
-        sourcePath: repoPath,
-        targetPath,
-        checkout: {
-          kind: "existing-branch",
-          branchName: "continued-pr",
-          startPoint: "continued-pr",
-          upstream: null,
-        },
-        timeoutMs: 900000,
-      });
-
-      await ws.destroy();
-
-      await expect(fs.stat(targetPath)).rejects.toThrow();
-      await expect(
-        runGit(["show-ref", "--verify", "refs/heads/continued-pr"], {
-          cwd: repoPath,
-        }),
-      ).resolves.toBeDefined();
-    });
-
     it("runs the supported setup script after provisioning", async () => {
       const repoPath = await initRepo({
         setupScript: "echo worktree-setup-ran > setup-marker.txt\n",
@@ -577,11 +540,8 @@ describe("provisionWorkspace", () => {
         workspaceProvisionType: "managed-worktree",
         sourcePath: repoPath,
         targetPath,
-        checkout: {
-          kind: "new-branch",
-          branchName: "bb/env-script",
-          baseBranch: "main",
-        },
+        branchName: "bb/env-script",
+        baseBranch: "main",
         timeoutMs: 900000,
       });
 
@@ -605,11 +565,8 @@ describe("provisionWorkspace", () => {
           workspaceProvisionType: "managed-worktree",
           sourcePath: repoPath,
           targetPath,
-          checkout: {
-            kind: "new-branch",
-            branchName: "bb/env-fail",
-            baseBranch: "main",
-          },
+          branchName: "bb/env-fail",
+          baseBranch: "main",
           timeoutMs: 900000,
         }),
       ).rejects.toThrow(/Setup script failed/u);

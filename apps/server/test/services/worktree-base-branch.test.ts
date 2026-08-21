@@ -54,6 +54,7 @@ describe("resolveDefaultWorktreeBaseBranch", () => {
     }
   });
 });
+
 describe("resolveManagedDefaultBaseBranchSpec", () => {
   it("returns a named branch when the computed default differs from local", () => {
     expect(

@@ -11,7 +11,6 @@ import {
   getProjectSourceForProject,
   listProjectExecutionDefaultsByProjectIds,
   listPublicProjects,
-  listEnvironments,
   listProjectSourcesByProjectIds,
   listThreadSections,
   listThreadsWithPendingInteractionStateForProjects,
@@ -30,7 +29,6 @@ import {
   type ProjectListQuery,
   type ProjectResponse,
   type ProjectWithThreadsResponse,
-  type ProjectWorktree,
   type PublicApiSchema,
 } from "@bb/server-contract";
 import type { Hono } from "hono";
@@ -42,7 +40,6 @@ import {
   readAttachment,
   storeAttachment,
 } from "../services/projects/attachments.js";
-import { resolveCanonicalHostPaths } from "../services/hosts/canonical-paths.js";
 import {
   requireNonDestroyedHostWithStatus,
   requireProject,
@@ -862,87 +859,6 @@ export function registerProjectRoutes(app: Hono, deps: AppDeps): void {
     return context.json({
       ...result,
       defaultWorktreeBaseBranch: resolveDefaultWorktreeBaseBranch(result),
-    });
-  });
-
-  get(routes.worktrees, async (context) => {
-    const projectId = context.req.param("id");
-    requirePublicStandardProject(deps.db, projectId);
-    const environments = listEnvironments(deps.db, projectId).filter(
-      (environment) =>
-        environment.isWorktree &&
-        environment.path !== null &&
-        environment.status !== "destroyed",
-    );
-    const sources = listProjectSourcesByProjectIds(deps.db, [projectId]).filter(
-      (source) => source.type === "local_path",
-    );
-    const discoveries = await Promise.all(
-      sources.map(async (source) => {
-        try {
-          const hostEnvironments = environments.filter(
-            (environment) => environment.hostId === source.hostId,
-          );
-          const [discovery, canonicalPaths] = await Promise.all([
-            callHostRetryableOnlineRpc(deps, {
-              hostId: source.hostId,
-              timeoutMs: COMMAND_TIMEOUT_MS,
-              command: { type: "host.list_worktrees", path: source.path },
-            }).catch(() => ({ worktrees: [] })),
-            resolveCanonicalHostPaths(deps, {
-              hostId: source.hostId,
-              paths: hostEnvironments.flatMap((environment) =>
-                environment.path === null ? [] : [environment.path],
-              ),
-            }).catch(() => new Map<string, string | null>()),
-          ]);
-          return { canonicalPaths, discovery };
-        } catch {
-          return {
-            canonicalPaths: new Map<string, string | null>(),
-            discovery: { worktrees: [] },
-          };
-        }
-      }),
-    );
-    const worktreesByHostPath = new Map<string, ProjectWorktree>();
-    for (const environment of environments) {
-      if (environment.path === null) continue;
-      const sourceIndex = sources.findIndex(
-        (source) => source.hostId === environment.hostId,
-      );
-      const canonicalPath =
-        (sourceIndex >= 0
-          ? discoveries[sourceIndex]?.canonicalPaths.get(environment.path)
-          : null) ?? environment.path;
-      worktreesByHostPath.set(`${environment.hostId}\0${canonicalPath}`, {
-        hostId: environment.hostId,
-        path: canonicalPath,
-        branchName: environment.branchName,
-        environmentId: environment.id,
-        environmentName: environment.name,
-      });
-    }
-    for (let index = 0; index < sources.length; index += 1) {
-      const source = sources[index];
-      const result = discoveries[index];
-      if (!source || !result) continue;
-      for (const worktree of result.discovery.worktrees) {
-        const key = `${source.hostId}\0${worktree.path}`;
-        const existing = worktreesByHostPath.get(key);
-        worktreesByHostPath.set(key, {
-          hostId: source.hostId,
-          path: worktree.path,
-          branchName: worktree.branchName ?? existing?.branchName ?? null,
-          environmentId: existing?.environmentId ?? null,
-          environmentName: existing?.environmentName ?? null,
-        });
-      }
-    }
-    return context.json({
-      worktrees: [...worktreesByHostPath.values()].sort((left, right) =>
-        left.path.localeCompare(right.path),
-      ),
     });
   });
 

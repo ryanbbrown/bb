@@ -24,6 +24,7 @@ export function resolveDefaultWorktreeBaseBranch(
   }
   return args.defaultBranch;
 }
+
 export function resolveManagedDefaultBaseBranchSpec(
   args: ResolveDefaultWorktreeBaseBranchArgs,
 ): BaseBranchSpec {

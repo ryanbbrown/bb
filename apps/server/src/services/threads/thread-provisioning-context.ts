@@ -8,7 +8,10 @@ import {
   type PromptInput,
   type ResolvedThreadExecutionOptions,
 } from "@bb/domain";
-import { unmanagedBranchSpecSchema } from "@bb/server-contract";
+import {
+  baseBranchSpecSchema,
+  unmanagedBranchSpecSchema,
+} from "@bb/server-contract";
 
 const directUnmanagedIntentSchema = z.object({
   type: z.literal("direct-unmanaged"),
@@ -30,18 +33,7 @@ const directManagedIntentSchema = z.object({
   type: z.literal("direct-managed"),
   hostId: z.string().min(1),
   sourcePath: z.string().min(1),
-  checkout: z.discriminatedUnion("kind", [
-    z.object({
-      kind: z.literal("new-branch"),
-      baseBranch: z.string().min(1),
-    }),
-    z.object({
-      kind: z.literal("existing-branch"),
-      branchName: z.string().min(1),
-      startPoint: z.string().min(1),
-      upstream: z.string().min(1).nullable(),
-    }),
-  ]),
+  baseBranch: baseBranchSpecSchema,
   workspaceProvisionType: z.literal("managed-worktree"),
 });
 

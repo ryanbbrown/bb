@@ -450,31 +450,6 @@ describe("git branch name contract", () => {
       }).success,
     ).toBe(false);
     expect(
-      contract.managedWorktreeWorkspaceSchema.safeParse({
-        type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "named", name: "release/1.2" },
-        },
-      }).success,
-    ).toBe(true);
-    expect(
-      contract.managedWorktreeWorkspaceSchema.safeParse({
-        type: "managed-worktree",
-        checkout: { kind: "existing-branch", name: "origin/bb/pr-42" },
-      }).success,
-    ).toBe(true);
-    expect(
-      contract.managedWorktreeWorkspaceSchema.safeParse({
-        type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: { kind: "default" },
-        },
-        baseBranch: { kind: "default" },
-      }).success,
-    ).toBe(false);
-    expect(
       unmanagedBranchSpecSchema.safeParse({
         kind: "new",
         baseBranch: "release/1.2",

@@ -23,8 +23,7 @@ Spawning:
     --reasoning-level <level>      Reasoning level: low, medium, high, xhigh, max (provider-dependent)
     --environment <id-or-path>     Attach to an existing environment (ID or workspace path)
     --new-environment <kind>       Create a new environment (worktree)
-    --base-branch <branch>         Base branch for a new generated branch
-    --continue-branch <branch>     Check out an existing branch directly
+    --base-branch <branch>         Base branch for a new managed worktree
     --machine <id-or-name>         Run on a machine (--host is an alias)
     --service-tier <tier>          Service tier: fast, default
     --permission-mode <mode>       Permission mode: accept-edits, auto, or full
@@ -60,10 +59,6 @@ Spawning:
   workspace. It cannot be combined with an existing environment ID because that
   environment already selects its machine. Without the flag, local/primary
   machine resolution is unchanged.
-  New managed worktrees create a generated bb branch by default. Add
-  --continue-branch <local-or-remote-branch> to reopen an existing branch.
-  A continued remote branch gets a local tracking branch, so git push updates
-  the selected remote branch.
 
 Forking:
 

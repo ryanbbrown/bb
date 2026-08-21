@@ -880,10 +880,7 @@ describe("bb thread spawn command output", () => {
           hostId: "host-test-001",
           workspace: {
             type: "managed-worktree",
-            checkout: {
-              kind: "new-branch",
-              baseBranch: { kind: "default" },
-            },
+            baseBranch: { kind: "default" },
           },
         },
       },
@@ -1036,53 +1033,7 @@ describe("bb thread spawn command output", () => {
           hostId: "host-remote",
           workspace: {
             type: "managed-worktree",
-            checkout: {
-              kind: "new-branch",
-              baseBranch: { kind: "named", name: "main" },
-            },
-          },
-        },
-      }),
-    });
-  });
-
-  it("bb thread spawn continues a remote branch in a managed worktree", async () => {
-    const post = vi.fn(async () =>
-      fixtures.makeThread({
-        id: "thread-continue-branch",
-        projectId: "proj-1",
-        providerId: "codex",
-      }),
-    );
-    stubServerApi({ "v1.threads.$post": post });
-
-    await runCommand(
-      [
-        "thread",
-        "spawn",
-        "--project",
-        "proj-1",
-        "--new-environment",
-        "worktree",
-        "--continue-branch",
-        "origin/bb/pr-42",
-        "--prompt",
-        "Continue the pull request",
-      ],
-      register,
-    );
-
-    expect(post).toHaveBeenCalledWith({
-      json: expect.objectContaining({
-        environment: {
-          type: "host",
-          hostId: "host-test-001",
-          workspace: {
-            type: "managed-worktree",
-            checkout: {
-              kind: "existing-branch",
-              name: "origin/bb/pr-42",
-            },
+            baseBranch: { kind: "named", name: "main" },
           },
         },
       }),

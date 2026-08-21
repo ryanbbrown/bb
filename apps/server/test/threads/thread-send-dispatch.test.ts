@@ -17,7 +17,6 @@ import {
   reportQueuedCommandError,
   waitForQueuedCommand,
 } from "../helpers/commands.js";
-import { registerIdentityPathHostRpcResponder } from "../helpers/host-rpc.js";
 import { textInput } from "../helpers/prompt-input.js";
 import {
   seedEnvironment,
@@ -33,7 +32,6 @@ import { withTestHarness, type TestAppHarness } from "../helpers/test-app.js";
 
 interface IdleThreadFixture {
   environment: Environment;
-  sessionId: string;
   thread: Thread;
 }
 
@@ -53,7 +51,7 @@ interface SeedProviderThreadFixtureArgs extends SeedIdleThreadFixtureArgs {
 function seedProviderThreadFixture(
   args: SeedProviderThreadFixtureArgs,
 ): IdleThreadFixture {
-  const { host, session } = seedHostSession(args.harness.deps, {
+  const { host } = seedHostSession(args.harness.deps, {
     id: `host-send-dispatch-${args.value}`,
   });
   const { project } = seedProjectWithSource(args.harness.deps, {
@@ -77,7 +75,7 @@ function seedProviderThreadFixture(
     threadId: thread.id,
   });
 
-  return { environment, sessionId: session.id, thread };
+  return { environment, thread };
 }
 
 /**
@@ -88,7 +86,7 @@ function seedProviderThreadFixture(
 function seedColdIdleThreadFixture(
   args: SeedIdleThreadFixtureArgs,
 ): IdleThreadFixture {
-  const { host, session } = seedHostSession(args.harness.deps, {
+  const { host } = seedHostSession(args.harness.deps, {
     id: `host-send-dispatch-${args.value}`,
   });
   const { project } = seedProjectWithSource(args.harness.deps, {
@@ -107,7 +105,7 @@ function seedColdIdleThreadFixture(
     status: "idle",
   });
 
-  return { environment, sessionId: session.id, thread };
+  return { environment, thread };
 }
 
 function installTelemetryCaptureSpy(harness: TestAppHarness) {
@@ -494,7 +492,7 @@ describe("idle cold-start activation", () => {
 
   it("resumes provider continuity after an environment directory update", async () => {
     await withTestHarness(async (harness) => {
-      const { environment, sessionId, thread } = seedProviderThreadFixture({
+      const { environment, thread } = seedProviderThreadFixture({
         harness,
         value: 4,
       });
@@ -510,10 +508,6 @@ describe("idle cold-start activation", () => {
         sequence: 3,
         threadId: thread.id,
         turnId: "turn_before_switch",
-      });
-      registerIdentityPathHostRpcResponder(harness, {
-        hostId: environment.hostId,
-        sessionId,
       });
       const updateResult = await handleUpdateEnvironmentDirectoryToolCall(
         harness.deps,

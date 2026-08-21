@@ -271,12 +271,9 @@ async function buildAgentEnvironment(
       hostId: await resolveConnectedHostId(bb),
       workspace: {
         type: "managed-worktree",
-        checkout: {
-          kind: "new-branch",
-          baseBranch: baseBranch
-            ? { kind: "named", name: baseBranch }
-            : { kind: "default" },
-        },
+        baseBranch: baseBranch
+          ? { kind: "named", name: baseBranch }
+          : { kind: "default" },
       },
     };
   }

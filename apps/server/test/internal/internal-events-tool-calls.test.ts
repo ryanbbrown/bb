@@ -25,10 +25,6 @@ import {
 } from "../helpers/commands.js";
 import { readJson } from "../helpers/json.js";
 import {
-  registerHostRpcResponder,
-  registerIdentityPathHostRpcResponder,
-} from "../helpers/host-rpc.js";
-import {
   seedEvent,
   seedEnvironment,
   seedHostSession,
@@ -1136,10 +1132,6 @@ describe("internal event and tool-call routes", () => {
           providerThreadId: "provider-tool-call",
         },
       });
-      registerIdentityPathHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-      });
 
       const response = await postToolCall({
         harness,
@@ -1207,25 +1199,6 @@ describe("internal event and tool-call routes", () => {
         scope: turnScope("turn-new-environment"),
         data: {
           providerThreadId: "provider-tool-call",
-        },
-      });
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        restoreCommandCaptureAfterResponse: true,
-        handle: (request) => {
-          if (request.command.type !== "host.resolve_paths") {
-            throw new Error(`Unexpected command: ${request.command.type}`);
-          }
-          return {
-            ok: true,
-            result: {
-              paths: request.command.paths.map((candidate) => ({
-                path: candidate,
-                canonicalPath: candidate,
-              })),
-            },
-          };
         },
       });
 
@@ -1348,10 +1321,6 @@ describe("internal event and tool-call routes", () => {
           providerThreadId: "provider-tool-call",
         },
       });
-      registerIdentityPathHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-      });
 
       const responsePromise = postToolCall({
         harness,
@@ -1435,10 +1404,6 @@ describe("internal event and tool-call routes", () => {
         type: "turn/started",
         scope: turnScope("turn-managed-alias"),
         data: { providerThreadId: "provider-tool-call" },
-      });
-      registerIdentityPathHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
       });
 
       const response = await postToolCall({

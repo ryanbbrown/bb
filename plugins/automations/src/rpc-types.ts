@@ -31,17 +31,12 @@ export const workspaceArgsSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("managed-worktree"),
-      checkout: z
-        .object({
-          kind: z.literal("new-branch"),
-          baseBranch: z.discriminatedUnion("kind", [
-            z
-              .object({ kind: z.literal("named"), name: z.string().min(1) })
-              .strict(),
-            z.object({ kind: z.literal("default") }).strict(),
-          ]),
-        })
-        .strict(),
+      baseBranch: z.discriminatedUnion("kind", [
+        z
+          .object({ kind: z.literal("named"), name: z.string().min(1) })
+          .strict(),
+        z.object({ kind: z.literal("default") }).strict(),
+      ]),
     })
     .strict(),
   z.object({ type: z.literal("personal") }).strict(),

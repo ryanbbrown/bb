@@ -256,29 +256,6 @@ describe("bb project command output", () => {
     ]);
   });
 
-  it("bb project worktrees lists discovered user worktrees", async () => {
-    const result = {
-      worktrees: [
-        {
-          hostId: "host-builder",
-          path: "/srv/bb-personal",
-          branchName: "personal",
-          environmentId: null,
-          environmentName: null,
-        },
-      ],
-    };
-    const get = vi.fn(async () => result);
-    stubServerApi({ "v1.projects.:id.worktrees.$get": get });
-
-    await runCommand(["project", "worktrees", "proj-1", "--json"], register);
-
-    expect(get).toHaveBeenCalledWith({ param: { id: "proj-1" } });
-    expect(
-      JSON.parse(String(vi.mocked(console.log).mock.calls[0]?.[0])),
-    ).toEqual(result);
-  });
-
   it("bb project files resolves a machine name and prints JSON", async () => {
     const getFiles = vi.fn(async () => ({
       files: [{ name: "remote.txt", path: "remote.txt" }],

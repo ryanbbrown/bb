@@ -18,7 +18,6 @@ import {
   waitForQueuedCommandAfter,
 } from "../helpers/commands.js";
 import { readJson } from "../helpers/json.js";
-import { registerHostRpcResponder } from "../helpers/host-rpc.js";
 import { textInput } from "../helpers/prompt-input.js";
 import {
   seedEnvironment,
@@ -121,10 +120,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -143,97 +139,10 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
+      expect(managedCommand.command.branchName).toBe(
         `bb/improve-branch-names-${thread.id}`,
       );
       expect(piAiMocks.complete).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  it("resolves a remote branch into a direct managed checkout", async () => {
-    await withTestHarness(async (harness) => {
-      const { host, session } = seedHostSession(harness.deps, {
-        id: "host-continue-branch",
-      });
-      const { project } = seedProjectWithSource(harness.deps, {
-        hostId: host.id,
-        path: "/tmp/continue-branch-project",
-      });
-      registerHostRpcResponder(harness, {
-        hostId: host.id,
-        sessionId: session.id,
-        restoreCommandCaptureAfterResponse: true,
-        handle: (request) => {
-          expect(request.command).toEqual({
-            type: "host.list_branches",
-            path: "/tmp/continue-branch-project",
-            selectedBranch: "origin/bb/pr-42",
-            limit: 1,
-          });
-          return {
-            ok: true,
-            result: {
-              branches: ["main"],
-              branchesTruncated: false,
-              checkout: {
-                kind: "branch",
-                branchName: "main",
-                headSha: "abc123",
-              },
-              defaultBranch: "main",
-              defaultBranchRelation: "equal",
-              hasUncommittedChanges: false,
-              operation: { kind: "none" },
-              originDefaultBranch: "origin/main",
-              remoteBranches: ["origin/main", "origin/bb/pr-42"],
-              remoteBranchesTruncated: false,
-              selectedBranch: {
-                name: "origin/bb/pr-42",
-                kind: "remote",
-              },
-            },
-          };
-        },
-      });
-
-      const response = await harness.app.request("/api/v1/threads", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          origin: "app",
-          projectId: project.id,
-          providerId: "codex",
-          model: "gpt-5",
-          input: [{ type: "text", text: "Continue the pull request" }],
-          environment: {
-            type: "host",
-            hostId: host.id,
-            workspace: {
-              type: "managed-worktree",
-              checkout: {
-                kind: "existing-branch",
-                name: "origin/bb/pr-42",
-              },
-            },
-          },
-        }),
-      });
-
-      expect(response.status).toBe(201);
-      const queued = await waitForQueuedCommand(
-        harness,
-        ({ command }) => command.type === "environment.provision",
-      );
-      expect(queued.command).toMatchObject({
-        type: "environment.provision",
-        workspaceProvisionType: "managed-worktree",
-        checkout: {
-          kind: "existing-branch",
-          branchName: "bb/pr-42",
-          startPoint: "origin/bb/pr-42",
-          upstream: "origin/bb/pr-42",
-        },
-      });
     });
   });
 
@@ -279,10 +188,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -334,7 +240,7 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
+      expect(managedCommand.command.branchName).toBe(
         `bb/early-visible-provisioning-${thread.id}`,
       );
     });
@@ -374,7 +280,7 @@ describe("generated managed branch names", () => {
           type: "direct-managed",
           hostId: host.id,
           sourcePath: source.path,
-          checkout: { kind: "new-branch", baseBranch: "main" },
+          baseBranch: { kind: "default" },
           workspaceProvisionType: "managed-worktree",
         },
         execution: THREAD_START_EXECUTION,
@@ -485,10 +391,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -557,7 +460,7 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
+      expect(managedCommand.command.branchName).toBe(
         `bb/prepared-sweep-safe-${thread.id}`,
       );
       expect(
@@ -603,10 +506,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -620,7 +520,7 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
+      expect(managedCommand.command.branchName).toBe(
         `bb/recovered-managed-metadata-${thread.id}`,
       );
       expect(piAiMocks.complete).toHaveBeenCalledTimes(2);
@@ -660,10 +560,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -824,10 +721,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -841,7 +735,7 @@ describe("generated managed branch names", () => {
       );
       const managedProvision =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(provision);
-      expect(managedProvision.command.checkout.branchName).toBe(
+      expect(managedProvision.command.branchName).toBe(
         `bb/user-picked-title-${thread.id}`,
       );
       await reportQueuedCommandSuccess(
@@ -1154,10 +1048,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -1173,9 +1064,7 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
-        `bb/${thread.id}`,
-      );
+      expect(managedCommand.command.branchName).toBe(`bb/${thread.id}`);
       expect(piAiMocks.complete).toHaveBeenCalledTimes(1);
     });
   });
@@ -1214,10 +1103,7 @@ describe("generated managed branch names", () => {
               hostId: host.id,
               workspace: {
                 type: "managed-worktree",
-                checkout: {
-                  kind: "new-branch",
-                  baseBranch: { kind: "default" },
-                },
+                baseBranch: { kind: "default" },
               },
             },
           }),
@@ -1231,9 +1117,7 @@ describe("generated managed branch names", () => {
         );
         const managedCommand =
           requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-        expect(managedCommand.command.checkout.branchName).toBe(
-          `bb/${thread.id}`,
-        );
+        expect(managedCommand.command.branchName).toBe(`bb/${thread.id}`);
         expect(piAiMocks.getModel).toHaveBeenCalledWith(
           "openai",
           "gpt-4o-mini",
@@ -1276,10 +1160,7 @@ describe("generated managed branch names", () => {
             hostId: host.id,
             workspace: {
               type: "managed-worktree",
-              checkout: {
-                kind: "new-branch",
-                baseBranch: { kind: "default" },
-              },
+              baseBranch: { kind: "default" },
             },
           },
         }),
@@ -1297,7 +1178,7 @@ describe("generated managed branch names", () => {
       );
       const managedCommand =
         requireManagedWorktreeEnvironmentProvisionLiveCommand(queued);
-      expect(managedCommand.command.checkout.branchName).toBe(
+      expect(managedCommand.command.branchName).toBe(
         `bb/canonical-generated-title-${thread.id}`,
       );
       expect(piAiMocks.complete).toHaveBeenCalledTimes(1);

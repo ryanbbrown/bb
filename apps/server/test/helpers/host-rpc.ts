@@ -179,30 +179,6 @@ export function registerHostRpcResponder(
   };
 }
 
-export function registerIdentityPathHostRpcResponder(
-  harness: TestAppHarness,
-  args: { hostId: string; sessionId: string },
-): HostRpcResponder {
-  return registerHostRpcResponder(harness, {
-    ...args,
-    restoreCommandCaptureAfterResponse: true,
-    handle: (request) => {
-      if (request.command.type !== "host.resolve_paths") {
-        throw new Error(`Unexpected host RPC command ${request.command.type}`);
-      }
-      return {
-        ok: true,
-        result: {
-          paths: request.command.paths.map((path) => ({
-            path,
-            canonicalPath: path,
-          })),
-        },
-      };
-    },
-  });
-}
-
 export function registerProviderHostRpcResponder(
   harness: TestAppHarness,
   args: RegisterProviderHostRpcArgs,
