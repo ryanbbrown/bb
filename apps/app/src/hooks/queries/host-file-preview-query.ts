@@ -13,6 +13,9 @@ interface QueryOptions {
   enabled?: boolean;
 }
 
+/** React Query pauses this poll while the document is hidden. */
+const HOST_FILE_PREVIEW_POLL_MS = 5_000;
+
 interface HostMediaPreviewType {
   kind: "image" | "video";
   mimeType: string;
@@ -160,7 +163,12 @@ export function useHostFilePreview(
       };
     },
     enabled,
-    staleTime: 30_000,
+    // Nothing invalidates this key: host paths sit outside every workspace and
+    // thread-storage watch, so an agent writing the file emits no event the app
+    // can see. Poll while the panel is open so an open preview tracks the file.
+    // Media resolves to a stable lease URL, so only text needs re-reading.
+    refetchInterval: (query) =>
+      query.state.data?.kind === "text" ? HOST_FILE_PREVIEW_POLL_MS : false,
     ...HEAVY_PAYLOAD_QUERY_POLICY,
   });
 }
