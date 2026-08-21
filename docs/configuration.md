@@ -176,6 +176,18 @@ defaults to off: Enter queues and Command+Enter steers. When enabled, Enter
 steers and Command+Enter queues. Set it with
 `bb settings general steerActiveThreadOnEnter <true|false>`.
 
+The "Streamer mode" toggle in Settings → General hides every `customModels`
+entry from `~/.bb/config.json` in all model lists: the web and mobile pickers,
+`bb provider models`, and `sdk.providers.models`. Turn it on before a screen
+share so a private or early-access model id does not appear. It defaults to
+off. The entries stay in `config.json`, and a thread that names a hidden model
+explicitly still runs with it. Default model resolution for a new thread also
+keeps the full list, so a provider whose only models are custom still starts.
+A composer whose stored selection is a hidden model treats it as unavailable
+and falls back to the provider default; the next send records that default, so
+select the custom model again after you turn streamer mode off. Set it with
+`bb settings general streamerMode <true|false>`.
+
 Outside an open typeahead menu, Shift+Enter inserts a newline. In zen mode,
 unmodified Enter also inserts a newline. On coarse-pointer touch devices, the
 software-keyboard Return path inserts a newline and the submit button sends.
@@ -337,9 +349,10 @@ Example:
 `id` is a slug matching `^[a-z0-9][a-z0-9-]*$`. bb derives the provider id by
 prefixing it with `acp-`, so the example appears as `acp-my-agent` in
 `bb provider list`, `bb provider models acp-my-agent`, and provider pickers.
-The derived id must not collide with a built-in provider such as `acp-cursor` or
-with another custom ACP agent. It may match a known ACP agent provider id, in
-which case the custom config wins.
+The derived id must not collide with an always-visible built-in provider such
+as `acp-cursor` or with another custom ACP agent. It may match an
+installed-only ACP plugin provider such as `acp-opencode`, in which case the
+custom config wins.
 
 `command` is the executable name or path. bb runs it directly with the `args`
 array; it is not a shell command line. `env` adds environment variables for the
@@ -349,7 +362,7 @@ agent process. `cwd` is optional; omit it to use the thread workspace directory.
 resolve from the bb data directory (for example,
 `~/.bb/agent-logos/my-agent.svg`); absolute paths are also supported. bb serves
 the file to app clients and uses it in provider and model pickers. Omit `logo`
-to use the built-in brand icon for a known ACP agent or the generic ACP icon.
+to use a vendored brand icon for a recognized ACP id or the generic ACP icon.
 
 `modelCli` is optional. When present, `listArgs` are used to ask the agent for
 models, `selectFlag` is the flag bb passes when launching with a selected model,
@@ -423,14 +436,16 @@ or restart bb. `bb-app config list` prints the entries.
 ```
 
 `providerId` accepts a built-in provider id (`codex`, `claude-code`, `pi`,
-`acp-cursor`) or any `acp-*` provider id: a known ACP agent such as
-`acp-opencode`, or a custom ACP agent's derived `acp-<id>`. `displayName` is
+`acp-cursor`) or any `acp-*` provider id: an installed-only plugin provider
+such as `acp-opencode`, or a custom ACP agent's derived `acp-<id>`. `displayName` is
 optional; bb derives the label from the model id when it is omitted. bb skips
 an invalid entry with a warning and keeps the rest of the config.
 
 Each entry appears in `bb provider models <providerId>` and in the model
 picker after the provider's own catalog. The provider catalog wins on a model
-id collision.
+id collision. The "Streamer mode" General setting
+(`bb settings general streamerMode true`) hides every entry from these lists
+until you turn it off again.
 
 A `customModels` entry only makes the id selectable; the provider must still
 accept it. Built-in providers such as `claude-code` and `codex` accept
@@ -661,6 +676,11 @@ daemon reads the setting before each five-minute maintenance pass. Active
 turns, commands, agents, workflows, and monitors keep their sessions loaded.
 The experiment does not gate release: BB releases idle Codex sessions with the
 experiment off, which is the behavior it had before this setting.
+
+The `timelineWindowing` experiment is off by default. When enabled, long
+timelines and large expanded timeline details retain stable height-preserving
+wrappers while mounting only rows near their active scrollport. Toggle it with
+`bb settings experiment timelineWindowing <true|false>`.
 
 ## Thread Timeline Window
 

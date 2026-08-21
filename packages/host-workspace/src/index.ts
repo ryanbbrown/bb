@@ -38,6 +38,7 @@ export {
   getGitCommonDir,
   gitBlobSize,
   hasUncommittedChanges,
+  listBranchRefsWithDefaults,
   listBranches,
   listGitWorktrees,
   listRemoteBranches,
@@ -47,6 +48,7 @@ export {
   runGit,
 } from "./git.js";
 export type {
+  BranchRefsWithDefaults,
   DefaultBranchRefs,
   FetchRemoteBranchesResult,
   ReadGitBlobResult,

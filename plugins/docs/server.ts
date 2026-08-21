@@ -134,6 +134,7 @@ interface OpenerSource {
   threadId: string | null;
   environmentId: string | null;
   projectId: string | null;
+  experimental_hostId?: string;
 }
 
 interface ResolvedOpenerFile {
@@ -171,6 +172,7 @@ const openerSourceSchema = z
     threadId: z.string().nullable(),
     environmentId: z.string().nullable(),
     projectId: z.string().nullable(),
+    experimental_hostId: z.string().min(1).optional(),
   })
   .strict();
 const fileReadSchema = z
@@ -500,6 +502,9 @@ function parseOpenerSource(value: unknown): OpenerSource {
     environmentId:
       typeof source.environmentId === "string" ? source.environmentId : null,
     projectId: typeof source.projectId === "string" ? source.projectId : null,
+    ...(typeof source.experimental_hostId === "string"
+      ? { experimental_hostId: source.experimental_hostId }
+      : {}),
   };
 }
 
@@ -1012,7 +1017,7 @@ export default async function plugin(
       return {
         path: normalized,
         rootPath: pathApi.dirname(normalized),
-        hostId: null,
+        hostId: source.experimental_hostId ?? null,
       };
     }
     if (source.kind === "workspace" && source.environmentId) {
@@ -1028,28 +1033,48 @@ export default async function plugin(
         hostId: environment.hostId,
       };
     }
+    if (source.kind === "workspace" && source.projectId) {
+      const hostId =
+        source.experimental_hostId ??
+        (await bb.sdk.system.config()).primaryHostId;
+      if (!hostId) {
+        throw new Error("This project has no primary host");
+      }
+      const project = await bb.sdk.projects.get({
+        projectId: source.projectId,
+      });
+      const matchingSources = project.sources.filter(
+        (projectSource) => projectSource.hostId === hostId,
+      );
+      const [projectSource] = matchingSources;
+      if (!projectSource) {
+        throw new Error(
+          source.experimental_hostId
+            ? "This project has no workspace on the selected host"
+            : "This project has no workspace on the primary host",
+        );
+      }
+      if (matchingSources.length > 1) {
+        throw new Error("This project has multiple workspaces on that host");
+      }
+      const rootPath = normalizeHostRoot(projectSource.path);
+      if (!isAbsoluteHostPath(rootPath)) {
+        throw new Error("This project has no absolute workspace path");
+      }
+      return {
+        path: hostPathApi(rootPath).join(rootPath, ...filePath.split("/")),
+        rootPath,
+        hostId,
+      };
+    }
     if (source.kind === "thread-storage") {
       if (!source.threadId) {
         throw new Error("Thread-storage files require a thread ID");
       }
       const relativePath = requireThreadStoragePath(filePath);
-      const [thread, storage] = await Promise.all([
-        bb.sdk.threads.get({
-          threadId: source.threadId,
-          include: "environment",
-        }),
-        // The bounded listing is the SDK surface that also resolves the
-        // thread's absolute storage root on its owning host.
-        bb.sdk.threads.storageFiles({
-          threadId: source.threadId,
-          limit: "1",
-        }),
-      ]);
-      const environment =
-        "environment" in thread ? thread.environment : undefined;
-      if (!environment) {
-        throw new Error("This thread has no environment");
-      }
+      const storage = await bb.sdk.threads.storageLocation({
+        threadId: source.threadId,
+      });
       if (!isAbsoluteHostPath(storage.storageRootPath)) {
         throw new Error("This thread has no absolute storage path");
       }
@@ -1060,7 +1085,7 @@ export default async function plugin(
           ...relativePath.split("/"),
         ),
         rootPath,
-        hostId: environment.hostId,
+        hostId: storage.hostId,
       };
     }
     throw new Error(

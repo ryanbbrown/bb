@@ -26,7 +26,6 @@ import { subscribeComposerFocusRequests } from "@/lib/composer-focus-requests";
 import { getProjectStoredPromptAttachmentPaths } from "@/lib/prompt-draft";
 import { THREAD_HANDOFF_CREATE_SEED_LOCATION_STATE_KEY } from "@/lib/thread-handoff-request";
 import {
-  buildRootComposeNewTabFileTab,
   buildRootComposeTerminalSessions,
   buildMobileRecentThreads,
   canCreateRootComposeTerminal,
@@ -35,6 +34,7 @@ import {
   readRootComposeSectionTargetFromLocationState,
   readInitialPromptFromLocationState,
   requestRootComposePluginFocus,
+  resolveRootComposeProjectFileRouting,
   resolveRootComposePanelThreadId,
   shouldReplaceInitialPromptFromLocationState,
   shouldStartComposingFromLocationState,
@@ -66,25 +66,51 @@ describe("requestRootComposePluginFocus", () => {
   });
 });
 
-describe("new-thread right-panel tabs", () => {
-  it("renders the launcher as the same visible, closable tab used by threads", () => {
-    const onClose = () => undefined;
-    const onSelect = () => undefined;
-    const tab = buildRootComposeNewTabFileTab({
-      activeTabId: "new-tab",
-      onClose,
-      onSelect,
-      tabId: "new-tab",
-    });
+describe("root-compose project file routing", () => {
+  it("uses a persisted opener host instead of the newly selected context", () => {
+    expect(
+      resolveRootComposeProjectFileRouting({
+        fileOpenerSource: {
+          kind: "workspace",
+          threadId: null,
+          environmentId: null,
+          projectId: "proj_opened",
+          experimental_hostId: "host_opened",
+        },
+        selectedEnvironmentId: "env_selected",
+        selectedHostId: "host_selected",
+      }),
+    ).toEqual({ environmentId: null, hostId: "host_opened" });
+  });
 
-    expect(tab.filename).toBe("New tab");
-    expect(tab.isActive).toBe(true);
-    expect(tab.isHidden).toBeUndefined();
-    expect(tab.onClose).toBe(onClose);
-    expect(tab.onSelect).toBe(onSelect);
+  it("keeps primary-host routing when a persisted opener omits a host", () => {
+    expect(
+      resolveRootComposeProjectFileRouting({
+        fileOpenerSource: {
+          kind: "workspace",
+          threadId: null,
+          environmentId: null,
+          projectId: "proj_opened",
+        },
+        selectedEnvironmentId: null,
+        selectedHostId: "host_selected",
+      }),
+    ).toEqual({ environmentId: null, hostId: null });
+  });
+
+  it("retains live routing for a native project file tab", () => {
+    expect(
+      resolveRootComposeProjectFileRouting({
+        fileOpenerSource: null,
+        selectedEnvironmentId: "env_selected",
+        selectedHostId: "host_selected",
+      }),
+    ).toEqual({
+      environmentId: "env_selected",
+      hostId: "host_selected",
+    });
   });
 });
-
 describe("resolveNewThreadProjectDefaultsState", () => {
   const storedDefaults = {
     providerId: "codex",

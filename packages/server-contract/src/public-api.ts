@@ -152,7 +152,7 @@ import type {
   SystemExecutionOptionsResponse,
   SystemProviderInfo,
   SystemProvidersQuery,
-  OnboardingAgentOverview,
+  SystemProviderStatesResponse,
   SystemUsageLimitsQuery,
   SystemVersionQuery,
   SystemVersionResponse,
@@ -190,6 +190,7 @@ import type {
   ThreadStorageContentQuery,
   ThreadStorageFileListResponse,
   ThreadStorageFilesQuery,
+  ThreadStorageLocationResponse,
   ThreadStoragePathListResponse,
   ThreadStoragePathsQuery,
   ThreadTimelineQuery,
@@ -1269,6 +1270,12 @@ export const publicApiRoutes = {
       ),
       response: jsonResponse<ThreadStorageFileListResponse>(),
     }),
+    storageLocation: defineRoute({
+      path: "/threads/:id/thread-storage/location",
+      method: "get",
+      request: noRequest<PathId>(),
+      response: jsonResponse<ThreadStorageLocationResponse>(),
+    }),
     storageFile: defineRoute({
       path: "/threads/:id/thread-storage/files/:filePath{.+}",
       method: "get",
@@ -1406,13 +1413,13 @@ export const publicApiRoutes = {
       request: noRequest<PathId>(),
       response: binaryResponse<Uint8Array>(),
     }),
-    onboardingAgents: defineRoute({
-      path: "/system/onboarding/agents",
+    providerStates: defineRoute({
+      path: "/system/providers/state",
       method: "get",
       request: optionalQueryRequest<EmptyInput, SystemProvidersQuery>(
         systemProvidersQuerySchema,
       ),
-      response: jsonResponse<OnboardingAgentOverview>(),
+      response: jsonResponse<SystemProviderStatesResponse>(),
     }),
     usageLimits: defineRoute({
       path: "/system/usage-limits",

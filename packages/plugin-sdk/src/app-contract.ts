@@ -1,4 +1,4 @@
-import type { ComponentType, ReactNode } from "react";
+import type { ComponentPropsWithoutRef, ComponentType, ReactNode } from "react";
 import type {
   PermissionMode,
   PromptInput,
@@ -168,6 +168,13 @@ export interface PluginFileOpenerSource {
   threadId: string | null;
   environmentId: string | null;
   projectId: string | null;
+  /**
+   * Explicit host selected for a project-backed workspace file. Omitted when
+   * the source is resolved by its environment/thread or the primary host.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_hostId?: string;
 }
 
 /** Props passed to a `fileOpener` component (rendered as a panel file tab). */
@@ -344,6 +351,50 @@ export interface PluginSettingsSectionRegistration {
   component: ComponentType<PluginSettingsSectionProps>;
 }
 
+/**
+ * Owner-defined validator for a fixed tab's transient target. The host first
+ * verifies that the value is JSON-safe, then calls this validator before
+ * selecting the tab or delivering the target.
+ */
+export interface ExperimentalFixedTabTargetContract<Target extends JsonValue> {
+  validate(value: JsonValue): value is Target;
+}
+
+/** Stable, owner-scoped reference used by the app-panel controller. */
+export type ExperimentalPluginFixedTabReference<
+  Target extends JsonValue = never,
+> = {
+  /** The owning `navPanel` id; validated against the containing registration. */
+  readonly panelId: string;
+  /** Unique within the owning nav panel; letters, digits, `-`, `_`. */
+  readonly id: string;
+} & ([Target] extends [never]
+  ? {
+      /** An untargeted tab cannot be opened with a target. */
+      readonly experimental_target?: never;
+    }
+  : {
+      /** Owner validation required before the host delivers a target. */
+      readonly experimental_target: ExperimentalFixedTabTargetContract<Target>;
+    });
+
+/** A fixed tab declared by a plugin nav panel. */
+export type ExperimentalPluginFixedTabRegistration<
+  Target extends JsonValue = never,
+> = ExperimentalPluginFixedTabReference<Target> & {
+  title: string;
+  /** Icon hint (BB icon name); unknown names fall back to a generic icon. */
+  icon: string;
+  component: ComponentType<PluginNavPanelProps>;
+  /** `flush` lets the component own padding and scrolling. */
+  layout?: "padded" | "flush";
+};
+
+/** A fixed tab with either no target or an owner-validated JSON target. */
+export type ExperimentalPluginFixedTabDeclaration =
+  | ExperimentalPluginFixedTabRegistration
+  | ExperimentalPluginFixedTabRegistration<JsonValue>;
+
 export interface PluginNavPanelRegistration {
   /** Unique within the plugin; letters, digits, `-`, `_`. */
   id: string;
@@ -356,22 +407,14 @@ export interface PluginNavPanelRegistration {
   /**
    * Ordered, non-closable tabs shown in this page's host-owned right panel.
    * BB owns selection and persistence and always includes its native Browser
-   * and Terminal tools beside them. Components mount only while their tab is
-   * active and the panel is open, and receive the same `subPath` as the page
-   * component.
+   * and Terminal tools beside them. One tab is active in each visible split
+   * pane, so multiple fixed-tab components can be mounted concurrently. A
+   * component mounts only while its tab is active in a visible pane and the
+   * panel is open, and receives the same `subPath` as the page component.
    *
    * Experimental: see docs/api_to_audit.md.
    */
-  experimental_fixedTabs?: readonly {
-    /** Unique within this nav panel; letters, digits, `-`, `_`. */
-    id: string;
-    title: string;
-    /** Icon hint (BB icon name); unknown names fall back to a generic icon. */
-    icon: string;
-    component: ComponentType<PluginNavPanelProps>;
-    /** `flush` lets the component own padding and scrolling. */
-    layout?: "padded" | "flush";
-  }[];
+  experimental_fixedTabs?: readonly ExperimentalPluginFixedTabDeclaration[];
   /**
    * Optional presentational component rendered at the trailing edge of this
    * panel's sidebar row. It receives no props so it can own a narrow live
@@ -1029,9 +1072,7 @@ export interface PluginAppSlots {
    * {@link PluginDiffRendererRegistration}). Experimental: see
    * docs/api_to_audit.md.
    */
-  experimental_diffRenderer(
-    registration: PluginDiffRendererRegistration,
-  ): void;
+  experimental_diffRenderer(registration: PluginDiffRendererRegistration): void;
   messageDirective(registration: PluginMessageDirectiveRegistration): void;
   messageAction(registration: PluginMessageActionRegistration): void;
   /**
@@ -1553,6 +1594,78 @@ export interface MarkdownProps {
   className?: string;
 }
 
+/**
+ * Props for BB's semantic URL link. The host owns ordinary activation while
+ * retaining browser-owned anchor behavior for app routes, modifiers, explicit
+ * targets, copying, and unsupported schemes. New top-level targets preserve
+ * supplied `rel` tokens and receive safe defaults unless `opener` is explicit.
+ * Experimental: see docs/api_to_audit.md.
+ */
+export interface ExperimentalUrlLinkProps extends Omit<
+  ComponentPropsWithoutRef<"a">,
+  "href"
+> {
+  href: string;
+}
+
+/** A live file whose identity is complete without ambient route context. */
+export type ExperimentalLiveFileTarget =
+  | { kind: "workspace"; environmentId: string; path: string }
+  | { kind: "host"; hostId: string; path: string }
+  | { kind: "thread-storage"; threadId: string; path: string };
+
+/** One-based location to reveal after a live file opens. */
+export type ExperimentalFileLocation =
+  | { kind: "line"; line: number; column: number | null }
+  | { kind: "range"; startLine: number; endLine: number };
+
+/** Options shared by BB's preview and preferred-external file intents. */
+export interface ExperimentalFileOpenOptions {
+  target: ExperimentalLiveFileTarget;
+  location: ExperimentalFileLocation | null;
+}
+
+/**
+ * Props for BB's host-rendered semantic file link. Valid targets receive a
+ * scheme-safe anchor href; traversal paths, ill-formed Unicode, and other
+ * malformed runtime targets remain inert.
+ */
+export interface ExperimentalFileLinkProps extends Omit<
+  ComponentPropsWithoutRef<"a">,
+  "href" | "target"
+> {
+  target: ExperimentalLiveFileTarget;
+  location?: ExperimentalFileLocation | null;
+}
+
+/** The panel surface resolved by the component making the request. */
+export type ExperimentalAppPanelSurface = { kind: "current" };
+
+/**
+ * The owning fixed tab's current memory-only target. It survives tab, panel,
+ * and route remounts during the current app session, but is never persisted
+ * across a refresh. Call `clear` when the owner returns to its untargeted state.
+ */
+export interface ExperimentalFixedTabTargetState<Target extends JsonValue> {
+  readonly sequence: number;
+  readonly target: Target;
+  clear(): void;
+}
+
+export type ExperimentalOpenFixedTabOptions<Target extends JsonValue> = {
+  surface: ExperimentalAppPanelSurface;
+  tab: ExperimentalPluginFixedTabReference<Target>;
+  /** Omit to select the tab without replacing its current session target. */
+  target?: NoInfer<Target>;
+};
+
+/** Surface-aware controller for selecting owner-scoped fixed tabs. */
+export interface ExperimentalAppPanel {
+  openFixedTab<Target extends JsonValue = never>(
+    options: ExperimentalOpenFixedTabOptions<Target>,
+  ): boolean;
+}
+
 /** Current app selection, derived from the route. */
 export interface BbContext {
   projectId: string | null;
@@ -1585,6 +1698,18 @@ export interface BbNavigate {
    * the action is unavailable.
    */
   openThreadPanel(options: PluginTargetedPanelActionOpenOptions): boolean;
+  /**
+   * Open an HTTP(S) URL using this client's BB browser preference. Returns
+   * false for schemes the host does not own. Experimental: see
+   * docs/api_to_audit.md.
+   */
+  experimental_openUrl(url: string): boolean;
+  /** Open a live file in this surface's shared BB preview panel. */
+  experimental_openFilePreview(options: ExperimentalFileOpenOptions): boolean;
+  /** Open a live file in this client's preferred external file target. */
+  experimental_openFileExternally(
+    options: ExperimentalFileOpenOptions,
+  ): boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -1623,6 +1748,12 @@ export interface PluginSdkApp {
   useSettings(): PluginSettingsState;
   useBbContext(): BbContext;
   useBbNavigate(): BbNavigate;
+  /** Select one of this plugin's eligible fixed tabs on the current surface. */
+  experimental_useAppPanel(): ExperimentalAppPanel;
+  /** Read or clear the owning tab's validated, session-scoped target. */
+  experimental_useFixedTabTarget<Target extends JsonValue>(
+    tab: ExperimentalPluginFixedTabReference<Target>,
+  ): ExperimentalFixedTabTargetState<Target> | null;
   useComposer(): PluginComposerApi;
   /**
    * The sidebar's live thread view (see {@link PluginSidebarThreadsState}).
@@ -1677,6 +1808,13 @@ export interface PluginSdkApp {
    * {@link MarkdownProps}).
    */
   Markdown: ComponentType<MarkdownProps>;
+  /**
+   * A real anchor whose ordinary HTTP(S) activation uses BB's URL preference.
+   * Experimental: see docs/api_to_audit.md.
+   */
+  experimental_UrlLink: ComponentType<ExperimentalUrlLinkProps>;
+  /** Host-rendered live-file link backed by the shared navigation controller. */
+  experimental_FileLink: ComponentType<ExperimentalFileLinkProps>;
   /**
    * The host-owned new-thread compose surface (see
    * {@link NewThreadComposerProps}). Experimental: see

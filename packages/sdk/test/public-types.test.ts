@@ -342,7 +342,7 @@ type ExpectedSystemKey =
   | "updateExperiments"
   | "updateGeneralSettings"
   | "updateKeyboardSettings"
-  | "onboardingAgents"
+  | "providerStates"
   | "usageLimits"
   | "version";
 
@@ -381,6 +381,7 @@ type ExpectedThreadsKey =
   | "spawn"
   | "stop"
   | "storageFiles"
+  | "storageLocation"
   | "storagePaths"
   | "tabs"
   | "timeline"

@@ -274,6 +274,10 @@ e2e/flows/               Maestro flows (smoke, phase1-shell, phase3-threads, pha
                          phase4b-thread-actions, phase5-links, phase6-panel,
                          phase6-diff, phase6-files, phase6-terminal,
                          phase6-terminal-resume)
+e2e/manual/              flows that need a server the harness cannot provide
+                         (phase7-plugins-devserver: the checkout's dev server;
+                         demo-server: the apps/demo-server worker) and so are
+                         not part of `pnpm e2e:ios`
 e2e/subflows/            shared steps (launch-app.yaml: cold start through the
                          dev client + Metro, or `launchApp` of the embedded
                          Release bundle with `-e BB_E2E_EMBEDDED_BUNDLE=1`;
@@ -801,6 +805,60 @@ push key); nobody needs a local Xcode signing setup to ship.
   is still open.
 - `eas update` (JS-only fixes over the air) is deferred: `expo-updates` is
   not installed, so the profiles define no update channels.
+
+## TestFlight testers
+
+**Internal testers** need no Apple review. A build reaches the group as soon as
+App Store Connect finishes processing it, usually within 30 minutes. The group
+`bb team` exists and the nightly feeds it.
+
+**External testers** need a Beta App Review on the first build, and Apple
+usually auto-approves later builds. Before a build can go to an external group,
+App Store Connect needs all of this:
+
+- **Test Information** (`betaAppLocalizations`): a feedback email, a beta
+  description, and the privacy policy URL <https://getbb.app/privacy>. Per
+  build, a "What to test" note.
+- **Beta App Review Details** (`betaAppReviewDetail`): contact first name, last
+  name, phone, and email. Apple uses these, testers never see them.
+- **A way for the reviewer to use the app.** This is the part that fails. bb
+  opens on "Add server", and a reviewer has no bb server, so without help they
+  cannot get past the first screen and will reject the build. Neither real
+  path works for a reviewer: a bb server's API is unauthenticated and runs
+  commands, so it cannot be on the internet, and connect pairing codes are
+  single-use and expire in ten minutes. Give them the **demo server** instead:
+  `apps/demo-server` is a Cloudflare Worker that answers the launch-path API
+  from fixed data, runs nothing, and isolates each client address. Deploy it
+  with `pnpm --filter @bb/demo-server deploy`, and rehearse the notes with
+  `e2e/manual/demo-server.yaml` before every submission. Disclose it in the
+  notes: a disclosed demo mode is sanctioned by guideline 2.1.
+
+Review notes template — keep it literal, and assume the reviewer knows nothing
+about coding agents:
+
+```text
+bb is a client for a bb server that a developer runs on their own computer.
+The app has no accounts of its own, so we have prepared a demo server for
+you. It serves sample conversations and scripted replies; it does not run a
+real coding agent.
+
+1. Open the app. It shows "Connect to a bb server".
+2. Under "Direct URL", in "Server URL", enter: https://<DEMO-HOST>
+3. Tap "Connect".
+4. The app shows a list of conversations. Open any of them to read it.
+5. Type a message and send it. The agent replies after a moment.
+
+Write to <EMAIL> if the server does not respond.
+```
+
+Rehearse it before submitting: hand a colleague a phone that has never run bb,
+give them only these notes, and check that they reach a thread.
+
+The marketing version climbs on every nightly, because the EAS job writes the
+npm version into `app.json`. A new version string is more likely to trigger a
+fresh Beta App Review than another build of the same version. If external
+testers become the main audience, pin the TestFlight marketing version and let
+the EAS build number tell nightlies apart.
 
 ## Local state
 

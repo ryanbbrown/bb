@@ -89,6 +89,11 @@ in zen mode. On coarse-pointer touch devices, the software-keyboard Return path
 inserts a newline. iPadOS WebKit preserves these Enter shortcuts for a connected
 Magic Keyboard.
 
+Settings → General also includes `streamerMode`, which defaults to false. Turn
+it on to hide every `customModels` entry from `~/.bb/config.json` in all model
+lists (pickers, `bb provider models`, and the SDK) during a screen share. The
+entries stay in the config file.
+
   bb settings show
   bb settings general <key> <value>
   bb settings experiment <key> <value>
@@ -114,6 +119,10 @@ every restorable provider. BB releases those sessions after 30 idle minutes.
 The daemon applies a changed value within five minutes. Active turns, commands,
 agents, workflows, and monitors keep their sessions loaded. BB releases idle
 Codex sessions with the experiment off as well.
+
+The default-off `timelineWindowing` experiment mounts only nearby rows in long
+timelines and large expanded timeline details. Enable it with
+`bb settings experiment timelineWindowing true`.
 
 Thread timeline windows are bounded by event count as well as user-message
 count (`BB_FF_TIMELINE_WINDOW_EVENT_BUDGET`, default 1500), so a long thread

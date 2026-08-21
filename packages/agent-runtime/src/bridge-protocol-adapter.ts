@@ -5,8 +5,9 @@
  * (@bb/provider-bridge-protocol) needs no bespoke adapter: commands map to
  * canonical methods, events arrive as already-translated ThreadEvents, and
  * session-behavior capabilities come from the initialize handshake — captured
- * here per process and consulted for gated methods, so a method a bridge did
- * not advertise is never sent.
+ * here per process and consulted for gated session methods. Sessionless
+ * maintenance methods are gated by the provider registration before a command
+ * reaches this adapter.
  *
  * This adapter never diffs execution options (`classifyExecutionSettingsChange`
  * always reports "live"): options ride every command and the bridge
@@ -61,8 +62,10 @@ import type { AgentRuntimeSkillRoot } from "./types.js";
  * public {@link ProviderAdapter.capabilities}, and keeps the ladder to bound
  * what the initialize handshake may claim.
  */
-export interface BridgeAdapterCapabilities
-  extends Omit<ProviderCapabilities, "supportsFork" | "supportsSessionRewind"> {
+export interface BridgeAdapterCapabilities extends Omit<
+  ProviderCapabilities,
+  "supportsFork" | "supportsSessionRewind"
+> {
   fork: ProviderFork;
 }
 
@@ -277,6 +280,59 @@ export function createBridgeProtocolAdapter(
               // Model listing has no session to carry providerOptions, so the
               // provider-scoped statics (e.g. the ACP launch spec the bridge
               // resolves its list command from) ride the request directly.
+              ...(options.staticProviderOptions !== undefined
+                ? { providerOptions: options.staticProviderOptions }
+                : {}),
+            },
+          };
+        case "provider/health":
+          return {
+            kind: "request",
+            method: BRIDGE_REQUEST_METHODS.experimentalProviderHealth,
+            params: {
+              providerId: options.id,
+              ...(command.cwd !== undefined ? { cwd: command.cwd } : {}),
+              ...(options.staticProviderOptions !== undefined
+                ? { providerOptions: options.staticProviderOptions }
+                : {}),
+            },
+          };
+        case "provider/usage":
+          return {
+            kind: "request",
+            method: BRIDGE_REQUEST_METHODS.experimentalProviderUsage,
+            params: {
+              providerId: options.id,
+              ...(command.cwd !== undefined ? { cwd: command.cwd } : {}),
+              ...(options.staticProviderOptions !== undefined
+                ? { providerOptions: options.staticProviderOptions }
+                : {}),
+            },
+          };
+        case "provider/installation/status":
+          return {
+            kind: "request",
+            method:
+              BRIDGE_REQUEST_METHODS.experimentalProviderInstallationStatus,
+            params: {
+              providerId: options.id,
+              ...(command.requirement !== undefined
+                ? { requirement: command.requirement }
+                : {}),
+              ...(command.cwd !== undefined ? { cwd: command.cwd } : {}),
+              ...(options.staticProviderOptions !== undefined
+                ? { providerOptions: options.staticProviderOptions }
+                : {}),
+            },
+          };
+        case "provider/installation/run":
+          return {
+            kind: "request",
+            method: BRIDGE_REQUEST_METHODS.experimentalProviderInstallationRun,
+            params: {
+              providerId: options.id,
+              action: command.action,
+              ...(command.cwd !== undefined ? { cwd: command.cwd } : {}),
               ...(options.staticProviderOptions !== undefined
                 ? { providerOptions: options.staticProviderOptions }
                 : {}),
@@ -583,7 +639,11 @@ export function createBridgeProtocolAdapter(
         const parsed = sessionReplacedNotificationParamsSchema.safeParse(
           event.params,
         );
-        if (!parsed.success || parsed.data.providerThreadId === null) {
+        if (
+          !parsed.success ||
+          parsed.data.providerThreadId === null ||
+          !parsed.data.contextLost
+        ) {
           return [];
         }
         return [
@@ -592,9 +652,8 @@ export function createBridgeProtocolAdapter(
             threadId: parsed.data.threadId,
             providerThreadId: parsed.data.providerThreadId,
             category: "general",
-            summary: parsed.data.contextLost
-              ? "Provider session was replaced; provider-side context was lost."
-              : "Provider session was replaced.",
+            summary:
+              "Provider session was replaced; provider-side context was lost.",
             details: parsed.data.reason,
             scope: { kind: "thread" },
           },

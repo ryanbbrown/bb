@@ -58,18 +58,24 @@ describe("connect settings section", () => {
     expect(app.settingsSections[0]?.title).toBeUndefined();
   });
 
-  it("uses the local Cloud dashboard supplied by the server", async () => {
+  it("uses the local Cloud dashboard supplied by the server as a native new-tab link", async () => {
     const dashboardUrl = "http://bb.localhost:42745/dashboard";
     const slot = renderSlot(
       app.settingsSections[0]!,
       {},
-      { rpc: { status: () => status({ dashboardUrl }) } },
+      {
+        openUrl: () => true,
+        rpc: { status: () => status({ dashboardUrl }) },
+      },
     );
 
     const link = (await slot.findByRole("link", {
       name: "Get a connect code",
     })) as HTMLAnchorElement;
     expect(link.href).toBe(dashboardUrl);
+    expect(link.target).toBe("_blank");
+    fireEvent.click(link);
+    expect(slot.navigateCalls).toEqual([]);
     slot.getByText("you.bb.localhost:42745");
     slot.getByText(/your bb\.localhost:42745 dashboard/);
   });

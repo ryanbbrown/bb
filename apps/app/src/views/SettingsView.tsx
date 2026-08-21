@@ -146,6 +146,12 @@ export interface SteerActiveThreadOnEnterSettingsControlProps {
   onEnabledChange: (enabled: boolean) => void;
 }
 
+export interface StreamerModeSettingsControlProps {
+  disabled: boolean;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}
+
 export interface RichTextEditingSettingsControlProps {
   enabled: boolean;
   onEnabledChange: (enabled: boolean) => void;
@@ -184,11 +190,14 @@ export interface GeneralSettingsSectionProps {
   onRewriteLocalhostLinksChange: (enabled: boolean) => void;
   onRichTextEditingChange: (enabled: boolean) => void;
   onSteerActiveThreadOnEnterChange: (enabled: boolean) => void;
+  onStreamerModeChange: (enabled: boolean) => void;
   openLinksInAppBrowser: boolean;
   rewriteLocalhostLinks: boolean;
   richTextEditing: boolean;
   steerActiveThreadOnEnter: boolean;
   steerActiveThreadOnEnterDisabled: boolean;
+  streamerMode: boolean;
+  streamerModeDisabled: boolean;
 }
 
 export type DebugSettingsSectionProps =
@@ -213,10 +222,12 @@ export interface ExperimentsSettingsSectionProps {
   editMessagesEnabled: boolean;
   mobileAppEnabled: boolean;
   providerSessionReapingEnabled: boolean;
+  timelineWindowingEnabled: boolean;
   onChangelogPreviewEnabledChange: (enabled: boolean) => void;
   onEditMessagesEnabledChange: (enabled: boolean) => void;
   onMobileAppEnabledChange: (enabled: boolean) => void;
   onProviderSessionReapingEnabledChange: (enabled: boolean) => void;
+  onTimelineWindowingEnabledChange: (enabled: boolean) => void;
 }
 
 const THEME_PREFERENCE_OPTIONS: ReadonlyArray<ThemePreferenceOption> = [
@@ -562,6 +573,7 @@ const UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL =
   "Show unhandled provider events";
 const STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL =
   "Steer running threads on Enter";
+const STREAMER_MODE_SETTING_LABEL = "Streamer mode";
 
 export function RootComposeBehaviorSettingsControl({
   navigateToThreadAfterCreate,
@@ -593,6 +605,26 @@ export function SteerActiveThreadOnEnterSettingsControl({
         disabled={disabled}
         onCheckedChange={onEnabledChange}
         aria-label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
+      />
+    </SettingsWithControl>
+  );
+}
+
+export function StreamerModeSettingsControl({
+  disabled,
+  enabled,
+  onEnabledChange,
+}: StreamerModeSettingsControlProps) {
+  return (
+    <SettingsWithControl
+      label={STREAMER_MODE_SETTING_LABEL}
+      description="Hide the custom models from config.json in every model picker, so a screen share does not show them."
+    >
+      <Switch
+        checked={enabled}
+        disabled={disabled}
+        onCheckedChange={onEnabledChange}
+        aria-label={STREAMER_MODE_SETTING_LABEL}
       />
     </SettingsWithControl>
   );
@@ -831,11 +863,14 @@ export function GeneralSettingsSection({
   onRewriteLocalhostLinksChange,
   onRichTextEditingChange,
   onSteerActiveThreadOnEnterChange,
+  onStreamerModeChange,
   openLinksInAppBrowser,
   rewriteLocalhostLinks,
   richTextEditing,
   steerActiveThreadOnEnter,
   steerActiveThreadOnEnterDisabled,
+  streamerMode,
+  streamerModeDisabled,
 }: GeneralSettingsSectionProps) {
   return (
     <SettingsSection title="General">
@@ -868,6 +903,12 @@ export function GeneralSettingsSection({
         <RewriteLocalhostLinksSettingsControl
           enabled={rewriteLocalhostLinks}
           onEnabledChange={onRewriteLocalhostLinksChange}
+        />
+
+        <StreamerModeSettingsControl
+          disabled={streamerModeDisabled}
+          enabled={streamerMode}
+          onEnabledChange={onStreamerModeChange}
         />
       </div>
     </SettingsSection>
@@ -969,16 +1010,19 @@ const EDIT_MESSAGES_EXPERIMENT_LABEL = "Edit messages";
 const MOBILE_APP_EXPERIMENT_LABEL = "Mobile app";
 const PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL =
   "Idle provider session release";
+const TIMELINE_WINDOWING_EXPERIMENT_LABEL = "Timeline windowing";
 export function ExperimentsSettingsSection({
   changelogPreviewEnabled,
   disabled,
   editMessagesEnabled,
   mobileAppEnabled,
   providerSessionReapingEnabled,
+  timelineWindowingEnabled,
   onChangelogPreviewEnabledChange,
   onEditMessagesEnabledChange,
   onMobileAppEnabledChange,
   onProviderSessionReapingEnabledChange,
+  onTimelineWindowingEnabledChange,
 }: ExperimentsSettingsSectionProps) {
   return (
     <SettingsSection
@@ -1031,6 +1075,18 @@ export function ExperimentsSettingsSection({
             disabled={disabled}
             onCheckedChange={onProviderSessionReapingEnabledChange}
             aria-label={PROVIDER_SESSION_REAPING_EXPERIMENT_LABEL}
+          />
+        </SettingsWithControl>
+
+        <SettingsWithControl
+          label={TIMELINE_WINDOWING_EXPERIMENT_LABEL}
+          description="Mount only nearby rows in long timelines and expanded timeline details."
+        >
+          <Switch
+            checked={timelineWindowingEnabled}
+            disabled={disabled}
+            onCheckedChange={onTimelineWindowingEnabledChange}
+            aria-label={TIMELINE_WINDOWING_EXPERIMENT_LABEL}
           />
         </SettingsWithControl>
       </div>
@@ -1219,6 +1275,13 @@ export function SettingsView() {
             providerSessionReaping: enabled,
           })
         }
+        timelineWindowingEnabled={experiments.timelineWindowing}
+        onTimelineWindowingEnabledChange={(enabled) =>
+          updateExperimentsMutation.mutate({
+            ...experiments,
+            timelineWindowing: enabled,
+          })
+        }
       />
     );
   } else if (activeSection === "marketplaces") {
@@ -1249,6 +1312,17 @@ export function SettingsView() {
             updateGeneralSettingsMutation.mutate({
               ...generalSettings,
               steerActiveThreadOnEnter: enabled,
+            })
+          }
+          streamerMode={generalSettings.streamerMode}
+          streamerModeDisabled={
+            systemConfigQuery.data === undefined ||
+            updateGeneralSettingsMutation.isPending
+          }
+          onStreamerModeChange={(enabled) =>
+            updateGeneralSettingsMutation.mutate({
+              ...generalSettings,
+              streamerMode: enabled,
             })
           }
         />

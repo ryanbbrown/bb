@@ -17,6 +17,98 @@ content-block vocabulary; decide whether legacy aggregate fields still need to
 be accepted; and define any image MIME validation, decoding, or payload-size
 policy at the server boundary before making the helper stable.
 
+## Provider bridge maintenance (`PluginProviderCapabilities.experimental_providerHealth`, `PluginProviderCapabilities.experimental_providerUsage`, `PluginProviderCapabilities.experimental_providerInstallation`, `ProviderInfo.experimental_providerHealth`, `ProviderInfo.experimental_providerUsage`, `ProviderInfo.experimental_providerInstallation`, `BRIDGE_REQUEST_METHODS.experimentalProviderHealth`, `BRIDGE_REQUEST_METHODS.experimentalProviderUsage`, `BRIDGE_REQUEST_METHODS.experimentalProviderInstallationStatus`, `BRIDGE_REQUEST_METHODS.experimentalProviderInstallationRun`, `experimental_providerMaintenanceParamsSchema`, `experimental_providerHealthSchema`, `experimental_providerHealthResultSchema`, `experimental_providerUsageSchema`, `experimental_providerUsageWindowSchema`, `experimental_providerUsageResultSchema`, and the `experimental_providerInstallation*` schemas/types)
+
+**What it does.** Adds optional, sessionless `provider/health`,
+`provider/usage`, `provider/installation/status`, and
+`provider/installation/run` requests to provider bridges. Each provider
+declares support at registration so the server can skip unsupported host probes
+and clients can omit unsupported maintenance surfaces before starting a bridge.
+Health reports cheap host-local readiness; usage reports provider-normalized
+subscription windows. Installation status owns provider-specific discovery,
+version/source detection, and whether an install or update is currently
+available. Installation run resolves a fresh typed executable/argument plan
+and post-run verification rule. Only its display command reaches product
+clients; the daemon receives the executable plan and remains responsible for
+host environment, working directory, concurrency, process supervision,
+streaming, and verifying the resulting provider status. The maintenance
+runtime supplies the provider id, working directory when one exists, and the
+same provider-scoped launch options used by a real session. A status request
+may also name a typed operation requirement such as `thread_rewind`; the
+provider owns the minimum version for that requirement and reports the same
+normalized `versionUnsupported` result consumed by generic core gating.
+
+**Audit before stabilizing.** Confirm the readiness vocabulary covers API-only
+and router providers, that health remains free of network usage/update checks,
+that account metadata has appropriate privacy treatment, that installation
+plans cannot smuggle host policy or unsafe execution through the typed boundary,
+that verification rules cover native and package-manager update behavior, that
+omitted fields from plugins built against the older experimental API continue
+to mean false, whether the requirement vocabulary should remain one shared
+enum, and that ACP's shared bridge can continue distinguishing built-in and
+custom agents without exposing provider-specific launch or installation
+details to clients.
+
+## URL navigation (`experimental_UrlLink` and `BbNavigate.experimental_openUrl`)
+
+**What it does.** Gives plugin UI the same semantic HTTP(S) opening path as
+first-party UI. Ordinary activation respects the current client's in-app
+browser preference and capability; app routes remain SPA navigation, modifier
+clicks and explicit anchor targets remain browser-owned, and unsupported
+schemes are left to the browser. New top-level targets preserve supplied `rel`
+tokens but add `noopener noreferrer` unless `rel` explicitly contains
+`opener`. The imperative method returns whether the current app accepted the
+intent. The frontend harness records link and imperative calls through the same
+navigation inspection log.
+
+**Audit before stabilizing.**
+
+1. Confirm HTTP(S)-only ownership and external fallback across desktop, web,
+   remote clients, and windows whose current surface cannot host Browser.
+2. Audit internal absolute and relative routes, fragments, modifier clicks,
+   keyboard activation, explicit targets, copied hrefs, and accessible names.
+3. Confirm the component should retain ordinary anchor props rather than a
+   smaller styled-link contract, and that explicit `target` continues to mean
+   browser behavior rather than BB preference routing while safe default `rel`
+   values prevent implicit opener access.
+4. Measure use across plugin pages, Settings sections, panel tabs, Markdown,
+   and menus before stabilizing the boolean acceptance contract.
+5. Keep the host implementation in the shell and verify plugin bundles contain
+   only the runtime indirection, not BB browser or panel code.
+
+## Live-file navigation (`experimental_FileLink`, `BbNavigate.experimental_openFilePreview`, `BbNavigate.experimental_openFileExternally`, and `PluginFileOpenerSource.experimental_hostId`)
+
+**What it does.** Gives plugin UI explicit, source-safe references to live
+workspace, host, and thread-storage files. Ordinary `experimental_FileLink`
+activation and the preview method use the current surface's shared file-tab
+controller, including extension preferences and plugin file openers. The
+external method resolves the current client's preferred file target, absolute
+path, local/remote-SSH context, and line/column support. The boolean methods
+report host acceptance; later OS failures remain host-owned. The host id added
+to file-opener sources preserves explicit host identity when a plugin page
+opens a host file without ambient thread context. Valid link targets expose a
+scheme-safe href, while traversal paths, ill-formed Unicode, and other
+malformed runtime targets remain inert in both the app and SDK test runtime.
+
+**Audit before stabilizing.**
+
+1. Verify strict target/path/location validation on POSIX, Windows drive, and
+   UNC paths, including stale environment, host, and thread identities.
+2. Confirm preview identity, persistence, opener preference, one-off Open with,
+   disabled opener fallback, and explicit-host migration on Thread, New-thread,
+   Settings, and plugin-page surfaces.
+3. Audit external opening across local and remote clients, disconnected hosts,
+   missing preferred apps, and targets with line but not column support.
+4. Confirm link anchor behavior, unavailable menu states, copy semantics, and
+   whether per-app external choices should remain host-owned menu affordances
+   rather than become plugin-selectable API.
+5. Measure the lazy boundary: mounting a file link must not start file reads,
+   preview imports, editor discovery, or panel-destination loading.
+6. Decide whether Git snapshots or deleted working-tree files merit separate
+   target variants; do not weaken live-file guarantees to accommodate them.
+7. Confirm `PluginFileOpenerSource.experimental_hostId` can become a stable
+   required `hostId` field without breaking older opener implementations.
+
 ## Host plugin foundation (`bb.hosts.experimental_client`, `ExperimentalHostClient.experimental_onWorkerExit`, `ExperimentalHostClient.experimental_onSignal`, `ExperimentalHostRpcContext.experimental_retainWorker`, `experimental_defineHostEntry`, and `experimental_createHostEntryHarness`)
 
 **What it does.** Lets one plugin package declare a singular `bb.host` Node
@@ -88,29 +180,64 @@ unexpected-exit recovery without feature-specific core hooks.
     limits without pretending to model process startup, crashes, native watcher
     recovery, or reconnect behavior.
 
-## `PluginNavPanelRegistration.experimental_fixedTabs`
+## Fixed-tab navigation (`PluginNavPanelRegistration.experimental_fixedTabs`, `experimental_target`, `experimental_useAppPanel`, and `experimental_useFixedTabTarget`)
 
 **What it does.** Lets a nav panel declare ordered, non-closable tabs in the
 host-owned right panel. The host owns tab selection, persistence, chrome,
-Browser and Terminal tools, and only mounts the active plugin component while
-the panel is open. A fixed tab receives the nav page's current `subPath`; `layout: "padded"` uses
+Browser and Terminal tools. One tab is active per visible split pane, so
+multiple fixed-tab components can be mounted concurrently; a component mounts
+only while active in a visible pane and the panel is open. A fixed tab receives
+the nav page's current `subPath`; `layout: "padded"` uses
 host padding and scrolling, while `layout: "flush"` gives the component the
 whole content region. On the first visit the first declared fixed tab opens on
-wide layouts. A later user close remains closed.
+wide layouts. A later user close remains closed. Every fixed-tab registration
+must include a `panelId` matching its containing nav panel and is also its
+stable, plugin-owner-and-panel-scoped reference. `experimental_useAppPanel()`
+can select one of the calling plugin's eligible tabs on the current surface
+and optionally submit a JSON-safe target. The tab's `experimental_target`
+validator owns the target type and policy; `experimental_useFixedTabTarget()`
+returns the validated current-session value with a sequence and explicit
+`clear()`. Tab selection stays durable. Each tab's target remains memory-only,
+but survives inactive-tab, closed-panel, and route remounts until its owner
+clears it or the app refreshes. Core Changes targets and plugin targets resolve
+through the same feature-agnostic controller.
+
+**Public surface.** `ExperimentalFixedTabTargetContract`,
+`ExperimentalPluginFixedTabReference`,
+`ExperimentalPluginFixedTabRegistration`,
+`ExperimentalPluginFixedTabDeclaration`, `ExperimentalAppPanelSurface`,
+`ExperimentalFixedTabTargetState`, `ExperimentalOpenFixedTabOptions`,
+`ExperimentalAppPanel`, `experimental_useAppPanel`, and
+`experimental_useFixedTabTarget`. The frontend testing runtime mirrors this
+with `ExperimentalFixedTabOpenCall`, the
+`experimental_openFixedTab`/`experimental_fixedTabTarget` render options, and
+the `experimental_fixedTabOpenCalls` inspection list.
 
 **Audit before stabilizing.**
 
 1. Confirm first-visit opening and subsequent close persistence across plugin
    reloads, app upgrades, wide/compact transitions, and page deep links.
 2. Exercise multiple fixed tabs and dynamic registration changes; selection
-   must remain stable when possible and fall back without mounting inactive
-   components.
+   must remain stable when possible and fall back without mounting components
+   that are inactive in every visible pane.
 3. Confirm `subPath` is sufficient context and that fixed tabs should remain
    page-scoped rather than gaining independent routes or plugin-owned state.
 4. Audit padded versus flush layout against Tasks, Docs, accessibility zoom,
    and nested scrolling before freezing the presentation contract.
 5. Confirm named icon hints and the non-closable tab treatment remain the right
    amount of plugin-controlled chrome.
+6. Audit registration objects as references: identity is scoped to the mounted
+   plugin and current nav panel, with no cross-plugin addressing or global ids.
+7. Confirm sync type guards remain the right owner validation contract and
+   define error reporting if a validator throws or becomes stale after reload.
+8. Exercise repeated equal targets, explicit clearing, crashes, inactive-tab,
+   panel, and route remounts, refresh, and compact drawer animation. Targets
+   must survive remounts in the current app session, never survive refresh, and
+   never reappear after their owner clears them.
+9. Decide whether a future cross-thread surface should navigate before opening;
+   the initial public surface intentionally supports only `{ kind: "current" }`.
+10. Keep core and plugin destinations on the same resolver and verify the
+    controller never learns Changes, file, task, or document target shapes.
 
 ## `PluginNavPanelRegistration.experimental_sidebarAccessory`
 
@@ -190,10 +317,10 @@ Each label is capped at 80 characters and rendered as a truncating segment.
 ## `bb.agents.experimental_registerProvider`
 
 **What it does.** Lets a plugin declare an agent provider into the server's
-`ProviderRegistryService`. The declaration is metadata only — the
-implementation is the bridge the plugin exports from its `bb.host` artifact,
-and registering without one (and without being a daemon-bundled first-party id)
-fails the plugin load. The declaration is
+`ProviderRegistryService`. The declaration owns static metadata and opaque
+bridge options; executable behavior is the bridge the plugin exports from its
+`bb.host` artifact. Registering without one (and without being a
+daemon-bundled first-party id) fails the plugin load. The declaration is
 validated at call time by the shared host policy
 (`validatePluginProviderDeclaration`); registrations stage during the factory
 and commit when the plugin load commits, are replaced wholesale on reload, and
@@ -201,10 +328,12 @@ are removed by the returned disposer or on unload/disable. Declarations are
 now the ONLY source of providers — the core catalog seed is deleted, so
 disabling a provider plugin removes its provider. A registered provider is
 mapped onto `ProviderInfo` + `ProviderServerCapabilities` and appears in the
-composed provider listing
-(`GET /system/providers` / execution options). The full declaration rides the
-registration record so fields without a registry consumer yet
-(`supportsManualCompaction`) are not dropped.
+composed provider listing (`GET /system/providers` / execution options).
+`experimental_visibility: "installed"` withholds a provider from unscoped
+listings until its own `provider/health` result is not `not_installed`.
+`experimental_bridgeOptions` is validated as bounded JSON, rides every daemon
+bridge launch, participates in the runtime process key, and arrives at the
+bridge as provider-scoped static options. Core does not interpret its keys.
 
 **Audit before stabilizing.**
 
@@ -257,6 +386,13 @@ registration record so fields without a registry consumer yet
    host-plugin foundation exists. Apply the same test to every remaining
    capability before stabilizing: a declaration may assert what the provider
    itself implements, never what bb or its daemon can do with it.
+6. **Static bridge options and visibility.** Confirm 64 KiB remains a suitable
+   declaration-time limit, that opaque options should continue to be shared by
+   every host rather than resolved per host, and whether deep-frozen plain JSON
+   is the right stable value contract. Confirm `"always" | "installed"` is
+   enough listing policy, that health failure should continue to hide an
+   installed-only provider, and that targeted requests may continue resolving
+   a registered provider even while discovery says it is absent.
 
 ## `@get-bb/plugin-sdk/provider-bridge` (the provider-bridge authoring surface)
 
@@ -568,6 +704,25 @@ the same plugin again.
    and do not remount unrelated panel state.
 4. Verify the owner renderer remains independent of provider precedence and
    cannot recurse through file-opener resolution.
+
+## `PluginFileOpenerSource.experimental_hostId` (`@get-bb/plugin-sdk/app`)
+
+**What it does.** Identifies the explicit host selected for a project-backed
+workspace file when a file opener cannot resolve that source through a thread
+or environment. It is omitted for environment-backed workspace files, host
+files, thread-storage files, and project files that use the primary host.
+
+**Audit before stabilizing.**
+
+1. Confirm an explicit host id is the minimum missing project-routing context,
+   rather than exposing the whole project workspace routing union.
+2. Verify project-compose file tabs retain the selected host across reloads,
+   host changes, plugin fallback, and per-open viewer overrides.
+3. Decide whether host identity should be present for every source kind or
+   remain project-specific once more file opener plugins exercise the API.
+4. Confirm omission should continue to mean primary-host resolution and that
+   this remains compatible with persisted opener tabs created before the field
+   existed.
 
 ## `experimental_SourceCode` / `experimental_Diff` (`@get-bb/plugin-sdk/app`)
 

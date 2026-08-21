@@ -6,6 +6,7 @@ import type { ThreadTabFileOpenerOwner } from "@bb/server-contract";
 import {
   createPluginPanelFixedPanelTab,
   type PluginPanelFixedPanelTab,
+  type SecondaryFileFixedPanelTab,
 } from "@/lib/fixed-panel-tabs-state";
 import type { FileOpenerPreferenceMap } from "@/lib/file-opener-preference";
 import {
@@ -26,6 +27,16 @@ export const FILE_OPENER_ACTION_ID_PREFIX = "file-opener:";
 export type PluginFileOpenerFile = Pick<
   PluginFileOpenerProps,
   "path" | "source"
+>;
+
+export type FileOpenerOriginalTab = Extract<
+  SecondaryFileFixedPanelTab,
+  {
+    kind:
+      | "workspace-file-preview"
+      | "host-file-preview"
+      | "thread-storage-file-preview";
+  }
 >;
 
 export function fileOpenerIdFromActionId(actionId: string): string | null {
@@ -65,12 +76,14 @@ export function parseFileOpenerParams(
   const { path, source } = parsed as { path?: unknown; source?: unknown };
   if (typeof path !== "string" || path.length === 0) return null;
   if (typeof source !== "object" || source === null) return null;
-  const { kind, threadId, environmentId, projectId } = source as {
-    kind?: unknown;
-    threadId?: unknown;
-    environmentId?: unknown;
-    projectId?: unknown;
-  };
+  const { kind, threadId, environmentId, projectId, experimental_hostId } =
+    source as {
+      kind?: unknown;
+      threadId?: unknown;
+      environmentId?: unknown;
+      projectId?: unknown;
+      experimental_hostId?: unknown;
+    };
   if (kind !== "workspace" && kind !== "host" && kind !== "thread-storage") {
     return null;
   }
@@ -81,8 +94,64 @@ export function parseFileOpenerParams(
       threadId: typeof threadId === "string" ? threadId : null,
       environmentId: typeof environmentId === "string" ? environmentId : null,
       projectId: typeof projectId === "string" ? projectId : null,
+      ...(typeof experimental_hostId === "string"
+        ? { experimental_hostId }
+        : {}),
     },
   };
+}
+
+/**
+ * Rebuild the native preview behind a plugin file opener. Persisted params own
+ * file/routing identity; the owner retains only native presentation state.
+ */
+export function createFileOpenerOriginalTab(
+  tab: PluginPanelFixedPanelTab,
+): FileOpenerOriginalTab | null {
+  const owner = tab.fileOpenerOwner;
+  const file = parseFileOpenerParams(tab.paramsJson);
+  if (owner === undefined || file === null) return null;
+
+  const id = `${tab.id}:file-opener-original`;
+  if (
+    owner.kind === "workspace-file-preview" &&
+    file.source.kind === "workspace"
+  ) {
+    return {
+      ...owner.tab,
+      environmentId: file.source.environmentId,
+      id,
+      kind: "workspace-file-preview",
+      path: file.path,
+      projectId: file.source.projectId,
+    };
+  }
+  if (owner.kind === "host-file-preview" && file.source.kind === "host") {
+    return {
+      ...owner.tab,
+      environmentId: file.source.environmentId,
+      hostId: file.source.experimental_hostId ?? null,
+      id,
+      kind: "host-file-preview",
+      path: file.path,
+      threadId: file.source.threadId,
+    };
+  }
+  if (
+    owner.kind === "thread-storage-file-preview" &&
+    file.source.kind === "thread-storage"
+  ) {
+    return {
+      ...owner.tab,
+      environmentId: file.source.environmentId,
+      id,
+      isPinned: false,
+      kind: "thread-storage-file-preview",
+      path: file.path,
+      threadId: file.source.threadId,
+    };
+  }
+  return null;
 }
 
 /**
@@ -95,6 +164,7 @@ export type FileTabViewerOverride = FileOpenerOverride;
 export interface CreateFileOpenerTabForRequestArgs {
   fileOpeners: readonly PluginFileOpenerSlot[];
   preference: FileOpenerPreferenceMap;
+  projectHostId?: string | null;
   projectId: string | null;
   request: OpenSecondaryPanelTabRequest;
   resolvedEnvironmentId: string | null | undefined;
@@ -111,6 +181,7 @@ export interface CreateFileOpenerTabForRequestArgs {
 export function createFileOpenerTabForRequest({
   fileOpeners,
   preference,
+  projectHostId,
   projectId,
   request,
   resolvedEnvironmentId,
@@ -125,14 +196,27 @@ export function createFileOpenerTabForRequest({
   });
   if (owner === null) return null;
   const file = fileForOwnerRequest(owner);
+  const routedFile: PluginFileOpenerFile =
+    file.source.kind === "workspace" &&
+    file.source.environmentId === null &&
+    file.source.projectId !== null &&
+    projectHostId
+      ? {
+          ...file,
+          source: {
+            ...file.source,
+            experimental_hostId: projectHostId,
+          },
+        }
+      : file;
   const resolved = resolveFileOpenerReplacement({
     registrations: fileOpeners,
     preference,
-    path: file.path,
+    path: routedFile.path,
     ...(viewer !== undefined ? { override: viewer } : {}),
   });
   return resolved.kind === "plugin"
-    ? buildFileOpenerPanelTab(resolved.registration, file, owner)
+    ? buildFileOpenerPanelTab(resolved.registration, routedFile, owner)
     : null;
 }
 
@@ -148,33 +232,51 @@ function ownerRequestForOpenRequest({
   switch (request.kind) {
     case "workspace-file-preview": {
       // Same guard as the built-in path, plus live-content-only rules.
-      if (resolvedEnvironmentId === undefined) return null;
+      if (
+        request.environmentId === undefined &&
+        resolvedEnvironmentId === undefined
+      ) {
+        return null;
+      }
       if (request.tab.source.kind !== "working-tree") return null;
       if (request.tab.statusLabel === "deleted") return null;
+      const environmentId =
+        request.environmentId ?? resolvedEnvironmentId ?? null;
       return {
         kind: request.kind,
-        environmentId: resolvedEnvironmentId,
-        projectId: resolvedEnvironmentId === null ? projectId : null,
+        environmentId,
+        projectId: environmentId === null ? projectId : null,
         tab: request.tab,
         threadId: threadId ?? null,
       };
     }
     case "host-file-preview": {
+      if (request.hostId !== undefined) {
+        return {
+          kind: request.kind,
+          environmentId: null,
+          hostId: request.hostId,
+          tab: request.tab,
+          threadId: null,
+        };
+      }
       if (!threadId || !resolvedEnvironmentId) return null;
       return {
         kind: request.kind,
         environmentId: resolvedEnvironmentId,
+        hostId: null,
         tab: request.tab,
         threadId,
       };
     }
     case "thread-storage-file-preview": {
-      if (!threadId) return null;
+      const storageThreadId = request.threadId ?? threadId;
+      if (!storageThreadId) return null;
       return {
         kind: request.kind,
         environmentId: resolvedEnvironmentId ?? null,
         tab: request.tab,
-        threadId,
+        threadId: storageThreadId,
       };
     }
     default:
@@ -200,6 +302,9 @@ function fileForOwnerRequest(
         path: owner.tab.path,
         source: buildSource("host", {
           environmentId: owner.environmentId,
+          ...(owner.hostId === null
+            ? {}
+            : { experimental_hostId: owner.hostId }),
           projectId: null,
           threadId: owner.threadId,
         }),
@@ -218,11 +323,7 @@ function fileForOwnerRequest(
 
 function buildSource(
   kind: PluginFileOpenerSource["kind"],
-  fields: {
-    environmentId: string | null;
-    projectId: string | null;
-    threadId: string | null;
-  },
+  fields: Omit<PluginFileOpenerSource, "kind">,
 ): PluginFileOpenerSource {
   return { kind, ...fields };
 }

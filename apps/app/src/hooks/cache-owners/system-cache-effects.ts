@@ -19,6 +19,7 @@ import {
   allThreadQueryKeyPrefix,
   allThreadStorageFilePreviewQueryKeyPrefix,
   allThreadStorageFilesQueryKeyPrefix,
+  allThreadStorageLocationsQueryKeyPrefix,
   allThreadStoragePathsQueryKeyPrefix,
   allThreadTimelineQueryKeyPrefix,
   allThreadTimelineTurnSummaryDetailsQueryKeyPrefix,
@@ -33,6 +34,7 @@ import {
 } from "../queries/query-keys";
 import { allThreadDefaultExecutionOptionsQueryKeyPrefix } from "../queries/thread-default-execution-options-query";
 import type { QueryClientArg } from "../cache-effect-types";
+import { clearCachedModelCatalogs } from "@/lib/model-catalog-cache";
 import { bumpAllDiffPatchEvictionGenerations } from "./environment-diff-patch-cache-owner";
 import { invalidateSystemVersion } from "./system-version-cache-owner";
 import {
@@ -167,6 +169,22 @@ export function invalidateGeneralSettingsDependencies({
   });
 }
 
+/**
+ * Forget every model catalog after streamer mode flips. An invalidation would
+ * keep showing the previous catalog, and the localStorage preload would replay
+ * it on the next mount, until a refetch succeeds; both can still name a model
+ * the server now hides. A reset drops the data first, so open pickers show a
+ * loading state and refetch instead of the stale list.
+ */
+export function resetModelCatalogsAfterStreamerModeChange({
+  queryClient,
+}: QueryClientArg): Promise<void> {
+  clearCachedModelCatalogs();
+  return queryClient.resetQueries({
+    queryKey: allSystemExecutionOptionsQueryKeyPrefix(),
+  });
+}
+
 function getServerReconnectInvalidationQueryKeys(): QueryKey[] {
   return [
     hostsQueryKey(),
@@ -186,6 +204,7 @@ function getServerReconnectInvalidationQueryKeys(): QueryKey[] {
     allThreadPendingInteractionsQueryKeyPrefix(),
     allThreadDefaultExecutionOptionsQueryKeyPrefix(),
     allThreadStorageFilesQueryKeyPrefix(),
+    allThreadStorageLocationsQueryKeyPrefix(),
     allThreadStoragePathsQueryKeyPrefix(),
     allThreadStorageFilePreviewQueryKeyPrefix(),
     allThreadHostFilePreviewQueryKeyPrefix(),

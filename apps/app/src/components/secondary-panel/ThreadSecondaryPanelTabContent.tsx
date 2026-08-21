@@ -13,6 +13,7 @@ import {
   useThreadHostFilePreview,
   useThreadStorageFilePreview,
 } from "@/hooks/queries/thread-queries";
+import { useHostFilePreview } from "@/hooks/queries/host-file-preview-query";
 import {
   buildRawFilesystemHtmlContentUrl,
   buildThreadWorktreeRawContentUrl,
@@ -124,6 +125,18 @@ export interface HostFilePreviewTabContentProps {
   onSelectionAddToChat?: (text: string) => void;
   onOpenInEditor?: (path: string) => void;
   threadId: string;
+}
+
+export interface HostScopedFilePreviewTabContentProps {
+  activePath: string;
+  hostId: string;
+  /**
+   * Whether the secondary panel is open. The retained panel body stays
+   * mounted while closed, but its host read must pause until it is visible.
+   */
+  isPanelOpen: boolean;
+  lineRange: FilePreviewLineRange | null;
+  onOpenInEditor?: (path: string) => void;
 }
 
 export interface ThreadStorageFilePreviewTabContentProps {
@@ -477,6 +490,37 @@ export function HostFilePreviewTabContent({
       onSelectionAddToChat={onSelectionAddToChat}
       onOpenInEditor={onOpenInEditor}
       onRefresh={() => void refetchHostFilePreview()}
+      statusLabel={null}
+    />
+  );
+}
+
+export function HostScopedFilePreviewTabContent({
+  activePath,
+  hostId,
+  isPanelOpen,
+  lineRange,
+  onOpenInEditor,
+}: HostScopedFilePreviewTabContentProps) {
+  const {
+    data: hostFilePreview,
+    error,
+    isFetching,
+    isLoading,
+    refetch,
+  } = useHostFilePreview(hostId, activePath, { enabled: isPanelOpen });
+  return (
+    <SecondaryPanelFilePreview
+      activePath={activePath}
+      copyPath={activePath}
+      error={error}
+      filePreview={hostFilePreview}
+      htmlPreviewUrl={hostFilePreview?.url ?? null}
+      isLoading={isLoading}
+      isRefreshing={isFetching}
+      lineRange={lineRange}
+      onOpenInEditor={onOpenInEditor}
+      onRefresh={() => void refetch()}
       statusLabel={null}
     />
   );

@@ -582,7 +582,7 @@ signatures (see "Looking up the exact API").
 
 | Area             | Methods                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `threads`        | `list` `get` `search` `spawn` `fork` `send` `update` `delete` `stop` `compact` `wait` `open` `output` `timeline` `conversationOutline` `promptHistory` `archive` `archiveAll` `unarchive` `pin` `unpin` `reorderPinned` `markRead` `markUnread` `childSummary` `paneAction` `timelineTurnSummaryDetails` `storageFiles` `storagePaths` `cancelPlan` `clearGoal` `defaultExecutionOptions`; sub-areas `events` (`list` `wait`), `interactions` (`get` `list` `cancel` `resolve` `respond`), `queuedMessages` (`create` `list` `update` `delete` `send` `reorder` `setGroupBoundary`), `tabs` (`get` `update`) |
+| `threads`        | `list` `get` `search` `spawn` `fork` `send` `update` `delete` `stop` `compact` `wait` `open` `output` `timeline` `conversationOutline` `promptHistory` `archive` `archiveAll` `unarchive` `pin` `unpin` `reorderPinned` `markRead` `markUnread` `childSummary` `paneAction` `timelineTurnSummaryDetails` `storageFiles` `storageLocation` `storagePaths` `cancelPlan` `clearGoal` `defaultExecutionOptions`; sub-areas `events` (`list` `wait`), `interactions` (`get` `list` `cancel` `resolve` `respond`), `queuedMessages` (`create` `list` `update` `delete` `send` `reorder` `setGroupBoundary`), `tabs` (`get` `update`) |
 | `threadSections` | `list` `create` `update` `delete`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `projects`       | `list` `get` `create` `update` `delete` `reorder` `paths` `files` `fileContent` `branches` `commands` `defaultExecutionOptions` `promptHistory`; sub-areas `attachments` (`upload` `read` `copy`), `sources` (`add` `update` `delete`)                                                                                                                                                                                                                                                                                                                                                                       |
 | `environments`   | `get` `update` `status` `paths` `commit` `archiveThreads` `diff` `diffFile` `diffFiles` `diffBranches` `diffPatch` `pullRequest` `markPullRequestDraft` `markPullRequestReady` `mergePullRequest` `squashMerge`                                                                                                                                                                                                                                                                                                                                                                                              |
@@ -594,7 +594,7 @@ signatures (see "Looking up the exact API").
 | `plugins`        | `list` `install` `remove` `enable` `disable` `reload` `token` `callRpc` `getSource` `getSettings` `updateSettings` `checkUpdates` `listUpdateResults` `applyUpdate`; sub-area `catalog` (`search` `status` `install`)                                                                                                                                                                                                                                                                                                                                                                                        |
 | `theme`          | `get` `catalog` `set`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `status`         | `get`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
-| `system`         | `version` `config` `reloadConfig` `attention` `usageLimits` `executionOptions` `transcribeVoice` `updateGeneralSettings` `updateKeyboardSettings` `updateExperiments` `cliSkillsStatus` `installCliSkills` `onboardingAgents`                                                                                                                                                                                                                                                                                                                                                                                |
+| `system`         | `version` `config` `reloadConfig` `attention` `usageLimits` `executionOptions` `providerStates` `transcribeVoice` `updateGeneralSettings` `updateKeyboardSettings` `updateExperiments` `cliSkillsStatus` `installCliSkills`                                                                                                                                                                                                                                                                                                                                                                                  |
 | `guide`          | `render` (the `bb guide` text; local, no request)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 
 Prefer your own `bb.settings` and `bb.storage` over `sdk.system` and
@@ -1064,11 +1064,17 @@ bb.agents.experimental_registerProvider({
   id: "echo-agent", // stable public id; thread rows persist it
   displayName: "Echo Agent", // 1-80 chars, shown in the picker
   icon: "./icons/echo.svg", // optional; same grammar as bb.branding.icon
-  kind: "agent", // "agent" REQUIRES bridge; "router" forbids it
-  bridge: { entry: "provider-bridge" }, // names the built bundle
+  // Optional immutable JSON forwarded opaquely to this plugin's bridge.
+  experimental_bridgeOptions: { launch: { command: "echo-agent" } },
+  // "installed" hides the row until provider/health finds the executable.
+  experimental_visibility: "always", // default
   capabilities: {
-    // Pre-session facts only — the bridge reports the same facts at
-    // initialize and may only narrow what is declared here, never widen it.
+    // Sessionless support is declared here so bb can avoid unsupported host
+    // probes and hide providers that never expose usage. A shared bridge that
+    // declares usage may still return no windows or supported: false for one id.
+    experimental_providerHealth: false,
+    experimental_providerUsage: false,
+    experimental_providerInstallation: false,
     supportsServiceTier: false,
     supportsNativeUserQuestion: false,
     fork: "none", // "none" | "tip" | "checkpoint"
@@ -1116,6 +1122,16 @@ Ids are collision-rejected against core providers and other plugins'
 registrations; registrations replace wholesale on reload like every other
 surface. Disabling the plugin removes the provider (open threads show a
 provider-unavailable state instead of erroring).
+
+`experimental_bridgeOptions` must be a plain JSON object no larger than 64
+KiB. It is validated and frozen at registration, then carried on every bridge
+request as provider-scoped static options. Use it for immutable launch facts
+shared by all hosts, not user settings or machine-local state. It participates
+in bridge process identity, so changing it causes the next runtime to use a
+new bridge process. `experimental_visibility: "installed"` makes the provider
+host-dependent: BB asks that provider's bridge for `provider/health` and lists
+it only when the status is not `not_installed`. Such a declaration must support
+health; bridge failures hide only that provider.
 
 **The bridge.** A provider bridge ships inside the plugin's `bb.host`
 artifact — the same artifact a host RPC entry ships in, and a plugin may have
@@ -1241,6 +1257,8 @@ import {
   useSettings,
   useBbContext,
   useBbNavigate,
+  experimental_FileLink as FileLink,
+  experimental_UrlLink as UrlLink,
   useComposer,
   useComposerView,
 } from "@get-bb/plugin-sdk/app";
@@ -1278,6 +1296,7 @@ export default definePluginApp((app) => {
     component: Board,
     experimental_fixedTabs: [
       {
+        panelId: "board",
         id: "navigation",
         title: "Navigation",
         icon: "PanelRight",
@@ -1584,14 +1603,34 @@ Slot props contracts (versioned, additive-only):
   tab survived.
 
   `experimental_fixedTabs` declares ordered, non-closable page views in that
-  same host tab strip: `{ id, title, icon, component, layout? }`. BB opens the
+  same host tab strip:
+  `{ id, panelId, title, icon, component, layout?, experimental_target? }`.
+  BB opens the
   first fixed tab on the page's first wide-layout visit, but remembers a later
-  user close. Only the active fixed-tab component is mounted, and closing the
-  panel unmounts it. It receives the same `{ subPath }` as the main page. `layout: "padded"` (the default) gives it
+  user close. One tab is active per visible split pane, so multiple fixed-tab
+  components can be mounted concurrently. A component mounts only while its
+  tab is active in a visible pane; closing the panel unmounts it. It receives
+  the same `{ subPath }` as the main page. `layout: "padded"` (the default) gives it
   host padding and scrolling; `layout: "flush"` gives it the full panel content
   region so it can own both. Fixed tabs add content to the shared panel; they
   do not replace its native chrome, Browser, Terminal, or keyboard commands.
   Experimental: see `docs/api_to_audit.md`.
+
+  Every registration's `panelId` must exactly match its containing nav panel's
+  `id`; the registration is also the stable reference for selecting that
+  plugin-owned tab. A targetable tab declares
+  `experimental_target: { validate(value): value is Target }`; BB checks JSON
+  safety before calling the owner validator. From any component of the same
+  plugin on that page, call
+  `experimental_useAppPanel().openFixedTab({ surface: { kind: "current" }, tab,
+target? })`. Inside the fixed-tab component,
+  `experimental_useFixedTabTarget(tab)` returns `{ sequence, target, clear }`
+  after validation. The per-tab target survives inactive-tab, closed-panel,
+  and route remounts for the current app session; call `clear()` when the tab
+  returns to its untargeted state. Selection persists through the host's
+  ordinary panel state, while targets remain memory-only and disappear on app
+  refresh. Invalid, unavailable, untargeted, or other-plugin references return
+  false without changing valid panel state.
 
   `experimental_sidebarAccessory` is a no-props, presentational component at
   the trailing edge of the sidebar row. It can own SDK hooks for a live count
@@ -1714,11 +1753,16 @@ projectId }` (nullable fields) and `path` follows the source (workspace:
     id: "compact",
     title: "Compact diffs",
     component: ({ patch, path, experimental_Original: Original }) =>
-      patch.length > 20_000 ? <Original /> : <MyDiff patch={patch} path={path} />,
+      patch.length > 20_000 ? (
+        <Original />
+      ) : (
+        <MyDiff patch={patch} path={path} />
+      ),
   });
   ```
 
   Experimental: see `docs/api_to_audit.md`.
+
 - `messageDirective` → `{ attributes, source, message,
 openWorkspaceFile }` — register a leaf
   assistant-message directive. Registration:
@@ -1835,12 +1879,50 @@ className?, leadingContent?, messageActions? }` —
   panels and plugin nav panels have one; homepage and settings sections do
   not, so code there renders unhighlighted rather than broken.
   Experimental: see `docs/api_to_audit.md`.
+
 - `Markdown` — bb's chat-message markdown renderer (same typography,
   spacing, and code styling as timeline messages). Props:
   `{ content, className? }`. Use it wherever plugin UI quotes or previews
   message content (e.g. a reply header) so it reads like the rest of the
   chat instead of a differently-styled bundled renderer. Renderer options
   beyond content/className stay host-internal.
+- `experimental_UrlLink` — a real anchor whose ordinary HTTP(S) activation
+  follows the current client's in-app/external-browser preference. It keeps
+  internal BB routes in SPA history, preserves modifier clicks, copying,
+  accessibility, and explicit anchor props, and leaves unsupported schemes and
+  explicit targets to browser behavior. A `_blank` or named target preserves
+  supplied `rel` tokens but adds `noopener noreferrer` unless `rel` explicitly
+  contains `opener`. Use `useBbNavigate().experimental_openUrl(url)` for
+  buttons, menus, and effects; its boolean reports whether the current app
+  accepted the intent, not whether a later OS launch completed.
+- `experimental_FileLink` — a real anchor for an explicit live file target:
+  `{ kind: "workspace", environmentId, path }`,
+  `{ kind: "host", hostId, path }` (absolute), or
+  `{ kind: "thread-storage", threadId, path }`. Ordinary activation opens the
+  current surface's shared BB preview. Its lazy context menu offers the
+  built-in preview, matching plugin `fileOpener`s, the preferred external
+  target, available client apps, and copy actions. Valid targets expose an
+  encoded, scheme-safe href; traversal paths, ill-formed Unicode, and other
+  malformed runtime targets are inert in both the app and SDK test harness.
+  Optional `location` is a one-based line/column or line range. For buttons and
+  effects use
+  `useBbNavigate().experimental_openFilePreview({ target, location })` or
+  `.experimental_openFileExternally({ target, location })`; the boolean means
+  host acceptance, not completed I/O. Every identity is explicit—never invent
+  an environment id or turn a project id into a workspace target. The testing
+  harness records both calls in `navigateCalls` and gates them with the
+  `openFilePreview` / `openFileExternally` behavior options.
+- `experimental_useAppPanel` — returns the generic current-surface fixed-tab
+  controller. `openFixedTab({ surface: { kind: "current" }, tab, target? })`
+  accepts a plugin's own eligible fixed-tab registration, validates any target
+  through that registration's `experimental_target` contract, opens the shared
+  panel, and returns host acceptance. The controller does not interpret target
+  shapes. Targeted fixed tabs use `experimental_useFixedTabTarget(tab)` to read
+  current-session state and call `clear()` when returning to an untargeted
+  state. The frontend harness records accepted calls in
+  `experimental_fixedTabOpenCalls`, gates them with
+  `experimental_openFixedTab`, and seeds state with
+  `experimental_fixedTabTarget`.
 - `experimental_NewThreadComposer` — bb's complete compose surface for
   CREATING a thread (the create-side counterpart to `ThreadChat`): prompt
   editor with @-mentions and expand, `+` attachments,
@@ -1940,12 +2022,14 @@ Hooks:
 - `useBbContext()` → `{ projectId, threadId }` from the current route.
 - `useBbNavigate()` → `{ toThread(id), toProject(id), toPluginPanel(path,
 { subPath?, replace? }?), toCompose({ initialPrompt?, focusPrompt? }?),
-openThreadPanel({ actionId, title?, params? }) }`.
+openThreadPanel({ actionId, title?, params? }), experimental_openUrl(url) }`.
   `toCompose` opens the root compose screen; pass `initialPrompt` to seed the
   composer draft and `focusPrompt: true` to focus it. The panel
   opener opens one of the current plugin's registered `threadPanelAction` tabs
   in the current thread surface and returns whether the host accepted it; it
   returns false on surfaces without a thread side panel.
+  `experimental_openUrl` owns HTTP(S) only and returns false for schemes BB
+  leaves to normal anchor behavior.
 - `useComposer()` → programmatic access to the chat composer draft (the
   same one the built-in "Add to chat" affordances write to):
   `text` is the current plain text; `setText(next)` replaces it;
@@ -2202,6 +2286,7 @@ const slot = renderSlot(
     settings: { greeting: "hi" }, // useSettings() values
     context: { projectId: "p1", threadId: null }, // useBbContext()
     realtimeConnectionState: "reconnecting", // useRealtimeConnectionState()
+    openUrl: (url) => url.startsWith("https://"),
   },
 );
 await slot.findByText("…"); // Testing Library queries

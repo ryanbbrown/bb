@@ -3,8 +3,7 @@
  *
  * Provider metadata is declared server-side by plugins and rides every
  * bridge-bound command on `bridgeLaunch`, so almost nothing belongs here. What
- * remains is the pre-first-result session-restore seed and the ACP id shape —
- * the same role `acp-launch-specs.ts` plays for ACP launch data.
+ * remains is the pre-first-result session-restore seed and the ACP id shape.
  */
 
 /** Whether an id belongs to the dynamic ACP tier. */

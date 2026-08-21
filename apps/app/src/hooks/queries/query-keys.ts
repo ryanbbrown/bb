@@ -38,9 +38,11 @@ export const THREAD_PENDING_INTERACTIONS_QUERY_KEY =
 export const TERMINALS_QUERY_KEY = "terminals";
 export const PROJECT_COMMANDS_QUERY_KEY = "projectCommands";
 export const THREAD_STORAGE_FILES_QUERY_KEY = "threadStorageFiles";
+export const THREAD_STORAGE_LOCATION_QUERY_KEY = "threadStorageLocation";
 export const THREAD_STORAGE_PATHS_QUERY_KEY = "threadStoragePaths";
 export const THREAD_STORAGE_FILE_PREVIEW_QUERY_KEY = "threadStorageFilePreview";
 export const THREAD_HOST_FILE_PREVIEW_QUERY_KEY = "threadHostFilePreview";
+export const HOST_FILE_PREVIEW_QUERY_KEY = "hostFilePreview";
 export const ENVIRONMENT_QUERY_KEY = "environment";
 export const ENVIRONMENT_WORK_STATUS_QUERY_KEY = "environmentWorkStatus";
 export const ENVIRONMENT_PULL_REQUEST_QUERY_KEY = "environmentPullRequest";
@@ -63,7 +65,7 @@ export const SYSTEM_CLI_SKILLS_QUERY_KEY = "systemCliSkills";
 export const SYSTEM_VERSION_QUERY_KEY = "systemVersion";
 export const HOST_PROVIDER_CLI_STATUS_QUERY_KEY = "hostProviderCliStatus";
 export const SYSTEM_USAGE_LIMITS_QUERY_KEY = "systemUsageLimits";
-export const ONBOARDING_AGENTS_QUERY_KEY = "onboardingAgents";
+export const SYSTEM_PROVIDER_STATES_QUERY_KEY = "systemProviderStates";
 export const HOST_PATH_EXISTENCE_QUERY_KEY = "hostPathExistence";
 export const PROJECT_SKILLS_QUERY_KEY = "projectSkills";
 export const SKILL_CONTENT_QUERY_KEY = "skillContent";
@@ -259,6 +261,13 @@ export type ThreadStorageFilesQueryKey = readonly [
   string,
   ThreadStorageFileListOptions,
 ];
+export type ThreadStorageLocationQueryKey = readonly [
+  typeof THREAD_STORAGE_LOCATION_QUERY_KEY,
+  string,
+];
+export type AllThreadStorageLocationsQueryKeyPrefix = readonly [
+  typeof THREAD_STORAGE_LOCATION_QUERY_KEY,
+];
 export type ThreadStoragePathsQueryKey = readonly [
   typeof THREAD_STORAGE_PATHS_QUERY_KEY,
   string,
@@ -298,6 +307,11 @@ export type ThreadHostFilePreviewQueryKey = readonly [
 ];
 export type AllThreadHostFilePreviewQueryKeyPrefix = readonly [
   typeof THREAD_HOST_FILE_PREVIEW_QUERY_KEY,
+];
+export type HostFilePreviewQueryKey = readonly [
+  typeof HOST_FILE_PREVIEW_QUERY_KEY,
+  string | null,
+  string | null,
 ];
 export type EnvironmentQueryKeyPrefix = readonly [typeof ENVIRONMENT_QUERY_KEY];
 export type EnvironmentQueryKey = readonly [
@@ -440,6 +454,7 @@ export type SystemProvidersQueryKey = readonly [
   typeof SYSTEM_PROVIDERS_QUERY_KEY,
   string | null,
   string | null,
+  "usage" | null,
 ];
 export type AllSystemProvidersQueryKeyPrefix = readonly [
   typeof SYSTEM_PROVIDERS_QUERY_KEY,
@@ -456,9 +471,10 @@ export type HostProviderCliStatusQueryKey = readonly [
 export type SystemUsageLimitsQueryKey = readonly [
   typeof SYSTEM_USAGE_LIMITS_QUERY_KEY,
   string | null,
+  string | null,
 ];
-export type OnboardingAgentsQueryKey = readonly [
-  typeof ONBOARDING_AGENTS_QUERY_KEY,
+export type SystemProviderStatesQueryKey = readonly [
+  typeof SYSTEM_PROVIDER_STATES_QUERY_KEY,
   string | null,
   string | null,
 ];
@@ -771,6 +787,16 @@ export function threadStorageFilesQueryKey(
   return [THREAD_STORAGE_FILES_QUERY_KEY, threadId, options];
 }
 
+export function threadStorageLocationQueryKey(
+  threadId: string,
+): ThreadStorageLocationQueryKey {
+  return [THREAD_STORAGE_LOCATION_QUERY_KEY, threadId];
+}
+
+export function allThreadStorageLocationsQueryKeyPrefix(): AllThreadStorageLocationsQueryKeyPrefix {
+  return [THREAD_STORAGE_LOCATION_QUERY_KEY];
+}
+
 export function threadStoragePathsQueryKey(
   threadId: string,
   options: PathListOptions = DEFAULT_FILE_ONLY_PATH_LIST_OPTIONS,
@@ -821,6 +847,13 @@ export function threadHostFilePreviewQueryKey(
   path: string | null,
 ): ThreadHostFilePreviewQueryKey {
   return [THREAD_HOST_FILE_PREVIEW_QUERY_KEY, threadId, environmentId, path];
+}
+
+export function hostFilePreviewQueryKey(
+  hostId: string | null,
+  path: string | null,
+): HostFilePreviewQueryKey {
+  return [HOST_FILE_PREVIEW_QUERY_KEY, hostId, path];
 }
 
 export function allThreadHostFilePreviewQueryKeyPrefix(): AllThreadHostFilePreviewQueryKeyPrefix {
@@ -1046,6 +1079,7 @@ export function environmentFilePreviewQueryKeyPrefix(
 }
 
 export interface SystemProvidersQueryKeyArgs {
+  capability?: "usage" | null;
   environmentId?: string | null;
   hostId?: string | null;
 }
@@ -1057,6 +1091,7 @@ export function systemProvidersQueryKey(
     SYSTEM_PROVIDERS_QUERY_KEY,
     args.environmentId ?? null,
     args.hostId ?? null,
+    args.capability ?? null,
   ];
 }
 
@@ -1084,14 +1119,15 @@ export function hostProviderCliStatusQueryKey(
 
 export function systemUsageLimitsQueryKey(
   hostId: string | null,
+  providerId: string | null = null,
 ): SystemUsageLimitsQueryKey {
-  return [SYSTEM_USAGE_LIMITS_QUERY_KEY, hostId];
+  return [SYSTEM_USAGE_LIMITS_QUERY_KEY, hostId, providerId];
 }
 
-export function onboardingAgentsQueryKey(
+export function systemProviderStatesQueryKey(
   args: Pick<SystemExecutionOptionsQueryKeyArgs, "environmentId" | "hostId">,
-): OnboardingAgentsQueryKey {
-  return [ONBOARDING_AGENTS_QUERY_KEY, args.environmentId, args.hostId];
+): SystemProviderStatesQueryKey {
+  return [SYSTEM_PROVIDER_STATES_QUERY_KEY, args.environmentId, args.hostId];
 }
 
 export interface SystemExecutionOptionsQueryKeyArgs {

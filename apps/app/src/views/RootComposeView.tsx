@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type ReactNode,
-} from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useQueryClient } from "@tanstack/react-query";
 import { findCachedProviderInfo } from "@/hooks/queries/system-queries";
@@ -16,7 +10,6 @@ import {
   type ServiceTier,
   type ThreadListEntry,
 } from "@bb/domain";
-import type { OpenInTargetContext } from "@bb/host-daemon-contract";
 import type { NewThreadRequest } from "@get-bb/plugin-sdk";
 import type {
   SidebarBootstrapResponse,
@@ -26,7 +19,7 @@ import {
   NewThreadComposer,
   type NewThreadComposerState,
 } from "@/components/promptbox/NewThreadComposer";
-import { CodexCliVersionBanner } from "@/components/promptbox/banner/CodexCliVersionBanner";
+import { ProviderCliVersionBanner } from "@/components/promptbox/banner/ProviderCliVersionBanner";
 import {
   buildProviderCliIssue,
   hasProviderCliAction,
@@ -45,17 +38,11 @@ import {
 import type { ReuseThreadOption } from "@/components/pickers/WorktreePicker";
 import { HEADER_ICON_BUTTON_CLASS } from "@/components/layout/AppPageHeader";
 import { AppCommandShortcutHint } from "@/components/commands/AppCommandShortcutHint";
-import type { SecondaryPanelFileTab } from "@/components/secondary-panel/ThreadSecondaryPanel";
-import {
-  LazyBrowserTabDeck,
-  LazyFilePreview,
-  LazyHostFilePreviewTabContent,
-  LazyNewTabPage,
-  LazyProjectFilePreviewTabContent,
-  LazyThreadStorageFilePreviewTabContent,
-  LazyThreadTerminalPanel,
-  LazyWorkspaceFilePreviewTabContent,
-} from "@/components/secondary-panel/lazySecondaryPanelComponents";
+import type {
+  SecondaryPanelPaneRenderContext,
+  SecondaryPanelRenderableTab,
+} from "@/components/secondary-panel/ThreadSecondaryPanel";
+import { LazyBrowserTabDeck } from "@/components/secondary-panel/lazySecondaryPanelComponents";
 import type { BrowserAddressFocusRequest } from "@/components/secondary-panel/BrowserTabContent";
 import { EmptyStatePanel } from "@bb/shared-ui/empty-state";
 import { Icon } from "@bb/shared-ui/icon";
@@ -66,10 +53,8 @@ import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
 import { COARSE_POINTER_COMPACT_ICON_SIZE_CLASS } from "@bb/shared-ui/coarse-pointer-sizing";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
-import {
-  PluginPanelTabContent,
-  usePluginNewThreadPanelActions,
-} from "@/components/plugin/PluginPanelActions";
+import type { FileTabViewerOverride } from "@/components/plugin/file-opener-tabs";
+import { usePluginNewThreadPanelActions } from "@/components/plugin/PluginPanelActions";
 import { usePluginSlots } from "@/lib/plugin-slots";
 import { useCreateThread } from "@/hooks/mutations/thread-runtime-mutations";
 import {
@@ -82,8 +67,6 @@ import {
 } from "@/hooks/queries/thread-terminal-queries";
 import { useEnvironment } from "@/hooks/queries/environment-queries";
 import { useHostProviderCliStatus } from "@/hooks/queries/system-queries";
-import { useHostDaemon } from "@/hooks/useHostDaemon";
-import { useLocalOpenTargets } from "@/hooks/useLocalOpenTargets";
 import {
   requestComposerFocus,
   subscribeComposerFocusRequests,
@@ -109,7 +92,6 @@ import {
   getRootComposeRoutePath,
   isRoutePath,
 } from "@/lib/route-paths";
-import { resolveAbsoluteFilePath } from "@/lib/absolute-file-path";
 import { getBrowserUrlHost } from "@/lib/browser-url";
 import {
   getDesktopBrowserApi,
@@ -125,17 +107,27 @@ import {
 } from "@/lib/fixed-panel-tabs";
 import { createNewTabFixedPanelTab } from "@/lib/fixed-panel-tabs-state";
 import type { ThreadSecondaryPanel as ThreadSecondaryPanelTab } from "@/lib/thread-secondary-panel";
-import {
-  getFilePreviewLineRangeStart,
-  type HostFileTabState,
-  type ThreadStorageFileTabState,
-  type WorkspaceFileTabState,
+import type {
+  HostFileTabState,
+  ThreadStorageFileTabState,
+  WorkspaceFileTabState,
 } from "@/lib/file-preview";
 import {
   resolveUrlOpenTarget,
   useOpenLinksInAppBrowserPreference,
 } from "@/lib/in-app-browser-link-preference";
 import type { MarkdownPreviewLinkHandler } from "@/components/ui/markdown-link";
+import { UrlOpenRoutingProvider } from "@/lib/url-open-routing";
+import {
+  AppNavigationHostProvider,
+  type AppFilePreviewIntent,
+  type AppFixedTabOpenIntent,
+} from "@/lib/app-navigation-host";
+import { openAppFixedTabFromDestinations } from "@/lib/app-fixed-tab-navigation";
+import {
+  normalizeExperimentalFileOpenOptions,
+  toFilePreviewLineRange,
+} from "@/lib/live-file-navigation";
 import {
   useRootComposeProjectId,
   useSetRootComposeProjectId,
@@ -164,7 +156,6 @@ import {
 } from "@/components/thread/terminal/useThreadTerminalController";
 import {
   buildTerminalSyncedSecondaryFileTabs,
-  findActiveTerminalIdInSecondaryFileTabs,
   getRetainedTerminalTabId,
   syncTerminalTabsInFixedPanelState,
 } from "@/components/secondary-panel/terminalPanelTabs";
@@ -178,41 +169,24 @@ import {
 } from "./thread-detail/useThreadSecondaryPanelVisibility";
 import type { ThreadSecondaryPanelHostFileOpenHandler } from "./thread-detail/useThreadSecondaryPanelVisibility";
 import {
-  buildOpenInEditorHandler,
-  resolveEnvironmentOpenContext,
-  resolveThreadWorkspacePreviewRootPath,
-} from "./thread-detail/threadWorkspaceOpenPath";
-import {
   useAppCommandHandler,
   useAppCommandShortcut,
 } from "@/components/commands/AppCommandProvider";
 import { useOptionalPaneContext } from "./thread-detail/PaneContext";
 import { RootComposePanelCommandHandlers } from "./RootComposePanelCommandHandlers";
+import {
+  ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
+  RootComposePanelTabContent,
+  type RootComposeTerminalTarget,
+} from "./RootComposePanelTabContent";
+export { resolveRootComposeProjectFileRouting } from "./RootComposePanelTabContent";
 
 const ROOT_COMPOSE_ZEN_MODE_STORAGE_KEY = "bb.promptbox.zen-mode.root-compose";
 const ROOT_COMPOSE_SIDEBAR_ACTION_ALIGNED_TOP_PADDING_CLASS = "pt-14";
 
-function resolveHostOpenContext(args: {
-  hostId: string | null;
-  isLocal: boolean;
-  serverOrigin: string;
-}): OpenInTargetContext | null {
-  if (args.hostId === null) {
-    return null;
-  }
-  if (args.isLocal) {
-    return { kind: "local" };
-  }
-  return {
-    kind: "remote-ssh",
-    serverOrigin: args.serverOrigin,
-    hostId: args.hostId,
-  };
-}
 // Fill the scroll area and center the no-projects welcome both axes.
 const ROOT_COMPOSE_EMPTY_WELCOME_CONTENT_CLASS =
   "min-h-full flex-1 items-center justify-center pb-12";
-const ROOT_COMPOSE_FIXED_PANEL_STATE_ID = "root-compose";
 const EMPTY_TERMINAL_SESSIONS: readonly TerminalSession[] = [];
 
 type SecondaryPanelChangeHandler = (panel: ThreadSecondaryPanelTab) => void;
@@ -290,10 +264,6 @@ interface CanCreateRootComposeTerminalArgs {
   environmentStatus: EnvironmentStatus | undefined;
 }
 
-type RootComposeTerminalTarget =
-  | { kind: "environment"; environmentId: string }
-  | { kind: "host_path"; cwd: string | null; hostId: string };
-
 interface BuildRootComposeTerminalSessionsArgs {
   environmentTerminalSessions: readonly TerminalSession[] | undefined;
   globalTerminalSessions: readonly TerminalSession[] | undefined;
@@ -323,37 +293,6 @@ export function resolveRootComposePanelTogglePlacement(args: {
 
 interface RightPanelFileTabIconProps {
   path: string;
-}
-
-interface BuildRootComposeNewTabFileTabArgs {
-  activeTabId: string | null;
-  onClose: () => void;
-  onSelect: () => void;
-  tabId: string;
-}
-
-/** The root launcher uses the same visible tab-pill model as thread panels. */
-export function buildRootComposeNewTabFileTab({
-  activeTabId,
-  onClose,
-  onSelect,
-  tabId,
-}: BuildRootComposeNewTabFileTabArgs): SecondaryPanelFileTab {
-  return {
-    id: tabId,
-    filename: "New tab",
-    isActive: tabId === activeTabId,
-    leadingVisual: (
-      <Icon
-        name="NewTab"
-        className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
-        aria-hidden
-      />
-    ),
-    statusLabel: null,
-    onSelect,
-    onClose,
-  };
 }
 
 function RightPanelFileTabIcon({ path }: RightPanelFileTabIconProps) {
@@ -712,7 +651,7 @@ export function RootComposeView() {
       selectionScope="new-thread"
       seed={composerSeed}
       resetKey={forkSeed?.sourceThreadId ?? null}
-      preferConnectedProviderWhenUnset={forkSeed === null}
+      preferReadyProviderWhenUnset={forkSeed === null}
       onSubmit={handleSubmit}
     >
       {(composer) => (
@@ -954,22 +893,28 @@ function RootComposeSurface({
   });
   const { queuedJobKeys, runningJobKey, startInstall } =
     useProviderCliInstallRunner();
-  const codexCliStatus = providerCliStatus.data?.codex ?? null;
-  const isCodexCliVersionBlocked =
-    selectedProviderId === "codex" &&
-    codexCliStatus?.versionUnsupported === true;
-  const codexCliIssue = useMemo(() => {
-    if (!isCodexCliVersionBlocked || codexCliStatus === null) return null;
+  const selectedProviderCliStatus =
+    providerCliStatus.data?.[selectedProviderId] ?? null;
+  const isProviderCliVersionBlocked =
+    selectedProviderCliStatus?.versionUnsupported === true;
+  const selectedProviderCliIssue = useMemo(() => {
+    if (!isProviderCliVersionBlocked || selectedProviderCliStatus === null) {
+      return null;
+    }
     const issue = buildProviderCliIssue({
-      provider: "codex",
-      status: codexCliStatus,
+      provider: selectedProviderId,
+      status: selectedProviderCliStatus,
     });
     return issue && hasProviderCliAction(issue) ? issue : null;
-  }, [codexCliStatus, isCodexCliVersionBlocked]);
-  const handleUpdateCodexCli = useCallback(() => {
-    if (codexCliIssue === null || composeHostId === null) return;
-    startInstall({ hostId: composeHostId, issue: codexCliIssue });
-  }, [codexCliIssue, composeHostId, startInstall]);
+  }, [
+    isProviderCliVersionBlocked,
+    selectedProviderCliStatus,
+    selectedProviderId,
+  ]);
+  const handleUpdateProviderCli = useCallback(() => {
+    if (selectedProviderCliIssue === null || composeHostId === null) return;
+    startInstall({ hostId: composeHostId, issue: selectedProviderCliIssue });
+  }, [selectedProviderCliIssue, composeHostId, startInstall]);
 
   useFixedPanelTabsStorageMaintenance();
   const fixedPanelTabsState = useFixedPanelTabsState(
@@ -989,13 +934,6 @@ function RootComposeSurface({
     [activeFixedSecondaryTab, isPersistedSecondaryPanelOpen],
   );
   const activeFixedSecondaryTabId = activeFixedSecondaryTab?.id ?? null;
-  const rawActiveRootStorageFileTab =
-    activeFixedSecondaryTab?.kind === "thread-storage-file-preview"
-      ? activeFixedSecondaryTab
-      : null;
-  const rawActiveRootStorageFileThreadId =
-    rawActiveRootStorageFileTab?.threadId ??
-    (rawActiveRootStorageFileTab ? rootPanelThreadId : null);
   const renderSecondaryPanelAsDrawer = useIsCompactViewport();
   const secondaryPanelDrawerVisibility =
     useThreadSecondaryPanelDrawerVisibility({
@@ -1083,38 +1021,18 @@ function RootComposeSurface({
         : rootPanelHostPathTerminalTarget,
     [rootPanelEnvironmentId, rootPanelHostPathTerminalTarget],
   );
-  const {
-    threadStorageFiles: rootThreadStorageFiles,
-    threadStorageRootPath: rootThreadStorageRootPath,
-  } = useThreadStorageViewer({
-    activePath: null,
-    fileListEnabled: shouldLoadThreadStorageFileList({
-      hasThread: rootPanelThreadId !== null,
-      isSecondaryPanelOpen,
-      secondaryTabs: fixedPanelTabsState.secondary.tabs,
-    }),
-    filePreviewEnabled: false,
-    threadId: rootPanelThreadId ?? undefined,
-  });
-  const shouldUseRootStorageViewerForActiveTab =
-    rawActiveRootStorageFileThreadId !== null &&
-    rawActiveRootStorageFileThreadId === rootPanelThreadId;
-  const { threadStorageRootPath: activeStorageThreadStorageRootPath } =
-    useThreadStorageViewer({
+  const { threadStorageFiles: rootThreadStorageFiles } = useThreadStorageViewer(
+    {
       activePath: null,
-      fileListEnabled:
-        rawActiveRootStorageFileThreadId !== null &&
-        !shouldUseRootStorageViewerForActiveTab,
+      fileListEnabled: shouldLoadThreadStorageFileList({
+        hasThread: rootPanelThreadId !== null,
+        isSecondaryPanelOpen,
+        secondaryTabs: fixedPanelTabsState.secondary.tabs,
+      }),
       filePreviewEnabled: false,
-      threadId:
-        rawActiveRootStorageFileThreadId !== null &&
-        !shouldUseRootStorageViewerForActiveTab
-          ? rawActiveRootStorageFileThreadId
-          : undefined,
-    });
-  const activeStorageFileRootPath = shouldUseRootStorageViewerForActiveTab
-    ? rootThreadStorageRootPath
-    : activeStorageThreadStorageRootPath;
+      threadId: rootPanelThreadId ?? undefined,
+    },
+  );
   const environmentTerminalsListQuery = useEnvironmentTerminals(
     rootPanelEnvironmentId ?? "",
     {
@@ -1167,31 +1085,13 @@ function RootComposeSurface({
   const { newThreadPanelActions: rootPanelNewThreadPanelActions } =
     usePluginSlots();
   const {
-    activePluginPanelTab,
-    activeFileOpenerOwner,
-    activeHostFileEnvironmentId,
-    activeHostFileLineRange,
-    activeHostFilePath,
-    activeHostFileThreadId,
-    activeStorageFileEnvironmentId,
-    activeStorageFileLineRange,
-    activeStorageFilePath,
-    activeStorageFileThreadId,
-    activeWorkspaceFileEnvironmentId,
-    activeWorkspaceFileLineRange,
-    activeWorkspaceFilePath,
-    activeWorkspaceFileProjectId,
-    activeWorkspaceFileSource,
-    activeWorkspaceFileStatusLabel,
-    activeBrowserTab,
     browserTabs,
     activateTab,
     closeTab,
-    isNewTabActive,
     openPluginPanel,
     openTab,
     orderedSecondaryFileTabs,
-    reorderFileTab,
+    reorderTab,
     selectFileSearchResult,
     updateBrowserTab,
   } = useThreadFileTabs({
@@ -1200,6 +1100,7 @@ function RootComposeSurface({
     environmentId: rootPanelEnvironmentId,
     fileOwnerThreadId: rootPanelThreadId,
     preserveWorkspaceTabsAcrossContexts: true,
+    projectHostId: rootProjectHostId,
     projectId: isProjectless ? null : projectId,
     retainedTerminalId,
     storageFiles: rootThreadStorageFiles?.files,
@@ -1209,19 +1110,6 @@ function RootComposeSurface({
     openPluginPanel,
     projectId: isProjectless ? null : projectId,
   });
-
-  const activeRootHostFileThreadId =
-    activeHostFileThreadId ??
-    (activeHostFilePath !== null ? rootPanelThreadId : null);
-  const activeRootHostFileEnvironmentId =
-    activeHostFileEnvironmentId ??
-    (activeHostFilePath !== null ? rootPanelEnvironmentId : null);
-  const activeRootStorageFileThreadId =
-    activeStorageFileThreadId ??
-    (activeStorageFilePath !== null ? rootPanelThreadId : null);
-  const activeRootStorageFileEnvironmentId =
-    activeStorageFileEnvironmentId ??
-    (activeStorageFilePath !== null ? rootPanelEnvironmentId : null);
   const syncedOrderedSecondaryFileTabs = useMemo(
     () =>
       loadedTerminalSessions === undefined
@@ -1257,21 +1145,27 @@ function RootComposeSurface({
     environmentStatus: rootPanelEnvironment?.status,
   });
   const openPersistedWorkspaceFile = useCallback(
-    (file: WorkspaceFileTabState) => {
-      openTab({ kind: "workspace-file-preview", tab: file });
+    (
+      file: WorkspaceFileTabState,
+      options?: { viewer?: FileTabViewerOverride },
+    ) => {
+      openTab({ kind: "workspace-file-preview", tab: file }, options);
     },
     [openTab],
   );
   const openPersistedStorageFile = useCallback(
-    (file: ThreadStorageFileTabState) => {
-      openTab({ kind: "thread-storage-file-preview", tab: file });
+    (
+      file: ThreadStorageFileTabState,
+      options?: { viewer?: FileTabViewerOverride },
+    ) => {
+      openTab({ kind: "thread-storage-file-preview", tab: file }, options);
     },
     [openTab],
   );
   const openPersistedHostFile =
     useCallback<ThreadSecondaryPanelHostFileOpenHandler>(
-      (file: HostFileTabState) => {
-        openTab({ kind: "host-file-preview", tab: file });
+      (file: HostFileTabState, options) => {
+        openTab({ kind: "host-file-preview", tab: file }, options);
       },
       [openTab],
     );
@@ -1294,6 +1188,7 @@ function RootComposeSurface({
   const {
     closePanel: closeSecondaryPanel,
     openCompactDrawer,
+    openHostFile,
     openStorageFile,
     openWorkspaceFile,
   } = useThreadSecondaryPanelVisibility({
@@ -1310,6 +1205,60 @@ function RootComposeSurface({
     openPersistedWorkspaceFile,
     togglePersistedPanel: toggleRootPersistedSecondaryPanel,
   });
+  const handleOpenLiveFilePreview = useCallback(
+    (intent: AppFilePreviewIntent): boolean => {
+      const normalized = normalizeExperimentalFileOpenOptions(intent);
+      if (normalized === null) return false;
+      const lineRange = toFilePreviewLineRange(normalized.location);
+      const options =
+        intent.viewer === undefined ? undefined : { viewer: intent.viewer };
+      switch (normalized.target.kind) {
+        case "workspace":
+          if (normalized.target.environmentId !== rootPanelEnvironmentId) {
+            return false;
+          }
+          openWorkspaceFile(
+            {
+              lineRange,
+              path: normalized.target.path,
+              source: { kind: "working-tree" },
+              statusLabel: null,
+            },
+            options,
+          );
+          return true;
+        case "host":
+          if (
+            rootPanelThreadId === null ||
+            normalized.target.hostId !== rootPanelEnvironment?.hostId
+          ) {
+            return false;
+          }
+          openHostFile({ lineRange, path: normalized.target.path }, options);
+          return true;
+        case "thread-storage":
+          if (normalized.target.threadId !== rootPanelThreadId) return false;
+          openStorageFile({ lineRange, path: normalized.target.path }, options);
+          return true;
+      }
+    },
+    [
+      openHostFile,
+      openStorageFile,
+      openWorkspaceFile,
+      rootPanelEnvironment?.hostId,
+      rootPanelEnvironmentId,
+      rootPanelThreadId,
+    ],
+  );
+  const appNavigationCapabilities = useMemo(
+    () => ({
+      openFilePreview: handleOpenLiveFilePreview,
+      openFixedTab: (intent: AppFixedTabOpenIntent) =>
+        openAppFixedTabFromDestinations([], intent),
+    }),
+    [handleOpenLiveFilePreview],
+  );
   // Click handler for inserted mention pills in the root composer: threads
   // navigate, files open the root right-panel preview. Directories and commands
   // stay display-only.
@@ -1334,29 +1283,38 @@ function RootComposeSurface({
         if (rootPanelThreadId === null) {
           return null;
         }
-        return () =>
-          openStorageFile({
-            lineRange: null,
-            path: resource.path,
+        return () => {
+          handleOpenLiveFilePreview({
+            target: {
+              kind: "thread-storage",
+              threadId: rootPanelThreadId,
+              path: resource.path,
+            },
+            location: null,
           });
+        };
       }
       if (isProjectless) {
         return null;
       }
-      return () =>
-        openWorkspaceFile({
-          lineRange: null,
-          path: resource.path,
-          source: { kind: "working-tree" },
-          statusLabel: null,
+      if (rootPanelEnvironmentId === null) return null;
+      return () => {
+        handleOpenLiveFilePreview({
+          target: {
+            kind: "workspace",
+            environmentId: rootPanelEnvironmentId,
+            path: resource.path,
+          },
+          location: null,
         });
+      };
     },
     [
       isProjectless,
+      handleOpenLiveFilePreview,
       navigate,
-      openStorageFile,
-      openWorkspaceFile,
       projectId,
+      rootPanelEnvironmentId,
       rootPanelThreadId,
     ],
   );
@@ -1421,27 +1379,38 @@ function RootComposeSurface({
     });
   }, [browserTabIds, openBrowserTabAndReveal]);
   const renderBrowserDeck = useCallback(
-    ({ canShowNativeBrowserView }: { canShowNativeBrowserView: boolean }) => {
+    ({
+      activeBrowserTabId,
+      canHandleBrowserCommands,
+      canShowNativeBrowserView,
+      onNativeFocus,
+    }: {
+      activeBrowserTabId: string | null;
+      canHandleBrowserCommands: boolean;
+      canShowNativeBrowserView: boolean;
+      onNativeFocus: () => void;
+    }) => {
       if (rootPanelThreadId === null) {
         return null;
       }
       return (
         <LazyBrowserTabDeck
           browserTabs={browserTabs}
-          activeBrowserTabId={activeBrowserTab?.id ?? null}
+          activeBrowserTabId={activeBrowserTabId}
           addressFocusRequest={browserAddressFocusRequest}
           onAddressFocusRequestConsumed={
             handleBrowserAddressFocusRequestConsumed
           }
           environmentId={rootPanelEnvironmentId}
           canShowNativeBrowserView={canShowNativeBrowserView}
+          canHandleBrowserCommands={canHandleBrowserCommands}
+          onNativeFocus={onNativeFocus}
           threadId={rootPanelThreadId}
           onUpdate={updateBrowserTab}
         />
       );
     },
     [
-      activeBrowserTab?.id,
       browserAddressFocusRequest,
       browserTabs,
       handleBrowserAddressFocusRequestConsumed,
@@ -1616,342 +1585,6 @@ function RootComposeSurface({
     handleCloseTerminalTab,
     isSecondaryPanelOpen,
   ]);
-  const fileTabs = useMemo(() => {
-    const filenameOf = (path: string) => path.split("/").at(-1) ?? path;
-    const tabs = syncedOrderedSecondaryFileTabs.map(
-      (tab): SecondaryPanelFileTab => {
-        switch (tab.kind) {
-          case "browser": {
-            const browserLabel =
-              tab.title ??
-              (tab.url.length > 0 ? getBrowserUrlHost(tab.url) : "");
-            return {
-              id: tab.id,
-              filename: browserLabel.length > 0 ? browserLabel : "Browser",
-              isActive: tab.id === activeFixedSecondaryTabId,
-              leadingVisual: (
-                <Icon
-                  name="Globe"
-                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
-                  aria-hidden
-                />
-              ),
-              statusLabel: null,
-              onSelect: () => handleActivateFileTab(tab.id),
-              onClose: () => closeTab(tab.id),
-            };
-          }
-          case "terminal": {
-            const session = terminalsById.get(tab.terminalId);
-            return {
-              id: tab.id,
-              filename: session?.title ?? "Terminal",
-              isActive: tab.id === activeFixedSecondaryTabId,
-              leadingVisual: (
-                <Icon
-                  name="Terminal"
-                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
-                  aria-hidden
-                />
-              ),
-              statusLabel:
-                session === undefined || session.status === "running"
-                  ? null
-                  : terminalStatusLabel(session),
-              onSelect: () => handleActivateTerminalTab(tab.terminalId),
-              onClose: () => handleCloseTerminalTab(tab.terminalId),
-            };
-          }
-          case "workspace-file-preview":
-            return {
-              id: tab.id,
-              filename: filenameOf(tab.path),
-              isActive: tab.id === activeFixedSecondaryTabId,
-              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
-              statusLabel: tab.statusLabel,
-              onSelect: () => handleActivateFileTab(tab.id),
-              onClose: () => closeTab(tab.id),
-            };
-          case "host-file-preview":
-            return {
-              id: tab.id,
-              filename: filenameOf(tab.path),
-              isActive: tab.id === activeFixedSecondaryTabId,
-              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
-              statusLabel: null,
-              onSelect: () => handleActivateFileTab(tab.id),
-              onClose: () => closeTab(tab.id),
-            };
-          case "thread-storage-file-preview":
-            return {
-              id: tab.id,
-              filename: filenameOf(tab.path),
-              isActive: tab.id === activeFixedSecondaryTabId,
-              isPinned: tab.isPinned,
-              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
-              statusLabel: null,
-              onSelect: () => handleActivateFileTab(tab.id),
-              onClose: () => closeTab(tab.id),
-            };
-          case "new-tab":
-            return buildRootComposeNewTabFileTab({
-              activeTabId: activeFixedSecondaryTabId,
-              onClose: () => closeTab(tab.id),
-              onSelect: () => handleActivateFileTab(tab.id),
-              tabId: tab.id,
-            });
-          case "plugin-panel": {
-            const actionIcon =
-              rootPanelNewThreadPanelActions.find(
-                (action) =>
-                  action.pluginId === tab.pluginId &&
-                  action.id === tab.actionId,
-              )?.icon ?? null;
-            return {
-              id: tab.id,
-              filename: tab.title,
-              isActive: tab.id === activeFixedSecondaryTabId,
-              leadingVisual: (
-                <PluginIcon
-                  pluginId={tab.pluginId}
-                  icon={actionIcon}
-                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
-                />
-              ),
-              statusLabel: null,
-              onSelect: () => handleActivateFileTab(tab.id),
-              onClose: () => closeTab(tab.id),
-            };
-          }
-        }
-      },
-    );
-    return tabs.length > 0 ? tabs : undefined;
-  }, [
-    activeFixedSecondaryTabId,
-    closeTab,
-    handleActivateFileTab,
-    handleActivateTerminalTab,
-    handleCloseTerminalTab,
-    rootPanelNewThreadPanelActions,
-    syncedOrderedSecondaryFileTabs,
-    terminalsById,
-  ]);
-  const { isLocalDaemonHost } = useHostDaemon();
-  const activeWorkspaceEnvironmentQuery = useEnvironment(
-    activeWorkspaceFileEnvironmentId,
-    {
-      enabled:
-        activeWorkspaceFileEnvironmentId !== null &&
-        activeWorkspaceFileEnvironmentId !== rootPanelEnvironmentId,
-      staleTime: 5_000,
-    },
-  );
-  const activeWorkspaceEnvironment =
-    activeWorkspaceFileEnvironmentId === rootPanelEnvironmentId
-      ? rootPanelEnvironment
-      : activeWorkspaceEnvironmentQuery.data;
-  const activeHostEnvironmentQuery = useEnvironment(
-    activeRootHostFileEnvironmentId,
-    {
-      enabled:
-        activeRootHostFileEnvironmentId !== null &&
-        activeRootHostFileEnvironmentId !== rootPanelEnvironmentId,
-      staleTime: 5_000,
-    },
-  );
-  const activeHostEnvironment =
-    activeRootHostFileEnvironmentId === rootPanelEnvironmentId
-      ? rootPanelEnvironment
-      : activeHostEnvironmentQuery.data;
-  const activeStorageEnvironmentQuery = useEnvironment(
-    activeRootStorageFileEnvironmentId,
-    {
-      enabled:
-        activeRootStorageFileEnvironmentId !== null &&
-        activeRootStorageFileEnvironmentId !== rootPanelEnvironmentId,
-      staleTime: 5_000,
-    },
-  );
-  const activeStorageEnvironment =
-    activeRootStorageFileEnvironmentId === rootPanelEnvironmentId
-      ? rootPanelEnvironment
-      : activeStorageEnvironmentQuery.data;
-  const activeWorkspaceEnvironmentIsLocal = activeWorkspaceEnvironment
-    ? isLocalDaemonHost(activeWorkspaceEnvironment.hostId)
-    : false;
-  const activeHostEnvironmentIsLocal = activeHostEnvironment
-    ? isLocalDaemonHost(activeHostEnvironment.hostId)
-    : false;
-  const activeStorageEnvironmentIsLocal = activeStorageEnvironment
-    ? isLocalDaemonHost(activeStorageEnvironment.hostId)
-    : false;
-  const activeWorkspaceFileProjectPreviewId =
-    activeWorkspaceFilePath !== null &&
-    activeWorkspaceFileEnvironmentId === null
-      ? (activeWorkspaceFileProjectId ?? projectId)
-      : null;
-  const serverOrigin = window.location.origin;
-  const activeWorkspaceOpenContext = resolveEnvironmentOpenContext({
-    environment: activeWorkspaceEnvironment,
-    threadEnvironmentIsLocal: activeWorkspaceEnvironmentIsLocal,
-    serverOrigin,
-  });
-  const workspacePreviewRootPath = resolveThreadWorkspacePreviewRootPath({
-    environment: activeWorkspaceEnvironment,
-  });
-  const activeProjectSources =
-    activeWorkspaceFileProjectPreviewId === null
-      ? []
-      : activeWorkspaceFileProjectPreviewId === projectId
-        ? projectSources
-        : (projects?.find(
-            (project) => project.id === activeWorkspaceFileProjectPreviewId,
-          )?.sources ?? []);
-  const projectSourcePreviewRootPath =
-    activeWorkspaceFileEnvironmentId === null &&
-    activeWorkspaceFileProjectPreviewId !== null
-      ? rootPanelEnvironmentId !== null
-        ? (rootPanelEnvironment?.path ?? null)
-        : rootProjectHostId !== null
-          ? (findLocalPathProjectSourceForHost(
-              activeProjectSources,
-              rootProjectHostId,
-            )?.path ?? null)
-          : null
-      : null;
-  const projectSourcePreviewHostId =
-    projectSourcePreviewRootPath === null
-      ? null
-      : (rootPanelEnvironment?.hostId ?? rootProjectHostId);
-  const projectSourceOpenContext = resolveHostOpenContext({
-    hostId: projectSourcePreviewHostId,
-    isLocal: isLocalDaemonHost(projectSourcePreviewHostId),
-    serverOrigin,
-  });
-  const activeHostOpenContext = resolveEnvironmentOpenContext({
-    environment: activeHostEnvironment,
-    threadEnvironmentIsLocal: activeHostEnvironmentIsLocal,
-    serverOrigin,
-  });
-  const activeStorageOpenContext = resolveEnvironmentOpenContext({
-    environment: activeStorageEnvironment,
-    threadEnvironmentIsLocal: activeStorageEnvironmentIsLocal,
-    serverOrigin,
-  });
-  const activeOpenContext =
-    activeWorkspaceFilePath !== null &&
-    activeWorkspaceFileEnvironmentId !== null
-      ? activeWorkspaceOpenContext
-      : activeWorkspaceFilePath !== null &&
-          activeWorkspaceFileProjectPreviewId !== null
-        ? projectSourceOpenContext
-        : activeHostFilePath !== null
-          ? activeHostOpenContext
-          : activeStorageFilePath !== null
-            ? activeStorageOpenContext
-            : null;
-  const { canOpenPreferredFileTarget, openPathInPreferredFileTarget } =
-    useLocalOpenTargets({
-      enabled: activeOpenContext !== null,
-      ...(activeOpenContext ? { openContext: activeOpenContext } : {}),
-    });
-  const handleOpenWorkspaceFileInEditor = useMemo(
-    () =>
-      buildOpenInEditorHandler({
-        rootPath: workspacePreviewRootPath,
-        canOpenPreferredTarget: canOpenPreferredFileTarget,
-        openInPreferredTarget: openPathInPreferredFileTarget,
-      }),
-    [
-      canOpenPreferredFileTarget,
-      openPathInPreferredFileTarget,
-      workspacePreviewRootPath,
-    ],
-  );
-  const handleOpenStorageFileInEditor = useMemo(
-    () =>
-      buildOpenInEditorHandler({
-        rootPath: activeStorageFileRootPath,
-        canOpenPreferredTarget: canOpenPreferredFileTarget,
-        openInPreferredTarget: openPathInPreferredFileTarget,
-      }),
-    [
-      activeStorageFileRootPath,
-      canOpenPreferredFileTarget,
-      openPathInPreferredFileTarget,
-    ],
-  );
-  const handleOpenProjectFileInEditor = useMemo(
-    () =>
-      buildOpenInEditorHandler({
-        rootPath: projectSourcePreviewRootPath,
-        canOpenPreferredTarget: canOpenPreferredFileTarget,
-        openInPreferredTarget: openPathInPreferredFileTarget,
-      }),
-    [
-      canOpenPreferredFileTarget,
-      openPathInPreferredFileTarget,
-      projectSourcePreviewRootPath,
-    ],
-  );
-  const activeRootHostFileLineNumber = getFilePreviewLineRangeStart({
-    lineRange: activeHostFileLineRange,
-  });
-  const handleOpenHostFileInEditor = canOpenPreferredFileTarget
-    ? (path: string) => {
-        void openPathInPreferredFileTarget({
-          lineNumber: activeRootHostFileLineNumber,
-          path,
-        });
-      }
-    : undefined;
-  useAppCommandHandler("workspace.openPreferred", () => {
-    if (!isFocusedPane) return false;
-    if (
-      activeWorkspaceFilePath !== null &&
-      activeWorkspaceFileEnvironmentId !== null &&
-      handleOpenWorkspaceFileInEditor
-    ) {
-      handleOpenWorkspaceFileInEditor(activeWorkspaceFilePath);
-      return true;
-    }
-    if (
-      activeWorkspaceFilePath !== null &&
-      activeWorkspaceFileProjectPreviewId !== null &&
-      handleOpenProjectFileInEditor
-    ) {
-      handleOpenProjectFileInEditor(activeWorkspaceFilePath);
-      return true;
-    }
-    if (activeHostFilePath !== null && handleOpenHostFileInEditor) {
-      handleOpenHostFileInEditor(activeHostFilePath);
-      return true;
-    }
-    if (activeStorageFilePath !== null && handleOpenStorageFileInEditor) {
-      handleOpenStorageFileInEditor(activeStorageFilePath);
-      return true;
-    }
-    return false;
-  });
-  const workspaceFileCopyPath = activeWorkspaceFilePath
-    ? resolveAbsoluteFilePath({
-        path: activeWorkspaceFilePath,
-        rootPath: workspacePreviewRootPath,
-      })
-    : null;
-  const projectFileCopyPath = activeWorkspaceFilePath
-    ? resolveAbsoluteFilePath({
-        path: activeWorkspaceFilePath,
-        rootPath: projectSourcePreviewRootPath,
-      })
-    : null;
-  const storageFileCopyPath = activeStorageFilePath
-    ? resolveAbsoluteFilePath({
-        path: activeStorageFilePath,
-        rootPath: activeStorageFileRootPath,
-      })
-    : null;
   const [openLinksInAppBrowser] = useOpenLinksInAppBrowserPreference();
   const desktopBrowserAvailable = isDesktopBrowserAvailable();
   const handleOpenPanelLink = useCallback<MarkdownPreviewLinkHandler>(
@@ -1976,138 +1609,195 @@ function RootComposeSurface({
       rootPanelThreadId,
     ],
   );
-  const activeTerminalId = findActiveTerminalIdInSecondaryFileTabs({
-    activeTabId: activeFixedSecondaryTabId,
-    tabs: syncedOrderedSecondaryFileTabs,
-  });
-  const renderFileOpenerReplacement = (original: ReactNode): ReactNode =>
-    activeFileOpenerOwner !== null && activePluginPanelTab !== null ? (
-      <PluginPanelTabContent
-        tab={activePluginPanelTab}
-        context={{
-          kind: "new-thread",
-          projectId: isProjectless ? null : projectId,
-        }}
-        fileOpenerOriginal={original}
-      />
-    ) : (
-      original
-    );
-  const fileTabContent: ReactNode =
-    activeTerminalId && rootPanelTerminalTarget ? (
-      <LazyThreadTerminalPanel
-        autoFocus={shouldAutoFocusTerminal}
+  const renderRootPanelTabContent = useCallback(
+    (
+      tab: (typeof syncedOrderedSecondaryFileTabs)[number],
+      pane: SecondaryPanelPaneRenderContext,
+    ) => (
+      <RootComposePanelTabContent
+        activeTabId={activeFixedSecondaryTabId}
         canCreateTerminal={canCreateRootTerminal}
+        currentProjectId={projectId}
         isPanelOpen={isSecondaryPanelOpen}
         isPanelPersistedOpen={isPersistedSecondaryPanelOpen}
-        onAutoFocusHandled={handleTerminalAutoFocusHandled}
-        onOpenLink={handleOpenPanelLink}
+        isProjectless={isProjectless}
+        onActivateTab={activateTab}
+        onAutoFocusNewTabHandled={handleNewTabAutoFocusHandled}
+        onAutoFocusTerminalHandled={handleTerminalAutoFocusHandled}
+        onOpenBrowser={handleOpenBrowser}
+        onOpenPanelLink={handleOpenPanelLink}
+        onSelectFileSearchResult={handleSelectFileSearchResult}
         onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-        panelStateId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
-        syncThreadId={null}
-        target={rootPanelTerminalTarget}
-      />
-    ) : isNewTabActive ? (
-      <LazyNewTabPage
-        autoFocus={shouldAutoFocusNewTab}
-        projectId={isProjectless ? undefined : projectId}
-        environmentId={rootPanelEnvironmentId}
-        hostId={rootProjectHostId}
-        currentThreadId={rootPanelThreadId ?? ""}
-        onAutoFocusHandled={handleNewTabAutoFocusHandled}
-        onSelect={handleSelectFileSearchResult}
-        recentItemsThreadId={ROOT_COMPOSE_FIXED_PANEL_STATE_ID}
-        onOpenBrowser={rootPanelThreadId ? handleOpenBrowser : undefined}
-        onStartTerminal={
-          canCreateRootTerminal ? handleStartTerminal : undefined
-        }
+        onStartTerminal={handleStartTerminal}
+        pane={pane}
+        primaryHostId={primaryHostId}
         pluginActions={rootPluginPanelActions}
-        showFileSearch={!isProjectless}
+        projectSources={projectSources}
+        projects={projects}
+        rootPanelEnvironmentId={rootPanelEnvironmentId}
+        rootPanelThreadId={rootPanelThreadId}
+        rootProjectHostId={rootProjectHostId}
+        shouldAutoFocusNewTab={shouldAutoFocusNewTab}
+        shouldAutoFocusTerminal={shouldAutoFocusTerminal}
+        tab={tab}
+        terminalTarget={rootPanelTerminalTarget}
       />
-    ) : activeWorkspaceFilePath !== null &&
-      activeWorkspaceFileEnvironmentId !== null ? (
-      renderFileOpenerReplacement(
-        <LazyWorkspaceFilePreviewTabContent
-          activePath={activeWorkspaceFilePath}
-          copyPath={workspaceFileCopyPath}
-          environmentId={activeWorkspaceFileEnvironmentId}
-          isPanelOpen={isSecondaryPanelOpen}
-          lineRange={activeWorkspaceFileLineRange}
-          onOpenInEditor={handleOpenWorkspaceFileInEditor}
-          onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-          source={activeWorkspaceFileSource}
-          statusLabel={activeWorkspaceFileStatusLabel}
-          threadId={rootPanelThreadId}
-        />,
-      )
-    ) : activeWorkspaceFilePath !== null &&
-      activeWorkspaceFileProjectPreviewId !== null ? (
-      renderFileOpenerReplacement(
-        <LazyProjectFilePreviewTabContent
-          activePath={activeWorkspaceFilePath}
-          copyPath={projectFileCopyPath}
-          environmentId={rootPanelEnvironmentId}
-          hostId={rootProjectHostId}
-          isPanelOpen={isSecondaryPanelOpen}
-          lineRange={activeWorkspaceFileLineRange}
-          onOpenInEditor={handleOpenProjectFileInEditor}
-          onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-          projectId={activeWorkspaceFileProjectPreviewId}
-        />,
-      )
-    ) : activeHostFilePath !== null ? (
-      renderFileOpenerReplacement(
-        activeRootHostFileThreadId && activeRootHostFileEnvironmentId ? (
-          <LazyHostFilePreviewTabContent
-            activePath={activeHostFilePath}
-            copyPath={activeHostFilePath}
-            environmentId={activeRootHostFileEnvironmentId}
-            isPanelOpen={isSecondaryPanelOpen}
-            lineRange={activeHostFileLineRange}
-            onOpenInEditor={handleOpenHostFileInEditor}
-            onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-            threadId={activeRootHostFileThreadId}
-          />
-        ) : (
-          <LazyFilePreview
-            path={activeHostFilePath}
-            copyPath={activeHostFilePath}
-            onOpenInEditor={handleOpenHostFileInEditor}
-            state={{ kind: "loading" }}
-          />
-        ),
-      )
-    ) : activeStorageFilePath !== null ? (
-      renderFileOpenerReplacement(
-        activeRootStorageFileThreadId ? (
-          <LazyThreadStorageFilePreviewTabContent
-            activePath={activeStorageFilePath}
-            copyPath={storageFileCopyPath}
-            isPanelOpen={isSecondaryPanelOpen}
-            lineRange={activeStorageFileLineRange}
-            onOpenInEditor={handleOpenStorageFileInEditor}
-            onSelectionAddToChat={handleRootPanelSelectionAddToChat}
-            threadId={activeRootStorageFileThreadId}
-          />
-        ) : (
-          <LazyFilePreview
-            path={activeStorageFilePath}
-            copyPath={storageFileCopyPath}
-            onOpenInEditor={handleOpenStorageFileInEditor}
-            state={{ kind: "loading" }}
-          />
-        ),
-      )
-    ) : activePluginPanelTab ? (
-      <PluginPanelTabContent
-        tab={activePluginPanelTab}
-        context={{
-          kind: "new-thread",
-          projectId: isProjectless ? null : projectId,
-        }}
-      />
-    ) : undefined;
-  const isBrowserTabActive = activeBrowserTab !== null;
+    ),
+    [
+      activateTab,
+      activeFixedSecondaryTabId,
+      canCreateRootTerminal,
+      handleNewTabAutoFocusHandled,
+      handleOpenBrowser,
+      handleOpenPanelLink,
+      handleRootPanelSelectionAddToChat,
+      handleSelectFileSearchResult,
+      handleStartTerminal,
+      handleTerminalAutoFocusHandled,
+      isPersistedSecondaryPanelOpen,
+      isProjectless,
+      isSecondaryPanelOpen,
+      projectId,
+      primaryHostId,
+      projectSources,
+      projects,
+      rootPanelEnvironmentId,
+      rootPanelThreadId,
+      rootPanelTerminalTarget,
+      rootPluginPanelActions,
+      rootProjectHostId,
+      shouldAutoFocusNewTab,
+      shouldAutoFocusTerminal,
+    ],
+  );
+  const panelTabs = useMemo<readonly SecondaryPanelRenderableTab[]>(() => {
+    const filenameOf = (path: string) => path.split("/").at(-1) ?? path;
+    const tabs = syncedOrderedSecondaryFileTabs.map(
+      (tab): SecondaryPanelRenderableTab => {
+        const pluginAction =
+          tab.kind === "plugin-panel"
+            ? rootPanelNewThreadPanelActions.find(
+                (action) =>
+                  action.pluginId === tab.pluginId &&
+                  action.id === tab.actionId,
+              )
+            : undefined;
+        const shared = {
+          contentFillsRegion:
+            tab.kind === "plugin-panel" &&
+            (tab.fileOpenerOwner !== undefined ||
+              pluginAction?.layout === "flush"),
+          onClose: () => closeTab(tab.id),
+          renderContent: (pane: SecondaryPanelPaneRenderContext) =>
+            renderRootPanelTabContent(tab, pane),
+          tab,
+        };
+        switch (tab.kind) {
+          case "browser": {
+            const browserLabel =
+              tab.title ??
+              (tab.url.length > 0 ? getBrowserUrlHost(tab.url) : "");
+            return {
+              ...shared,
+              label: browserLabel.length > 0 ? browserLabel : "Browser",
+              leadingVisual: (
+                <Icon
+                  name="Globe"
+                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
+                  aria-hidden
+                />
+              ),
+              statusLabel: null,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+          }
+          case "terminal": {
+            const session = terminalsById.get(tab.terminalId);
+            return {
+              ...shared,
+              label: session?.title ?? "Terminal",
+              leadingVisual: (
+                <Icon
+                  name="Terminal"
+                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
+                  aria-hidden
+                />
+              ),
+              statusLabel:
+                session === undefined || session.status === "running"
+                  ? null
+                  : terminalStatusLabel(session),
+              onSelect: () => handleActivateTerminalTab(tab.terminalId),
+              onClose: () => handleCloseTerminalTab(tab.terminalId),
+            };
+          }
+          case "workspace-file-preview":
+            return {
+              ...shared,
+              label: filenameOf(tab.path),
+              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
+              statusLabel: tab.statusLabel,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+          case "host-file-preview":
+            return {
+              ...shared,
+              label: filenameOf(tab.path),
+              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
+              statusLabel: null,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+          case "thread-storage-file-preview":
+            return {
+              ...shared,
+              label: filenameOf(tab.path),
+              isPinned: tab.isPinned,
+              leadingVisual: <RightPanelFileTabIcon path={tab.path} />,
+              statusLabel: null,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+          case "new-tab":
+            return {
+              ...shared,
+              label: "New tab",
+              leadingVisual: (
+                <Icon
+                  name="NewTab"
+                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
+                  aria-hidden
+                />
+              ),
+              statusLabel: null,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+          case "plugin-panel":
+            return {
+              ...shared,
+              label: tab.title,
+              leadingVisual: (
+                <PluginIcon
+                  pluginId={tab.pluginId}
+                  icon={pluginAction?.icon ?? null}
+                  className={COARSE_POINTER_COMPACT_ICON_SIZE_CLASS}
+                />
+              ),
+              statusLabel: null,
+              onSelect: () => handleActivateFileTab(tab.id),
+            };
+        }
+      },
+    );
+    return tabs;
+  }, [
+    closeTab,
+    handleActivateFileTab,
+    handleActivateTerminalTab,
+    handleCloseTerminalTab,
+    renderRootPanelTabContent,
+    rootPanelNewThreadPanelActions,
+    syncedOrderedSecondaryFileTabs,
+    terminalsById,
+  ]);
   const rootPanelMetadataContent = useMemo(
     () => (
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden px-4 pt-1">
@@ -2168,14 +1858,14 @@ function RootComposeSurface({
   // Focus the composer once it mounts in place of the welcome screen.
   useEffect(() => {
     if (!startedComposing) return;
-    if (isCodexCliVersionBlocked) return;
+    if (isProviderCliVersionBlocked) return;
     if (isPointerCoarse) return;
     const handle = window.requestAnimationFrame(() => {
       promptBoxRef.current?.focusEnd();
     });
     return () => window.cancelAnimationFrame(handle);
   }, [
-    isCodexCliVersionBlocked,
+    isProviderCliVersionBlocked,
     isPointerCoarse,
     promptBoxRef,
     startedComposing,
@@ -2244,30 +1934,37 @@ function RootComposeSurface({
   }, [forkSeed, handleCancelForkDraft]);
 
   const promptBanner = useMemo(() => {
-    if (!isCodexCliVersionBlocked || codexCliStatus === null) {
+    if (!isProviderCliVersionBlocked || selectedProviderCliStatus === null) {
       return null;
     }
     return (
-      <CodexCliVersionBanner
-        currentVersion={codexCliStatus.currentVersion}
-        minimumSupportedVersion={codexCliStatus.minimumSupportedVersion}
-        canUpdate={codexCliIssue !== null}
+      <ProviderCliVersionBanner
+        displayName={selectedProviderCliStatus.displayName}
+        currentVersion={selectedProviderCliStatus.currentVersion}
+        minimumSupportedVersion={
+          selectedProviderCliStatus.minimumSupportedVersion
+        }
+        canUpdate={selectedProviderCliIssue !== null}
         updating={
           composeHostId !== null &&
-          (runningJobKey === providerCliJobKey(composeHostId, "codex") ||
-            queuedJobKeys.has(providerCliJobKey(composeHostId, "codex")))
+          (runningJobKey ===
+            providerCliJobKey(composeHostId, selectedProviderId) ||
+            queuedJobKeys.has(
+              providerCliJobKey(composeHostId, selectedProviderId),
+            ))
         }
-        onUpdate={handleUpdateCodexCli}
+        onUpdate={handleUpdateProviderCli}
       />
     );
   }, [
-    codexCliIssue,
-    codexCliStatus,
     composeHostId,
-    handleUpdateCodexCli,
-    isCodexCliVersionBlocked,
+    handleUpdateProviderCli,
+    isProviderCliVersionBlocked,
     queuedJobKeys,
     runningJobKey,
+    selectedProviderCliIssue,
+    selectedProviderCliStatus,
+    selectedProviderId,
   ]);
 
   // The composer renders immediately with loading pickers; only a failed
@@ -2296,15 +1993,15 @@ function RootComposeSurface({
 
   const promptBox = renderPromptBox({
     id: "root-compose-prompt",
-    autoFocus: !isCodexCliVersionBlocked,
+    autoFocus: !isProviderCliVersionBlocked,
     zenModeStorageKey: getProjectScopedStorageKey(
       ROOT_COMPOSE_ZEN_MODE_STORAGE_KEY,
       projectId,
     ),
     banner: promptBanner,
     header: promptHeader,
-    blockedReason: isCodexCliVersionBlocked
-      ? "Update the Codex CLI before starting a thread."
+    blockedReason: isProviderCliVersionBlocked
+      ? `Update ${selectedProviderCliStatus?.displayName ?? selectedProviderId} before starting a thread.`
       : undefined,
     resolveMentionLink,
     pluginComposerHost,
@@ -2335,76 +2032,75 @@ function RootComposeSurface({
       {machineSetupDialog}
       {rootPanelToggle}
       <PluginComposerHostProvider value={pluginComposerHost}>
-        <RootComposeSecondaryContent
-          contentClassName={
-            showEmptyWelcome
-              ? ROOT_COMPOSE_EMPTY_WELCOME_CONTENT_CLASS
-              : ROOT_COMPOSE_SIDEBAR_ACTION_ALIGNED_TOP_PADDING_CLASS
+        <UrlOpenRoutingProvider
+          openInAppBrowser={
+            desktopBrowserAvailable && rootPanelThreadId !== null
+              ? openBrowserTabAndReveal
+              : null
           }
-          isSecondaryPanelOpen={isSecondaryPanelOpen}
-          onToggleSecondaryPanel={handleToggleSecondaryPanel}
-          panelTogglePositionClassName={panelTogglePositionClassName}
-          secondaryPanel={{
-            activeTab: activeFixedSecondaryTab,
-            canUseGitUi: false,
-            environmentId: rootPanelEnvironmentId ?? undefined,
-            metadataContent: rootPanelMetadataContent,
-            workspaceRootPath:
-              rootPanelEnvironment?.path ??
-              (rootPanelTerminalTarget?.kind === "host_path"
-                ? (rootPanelTerminalTarget.cwd ?? undefined)
-                : undefined),
-            fileTabs,
-            fileTabContent,
-            fileTabContentFillsRegion:
-              activePluginPanelTab !== null &&
-              // See ThreadDetailView: a `fileOpener` tab owns its layout, and
-              // its `file-opener:<id>` actionId never matches a panel action.
-              (activePluginPanelTab.fileOpenerOwner !== undefined ||
-                rootPanelNewThreadPanelActions.find(
-                  (candidate) =>
-                    candidate.pluginId === activePluginPanelTab.pluginId &&
-                    candidate.id === activePluginPanelTab.actionId,
-                )?.layout === "flush"),
-            renderBrowserDeck,
-            isBrowserTabActive,
-            isOpen: isSecondaryPanelOpen,
-            fixedTabs: [],
-            // The shell, tab strip, launcher, resize, and drawer behavior are
-            // shared with threads. Info, Diff, and conversation full-screen
-            // stay thread-only because no thread exists on this surface yet.
-            showConversationCollapseControl: false,
-            inlinePanelToggle: panelTogglePlacement.inlinePanelToggle,
-            onClose: closeSecondaryPanel,
-            onCollapse: closeSecondaryPanel,
-            onOpenFileInEditor: handleOpenWorkspaceFileInEditor,
-            onFileTabReorder: reorderFileTab,
-            onOpenNewTab: handleOpenNewTab,
-            onOpenFilePreview: handleOpenFilePreview,
-            onSelectionAddToChat: handleRootPanelSelectionAddToChat,
-            onPanelFocus: handleSecondaryPanelFocus,
-          }}
         >
-          {showEmptyWelcome ? (
-            <RootComposeEmptyWelcome
-              onCompose={handleStartComposing}
-              onAddProject={quickCreateProject.openCreateDialog}
-              addProjectDisabled={
-                !quickCreateProject.isAvailable || quickCreateProject.isCreating
+          <AppNavigationHostProvider capabilities={appNavigationCapabilities}>
+            <RootComposeSecondaryContent
+              contentClassName={
+                showEmptyWelcome
+                  ? ROOT_COMPOSE_EMPTY_WELCOME_CONTENT_CLASS
+                  : ROOT_COMPOSE_SIDEBAR_ACTION_ALIGNED_TOP_PADDING_CLASS
               }
-            />
-          ) : (
-            <>
-              {promptBox}
-              <RootComposeMobileRecents
-                highlightedThreadId={lastCreatedThreadId}
-                projectNamesById={mobileRecentProjectNamesById}
-                showCreatingRow={isSubmitting}
-                threads={mobileRecentThreads}
-              />
-            </>
-          )}
-        </RootComposeSecondaryContent>
+              isSecondaryPanelOpen={isSecondaryPanelOpen}
+              onToggleSecondaryPanel={handleToggleSecondaryPanel}
+              panelTogglePositionClassName={panelTogglePositionClassName}
+              secondaryPanel={{
+                activeTab: activeFixedSecondaryTab,
+                canUseGitUi: false,
+                environmentId: rootPanelEnvironmentId ?? undefined,
+                metadataContent: rootPanelMetadataContent,
+                workspaceRootPath:
+                  rootPanelEnvironment?.path ??
+                  (rootPanelTerminalTarget?.kind === "host_path"
+                    ? (rootPanelTerminalTarget.cwd ?? undefined)
+                    : undefined),
+                tabs: panelTabs,
+                splitPanelStateId: ROOT_COMPOSE_FIXED_PANEL_STATE_ID,
+                renderBrowserDeck,
+                isOpen: isSecondaryPanelOpen,
+                fixedTabs: [],
+                // The shell, tab strip, launcher, resize, and drawer behavior are
+                // shared with threads. Info, Diff, and conversation full-screen
+                // stay thread-only because no thread exists on this surface yet.
+                showConversationCollapseControl: false,
+                inlinePanelToggle: panelTogglePlacement.inlinePanelToggle,
+                onClose: closeSecondaryPanel,
+                onCollapse: closeSecondaryPanel,
+                onTabReorder: reorderTab,
+                onOpenNewTab: handleOpenNewTab,
+                onOpenFilePreview: handleOpenFilePreview,
+                onSelectionAddToChat: handleRootPanelSelectionAddToChat,
+                onPanelFocus: handleSecondaryPanelFocus,
+              }}
+            >
+              {showEmptyWelcome ? (
+                <RootComposeEmptyWelcome
+                  onCompose={handleStartComposing}
+                  onAddProject={quickCreateProject.openCreateDialog}
+                  addProjectDisabled={
+                    !quickCreateProject.isAvailable ||
+                    quickCreateProject.isCreating
+                  }
+                />
+              ) : (
+                <>
+                  {promptBox}
+                  <RootComposeMobileRecents
+                    highlightedThreadId={lastCreatedThreadId}
+                    projectNamesById={mobileRecentProjectNamesById}
+                    showCreatingRow={isSubmitting}
+                    threads={mobileRecentThreads}
+                  />
+                </>
+              )}
+            </RootComposeSecondaryContent>
+          </AppNavigationHostProvider>
+        </UrlOpenRoutingProvider>
       </PluginComposerHostProvider>
     </>
   );
