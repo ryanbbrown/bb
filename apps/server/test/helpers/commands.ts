@@ -72,10 +72,10 @@ type ManagedWorktreeEnvironmentProvisionCommand = Extract<
   checkout: { kind: "new-branch"; branchName: string; baseBranch: string };
 };
 
-export type ManagedWorktreeEnvironmentProvisionLiveCommand =
+type ManagedWorktreeEnvironmentProvisionLiveCommand =
   QueuedCommand<ManagedWorktreeEnvironmentProvisionCommand>;
 
-export function isManagedWorktreeEnvironmentProvisionLiveCommand(
+function isManagedWorktreeEnvironmentProvisionLiveCommand(
   queued: QueuedCommand,
 ): queued is ManagedWorktreeEnvironmentProvisionLiveCommand {
   return (
@@ -132,6 +132,8 @@ const testRpcCursorByHost = new Map<string, number>();
 interface RegisterTestHostRpcCaptureArgs {
   hostId: string;
   sessionId: string;
+  /** Checkout the fake daemon reports for `host.list_branches`. */
+  listBranchesResult?: HostDaemonOnlineRpcResult<"host.list_branches">;
 }
 
 interface TestHostRpcSocket {
@@ -289,7 +291,7 @@ function buildDefaultBranchListResult(
   };
 }
 
-export interface CreateTestDaemonEventEnvelopeArgs {
+interface CreateTestDaemonEventEnvelopeArgs {
   event: ThreadEvent;
   threadId?: string;
 }
@@ -407,7 +409,9 @@ export function registerTestHostRpcCapture(
             requestId: message.requestId,
             commandType: command.type,
             ok: true,
-            result: buildDefaultBranchListResult(command.selectedBranch),
+            result:
+              args.listBranchesResult ??
+              buildDefaultBranchListResult(command.selectedBranch),
           }),
           sessionId: args.sessionId,
         });

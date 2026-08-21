@@ -1,11 +1,11 @@
 import type { InstalledPlugin, PluginCapability } from "@bb/server-contract";
-import * as Clipboard from "expo-clipboard";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import { useMemo } from "react";
 import { View } from "react-native";
 import {
   describePluginSettingsAvailability,
   pluginDisplayName,
+  pluginRemovalDescription,
   pluginRemovalLabel,
   pluginRuntimeStatusPresentation,
   pluginSettingsAvailability,
@@ -18,6 +18,7 @@ import {
   useRemovePlugin,
   useSetPluginEnabled,
 } from "@/data/plugins";
+import { copyWithToast } from "@/lib/clipboard";
 import { haptic } from "@/lib/haptics";
 import { useTheme } from "@/theme";
 import {
@@ -210,11 +211,7 @@ export function PluginDetailScreen() {
       <ActionSheet
         controller={confirmRemove}
         title={plugin ? `${pluginRemovalLabel(plugin)} ${name}?` : undefined}
-        message={
-          plugin && plugin.source.startsWith("path:")
-            ? "bb stops loading this plugin. Its files stay where they are."
-            : "bb stops the plugin and deletes its installed files. Its settings and data are kept for a reinstall."
-        }
+        message={plugin ? pluginRemovalDescription(plugin) : undefined}
         actions={
           plugin
             ? [
@@ -464,11 +461,7 @@ function PluginDetailBody({
           title="Install path"
           subtitle={plugin.rootDir}
           leading="Folder"
-          onPress={() => {
-            void Clipboard.setStringAsync(plugin.rootDir)
-              .then(() => toast.success("Path copied"))
-              .catch(() => toast.error("Could not copy"));
-          }}
+          onPress={() => copyWithToast(plugin.rootDir, "Path copied")}
           titleLines={1}
         />
         {plugin.handlerStats.count > 0 ? (

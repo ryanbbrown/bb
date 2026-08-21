@@ -9,7 +9,6 @@ export const SETTINGS_ROUTE_PATH = "/settings";
 export const SETTINGS_SECTION_ROUTE_PATH = "/settings/:section";
 export const SETTINGS_PLUGINS_ROUTE_PATH = "/settings/plugins";
 export const SETTINGS_PLUGIN_ROUTE_PATH = "/settings/plugins/:pluginId";
-export const SETTINGS_PROVIDER_ROUTE_PATH = "/settings/providers/:providerId";
 // Per-machine detail page. The static "machines" segment sits above the
 // :section route, which has no splat and so never matches this two-segment path.
 export const SETTINGS_MACHINE_ROUTE_PATH = "/settings/machines/:hostId";
@@ -50,14 +49,13 @@ export const AUTOMATION_DETAIL_ROUTE_PATH =
 export const AUTOMATION_EDIT_ROUTE_PATH =
   "/plugins/automations/automations/:projectId/:automationId/edit";
 export const SKILLS_ROUTE_PATH = TOOLS_SKILLS_ROUTE_PATH;
-export const ROOT_COMPOSE_ROUTE_PATH = APP_ROOT_ROUTE_PATH;
+const ROOT_COMPOSE_ROUTE_PATH = APP_ROOT_ROUTE_PATH;
 export const LEGACY_PROJECT_COMPOSE_ROUTE_PATH = "/projects/:projectId";
 export const PROJECTLESS_ARCHIVED_ROUTE_PATH = "/archived";
-export const PROJECTLESS_THREAD_DETAIL_ROUTE_PATH = "/threads/:threadId";
+const PROJECTLESS_THREAD_DETAIL_ROUTE_PATH = "/threads/:threadId";
 export const PROJECT_SETTINGS_ROUTE_PATH = "/projects/:projectId/settings";
 export const PROJECT_ARCHIVED_ROUTE_PATH = "/projects/:projectId/archived";
-export const THREAD_DETAIL_ROUTE_PATH =
-  "/projects/:projectId/threads/:threadId";
+const THREAD_DETAIL_ROUTE_PATH = "/projects/:projectId/threads/:threadId";
 // Trailing splat: the remainder is the panel's `subPath` (empty at the root).
 export const PLUGIN_PANEL_ROUTE_PATH = "/plugins/:pluginId/:panelPath/*";
 
@@ -94,10 +92,6 @@ export function getSettingsRoutePath(section?: string): string {
     : `/settings/${encodeURIComponent(section)}`;
 }
 
-export function getSettingsProviderRoutePath(providerId: string): string {
-  return `/settings/providers/${encodeURIComponent(providerId)}`;
-}
-
 export function getSettingsMachineRoutePath(hostId: string): string {
   return `/settings/machines/${encodeURIComponent(hostId)}`;
 }
@@ -110,7 +104,7 @@ export function getRegistrySkillsRoutePath(): string {
   return TOOLS_REGISTRY_SKILLS_ROUTE_PATH;
 }
 
-export interface SkillDetailRoutePathArgs {
+interface SkillDetailRoutePathArgs {
   skillId: string;
 }
 
@@ -120,7 +114,7 @@ export function getSkillDetailRoutePath({
   return `${TOOLS_SKILLS_ROUTE_PATH}/library/${encodeURIComponent(skillId)}`;
 }
 
-export interface RegistrySkillDetailRoutePathArgs {
+interface RegistrySkillDetailRoutePathArgs {
   registrySkillId: string;
 }
 
@@ -136,7 +130,7 @@ export function getPluginsRoutePath(): string {
   return TOOLS_PLUGINS_ROUTE_PATH;
 }
 
-export interface PluginDetailRoutePathArgs {
+interface PluginDetailRoutePathArgs {
   pluginId: string;
   view?: "installed";
 }
@@ -163,7 +157,7 @@ export function getAutomationsRoutePath(): string {
   return AUTOMATIONS_ROUTE_PATH;
 }
 
-export interface AutomationDetailRoutePathArgs {
+interface AutomationDetailRoutePathArgs {
   projectId: string;
   automationId: string;
 }
@@ -187,7 +181,7 @@ export function getProjectSettingsRoutePath(projectId: string): string {
   return `/projects/${projectId}/settings`;
 }
 
-export interface PluginPanelRoutePathArgs {
+interface PluginPanelRoutePathArgs {
   pluginId: string;
   /** The nav panel's registered `path` segment (validated: [a-zA-Z0-9_-]+). */
   path: string;
@@ -225,7 +219,6 @@ const baseRoutePatterns: readonly string[] = [
   SETTINGS_SECTION_ROUTE_PATH,
   SETTINGS_PLUGINS_ROUTE_PATH,
   SETTINGS_PLUGIN_ROUTE_PATH,
-  SETTINGS_PROVIDER_ROUTE_PATH,
   TOOLS_ROUTE_PATH,
   TOOLS_SKILLS_ROUTE_PATH,
   TOOLS_SKILL_DETAIL_ROUTE_PATH,

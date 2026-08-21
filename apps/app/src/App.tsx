@@ -37,7 +37,6 @@ import {
   SETTINGS_PLUGIN_ROUTE_PATH,
   SETTINGS_PLUGINS_ROUTE_PATH,
   SETTINGS_MACHINE_ROUTE_PATH,
-  SETTINGS_PROVIDER_ROUTE_PATH,
   SETTINGS_ROUTE_PATH,
   SETTINGS_SECTION_ROUTE_PATH,
   SKILLS_ROUTE_PATH,
@@ -166,10 +165,6 @@ export function LegacyToolsPathRedirect() {
   );
 }
 
-export function LegacyPluginBrowseRedirect() {
-  return <Navigate to={TOOLS_PLUGINS_ROUTE_PATH} replace />;
-}
-
 function hashTargetId(hash: string): string | null {
   if (hash.length <= 1) return null;
   try {
@@ -258,10 +253,6 @@ function AppRoutes() {
             element={<MachineSettingsView />}
           />
           <Route
-            path={SETTINGS_PROVIDER_ROUTE_PATH}
-            element={<SettingsView />}
-          />
-          <Route
             path={PROJECT_SETTINGS_ROUTE_PATH}
             element={<ProjectSettingsView />}
           />
@@ -326,7 +317,7 @@ function AppRoutes() {
           <Route path={TOOLS_PLUGINS_ROUTE_PATH} element={<ToolsView />} />
           <Route
             path={TOOLS_PLUGIN_BROWSE_ROUTE_PATH}
-            element={<LegacyPluginBrowseRedirect />}
+            element={<ExtensionsLandingRedirect />}
           />
           <Route
             path={TOOLS_PLUGIN_DETAIL_ROUTE_PATH}

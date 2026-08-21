@@ -1,13 +1,13 @@
 import type { ThreadListEntry } from "@bb/domain";
-import { compareCodepoint } from "@/lib/codepoint-compare";
+import {
+  compareCodepoint,
+  compareStandardThreads,
+  isSidebarProjectThread,
+} from "@bb/client-core";
 import {
   type SidebarProjectOrder,
   type SidebarSectionId,
 } from "./sidebarCollapsedAtoms";
-import {
-  compareStandardThreads,
-  isSidebarProjectThread,
-} from "./projectThreadGroups";
 
 export interface ProjectActivityGroup {
   id: SidebarSectionId;

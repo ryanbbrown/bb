@@ -22,14 +22,7 @@ import {
 import { parseFileEditFromItemEvent } from "./file-edit-parsing.js";
 import { parseWebActivityLifecycleEvent } from "./web-activity-lifecycle.js";
 import { parseOperationMessage } from "./parse-operation-message.js";
-import {
-  parseErrorMessage,
-  isDuplicateEventType,
-  isIgnoredItemStartEvent,
-  isIgnoredItemCompletedEvent,
-  appendDebugEvent,
-} from "./parse-error-message.js";
-import { isIgnoredNoiseType } from "./timeline-noise-events.js";
+import { parseErrorMessage } from "./parse-error-message.js";
 import {
   normalizeEventProjection,
   sortEventProjectionMessagesBySource,
@@ -190,7 +183,6 @@ function isEventProjectionCallMessage(
     case "web-search":
       return true;
     case "assistant-text":
-    case "debug/raw-event":
     case "error":
     case "operation":
     case "permission-grant-lifecycle":
@@ -478,7 +470,27 @@ function getToolCallName(decoded: ThreadEvent): string | undefined {
   return decoded.item.tool;
 }
 
+/** A grammar v3 `delegation` item lifecycle event (turn-scoped or background). */
+function isDelegationItemEvent(decoded: ThreadEvent): boolean {
+  return (
+    (decoded.type === "item/started" ||
+      decoded.type === "item/completed" ||
+      decoded.type === "item/delegation/completed") &&
+    decoded.item.type === "delegation"
+  );
+}
+
 function getToolCallReceiverThreadIds(decoded: ThreadEvent): string[] {
+  if (
+    (decoded.type === "item/started" ||
+      decoded.type === "item/completed" ||
+      decoded.type === "item/delegation/completed") &&
+    decoded.item.type === "delegation"
+  ) {
+    // The delegation names its child directly; that child's turns map to
+    // this call exactly as a spawnAgent receiver would.
+    return [decoded.item.childRef];
+  }
   if (
     (decoded.type !== "item/started" && decoded.type !== "item/completed") ||
     decoded.item.type !== "toolCall"
@@ -641,7 +653,6 @@ function buildFlatProjectionData(
   args: BuildFlatProjectionDataArgs,
 ): BuildFlatProjectionDataResult {
   const state = createProjectionState();
-  const includeDebugRawEvents = args.options?.includeDebugRawEvents ?? false;
   const shouldTrackActiveThinking = args.includeActiveThinking;
 
   const orderedEvents = args.events;
@@ -930,8 +941,9 @@ function buildFlatProjectionData(
           }
         }
         if (
-          toolCallName &&
-          PROVIDER_THREAD_DELEGATION_TOOL_NAMES.has(toolCallName)
+          (toolCallName &&
+            PROVIDER_THREAD_DELEGATION_TOOL_NAMES.has(toolCallName)) ||
+          isDelegationItemEvent(decoded)
         ) {
           if (
             toolCallReceiverThreadIds.length === 0 ||
@@ -1083,23 +1095,6 @@ function buildFlatProjectionData(
       flushToolActivityBeforeNonToolMessage(state);
       state.messages.push(error);
       continue;
-    }
-
-    if (includeDebugRawEvents) {
-      const debugReason = isDuplicateEventType(eventType)
-        ? "duplicate-event"
-        : isIgnoredNoiseType(eventType) ||
-            isIgnoredItemStartEvent(decoded) ||
-            isIgnoredItemCompletedEvent(decoded)
-          ? "ignored-noise"
-          : "unhandled";
-
-      if (debugReason !== "unhandled") {
-        continue;
-      }
-
-      flushToolActivityBeforeNonToolMessage(state);
-      appendDebugEvent(state.messages, decoded, meta, debugReason);
     }
   }
 

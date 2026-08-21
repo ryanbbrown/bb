@@ -137,14 +137,17 @@ and the `bb tasks` command. Common agent operations are:
   bb tasks comment <key-or-id> (--body <markdown> | --body-file <path>) [--json]
   bb tasks attachment add <key-or-comment-id> --file <path> [--json]
   bb tasks attachment get <attachment-id> --out <path> [--json]
-  bb tasks attach <key-or-id> [--json]
+  bb tasks attach <key-or-id> [--thread <thread-id>] [--json]
+  bb tasks detach <key-or-id> [--thread <thread-id>] [--json]
   bb tasks update <key-or-id> --status in_review [--json]
   bb tasks update <key-or-id> (--parent <parent-key-or-id> | --no-parent) [--json]
 
 Run `bb tasks --help` for project, folder, task, label, attachment, and demo-data
 commands, plus preset management, delegation, and attached-thread inspection.
 Delegated threads are attached automatically; use `bb tasks attach` only when
-work started outside Tasks. Task update resolves both task keys and IDs for
+work started outside Tasks, and `bb tasks detach` when a thread is done with a
+task or a respawned worker replaced it. `bb tasks threads <key>` lists live
+threads first, newest first. Task update resolves both task keys and IDs for
 `--parent`; use `--no-parent` to promote a subtask to the top level. File paths
 in tasks commands resolve on the invoking machine (the thread's machine inside
 an agent thread, otherwise the server's); pass `--machine <id-or-name>` to
@@ -192,6 +195,9 @@ added/updated/unchanged counts.
                                  (the two flags are mutually exclusive)
                                  --tag-prefix <prefix> resolves a git: semver
                                  range over <prefix>vX.Y.Z tags
+                                 Installing a local path for an id that is
+                                 already installed from another local path
+                                 moves it there and keeps its settings
   bb plugin outdated             Check installed plugins for compatible
                                  updates (table; --json for raw results).
                                  Columns: installed, latest compatible,
@@ -212,7 +218,10 @@ added/updated/unchanged counts.
                                  tag, engine ranges, install time, and recent
                                  activation history
   bb plugin enable|disable <id>  Load or unload an installed plugin
-  bb plugin reload [id]          Re-run factories against current sources
+  bb plugin reload [id]          Re-run factories against current sources.
+                                 Exits 1 when a plugin does not come up on
+                                 them (previous instance kept, or degraded
+                                 because a service ignored its abort)
   bb plugin config <id> [set <key> <value> | unset <key>]
                                  Show or change a plugin's declared settings
   bb plugin logs <id> [-n N] [-f]  Print (or follow) a plugin's bb.log output
@@ -220,8 +229,10 @@ added/updated/unchanged counts.
   bb plugin token <id> [--rotate]  Print the token for auth:"token" HTTP
                                  routes; --rotate generates a new token,
                                  invalidating the old one
-  bb plugin remove <id>          Uninstall (managed git:/npm: files deleted;
-                                 builtin removals are remembered)
+  bb plugin remove <id>          Uninstall and delete the plugin's settings,
+                                 secrets, and schedules (managed git:/npm:
+                                 files deleted; local path sources stay on
+                                 disk; builtin removals are remembered)
   bb plugin new <name> [--app]   Scaffold a new plugin and install its npm
                                  dependencies, including @get-bb/plugin-sdk
                                  pinned to this bb's exact SDK version (no
@@ -395,7 +406,12 @@ Reinstalling an already-installed managed plugin is refused — use
 leaves the latest failure visible as needing attention. Exact npm versions,
 git tags and commits, path sources, and bundled official plugins are pinned;
 npm ranges/omitted specs/dist-tags, omitted Git refs (the repository default
-branch), Git branches, and Git semver ranges track compatible updates.
+branch), Git branches, and Git semver ranges track compatible updates. A
+pinned git:/npm: source changes only through `bb plugin remove` (which
+deletes the plugin's settings, secrets, and schedules) and a fresh install. A
+local path plugin is never removed to change it: edit it in place and
+`bb plugin reload <id>`, or `bb plugin install path:<new dir>` to move it to
+another directory; both keep its configuration.
 
 Git semver ranges
 
@@ -566,7 +582,12 @@ class-variance-authority libraries are runtime-shimmed (never bundled) —
 though source and diffs should go through the host's own
 experimental_SourceCode / experimental_Diff components rather than
 @pierre/diffs directly, so bb owns patch normalization, syntax
-highlighting, and the live code theme.
+highlighting, and the live code theme. A Diff caller that has loaded complete
+old/new UTF-8 file contents can pass them through
+`experimental_fullFileContents` to enable
+expand-context controls without exposing Pierre types. BB's original renderer
+validates those paths and hunk lines before enabling expansion; a replacement
+that implements its own expansion must do the same.
 Everything else (zod included) bundles from the plugin's node_modules (`npm install` for authors; BB installs
 release packages with their declared production dependencies). A crashing slot collapses to a
 "plugin <id> crashed" chip without
@@ -720,7 +741,7 @@ Its card header includes an open-in-sidebar action for the source HTML file.
 The `plugins/` directory contains every bundled plugin: the auto-installed
 builtins and the store-only BB Official GitHub, Docs, Memory, and Tasks
 plugins. The `examples/plugins/` reference plugins cover slack-bot (webhook
-bot), agent-enrichment (agent surfaces), composer-customization (all composer
-regions), and t3sidebar (a replacement sidebar thread list). Thread Hover
+bot), agent-enrichment (agent surfaces), and composer-customization (all
+composer regions). Thread Hover
 Cards installs from the BB Community marketplace (source: the bb-plugins
 repo).

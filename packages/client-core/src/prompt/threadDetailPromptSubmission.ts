@@ -27,7 +27,7 @@ export interface SendQueuedMessageByIdRequest {
   queuedMessageId: string;
 }
 
-export interface ThreadExecutionSelection {
+interface ThreadExecutionSelection {
   model: string;
   permissionMode: PermissionMode;
   reasoningLevel: ReasoningLevel;
@@ -51,24 +51,29 @@ interface BaseFollowUpRequestArgs {
   threadId: string;
 }
 
-export interface BuildAutoFollowUpRequestArgs extends BaseFollowUpRequestArgs {
+interface BuildAutoFollowUpRequestArgs extends BaseFollowUpRequestArgs {
   execution: FollowUpExecutionSelection;
 }
 
-export interface BuildCreateQueuedFollowUpRequestArgs extends BaseFollowUpRequestArgs {
+interface BuildCreateQueuedFollowUpRequestArgs extends BaseFollowUpRequestArgs {
   execution: FollowUpExecutionSelection;
 }
 
-export interface BuildSendQueuedMessageByIdRequestArgs {
+interface BuildSendQueuedMessageByIdRequestArgs {
   queuedMessageId: string;
   threadId: string;
 }
 
-export interface BuildFollowUpShortcutRequestArgs extends BaseFollowUpRequestArgs {
+interface BuildSteerFollowUpRequestArgs extends BaseFollowUpRequestArgs {
+  execution: FollowUpExecutionSelection;
+}
+
+interface BuildFollowUpShortcutRequestArgs extends BaseFollowUpRequestArgs {
+  execution: FollowUpExecutionSelection;
   queuedMessages: readonly QueuedMessageForSend[];
 }
 
-export interface CanSubmitFollowUpShortcutArgs {
+interface CanSubmitFollowUpShortcutArgs {
   hasPromptDraftInput: boolean;
   isFollowUpSubmitting: boolean;
   isQueueMutationPending: boolean;
@@ -77,7 +82,7 @@ export interface CanSubmitFollowUpShortcutArgs {
   submitModeKind: FollowUpSubmitMode["kind"];
 }
 
-export interface BuildFollowUpSubmitModeArgs {
+interface BuildFollowUpSubmitModeArgs {
   hasPendingInteraction: boolean;
   isDefaultExecutionOptionsLoading: boolean;
   isPendingInteractionsInitialLoading: boolean;
@@ -86,7 +91,7 @@ export interface BuildFollowUpSubmitModeArgs {
   runtimeDisplayStatus: ThreadRuntimeDisplayStatus;
 }
 
-export interface BuildSideChatSubmitModeArgs {
+interface BuildSideChatSubmitModeArgs {
   childThreadId: string | null;
   isDefaultExecutionOptionsLoading: boolean;
   isStopRequested: boolean;
@@ -94,7 +99,7 @@ export interface BuildSideChatSubmitModeArgs {
   runtimeDisplayStatus: ThreadRuntimeDisplayStatus;
 }
 
-export interface ResolveDefaultExecutionOptionsStateArgs {
+interface ResolveDefaultExecutionOptionsStateArgs {
   hasConcreteDefaultExecutionOptions: boolean;
   hasResolvedDefaultExecutionOptions: boolean;
   isError: boolean;
@@ -104,7 +109,7 @@ export interface QueuedMessageForSend {
   id: string;
 }
 
-export type FollowUpShortcutRequest =
+type FollowUpShortcutRequest =
   | { kind: "draft"; request: SendMessageMutationRequest }
   | { kind: "queued"; request: SendQueuedMessageByIdRequest };
 
@@ -222,17 +227,22 @@ export function buildAutoFollowUpRequest({
 }
 
 function buildSteerFollowUpRequest({
+  execution,
   input,
   threadId,
-}: BaseFollowUpRequestArgs): SendMessageMutationRequest | null {
+}: BuildSteerFollowUpRequestArgs): SendMessageMutationRequest | null {
   if (input.length === 0) {
     return null;
   }
 
+  // The composer picker stays editable while a turn runs. Without the
+  // selection the server resolves the steer from the thread's last execution,
+  // i.e. the active turn's tuple, and silently ignores the new pick.
   return {
     id: threadId,
     input,
     mode: "steer-if-active",
+    ...buildSharedThreadExecutionRequestFields(execution),
   };
 }
 
@@ -252,7 +262,7 @@ export function buildCreateQueuedFollowUpRequest({
   };
 }
 
-export function buildSendQueuedMessageByIdRequest({
+function buildSendQueuedMessageByIdRequest({
   queuedMessageId,
   threadId,
 }: BuildSendQueuedMessageByIdRequestArgs): SendQueuedMessageByIdRequest {
@@ -269,11 +279,16 @@ export function buildSendQueuedMessageByIdRequest({
  * head through the same auto path as the queued-card "Send now" action.
  */
 export function buildFollowUpShortcutRequest({
+  execution,
   input,
   queuedMessages,
   threadId,
 }: BuildFollowUpShortcutRequestArgs): FollowUpShortcutRequest | null {
-  const draftRequest = buildSteerFollowUpRequest({ input, threadId });
+  const draftRequest = buildSteerFollowUpRequest({
+    execution,
+    input,
+    threadId,
+  });
   if (draftRequest) {
     return { kind: "draft", request: draftRequest };
   }

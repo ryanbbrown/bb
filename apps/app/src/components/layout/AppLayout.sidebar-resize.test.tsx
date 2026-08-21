@@ -11,6 +11,11 @@ const SIDEBAR_WIDTH_STORAGE_KEY = "bb.sidebar.width";
 vi.mock("@/components/commands/AppCommandProvider", () => ({
   useAppCommandHandler: () => {},
   useAppCommandShortcut: () => null,
+  useAppCommandShortcuts: () => new Map(),
+  useAppCommandRunner: () => ({
+    dispatch: () => false,
+    isCommandAvailable: () => false,
+  }),
   useIsAppCommandModifierHeld: () => false,
 }));
 
@@ -31,10 +36,6 @@ vi.mock("@/components/sidebar/AppSidebar", async () => {
     ),
   };
 });
-
-vi.mock("@/hooks/useThreadSplitsEnabled", () => ({
-  useThreadSplitsEnabled: () => false,
-}));
 
 vi.mock("@/hooks/queries/system-queries", () => ({
   useSystemConfig: () => ({

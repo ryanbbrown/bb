@@ -34,7 +34,6 @@ import {
   shouldUseMacosDesktopChrome,
 } from "@/lib/bb-desktop";
 import { getRootComposeRoutePath, getThreadRoutePath } from "@/lib/route-paths";
-import { useThreadSplitsEnabled } from "@/hooks/useThreadSplitsEnabled";
 import { usePaneContentSplitDrag } from "./usePaneContentSplitDrag";
 import { openUrlInExternalBrowser } from "@/lib/url-open-routing";
 import type { SidebarThreadSearchNavigationItem } from "./sidebarThreadSearch";
@@ -119,10 +118,9 @@ export function AppSidebar({
   const { projectId, threadId: activeThreadId } = useRouteState();
   const navigate = useNavigate();
   const setRootComposeProjectId = useSetRootComposeProjectId();
-  const threadSplitsEnabled = useThreadSplitsEnabled();
   const newThreadSplit = usePaneContentSplitDrag({
     content: NEW_THREAD_PANE_CONTENT,
-    enabled: threadSplitsEnabled,
+    enabled: true,
     label: "New thread",
   });
   const closeOnMobile = useCloseMobileSidebar();
@@ -389,7 +387,7 @@ export function AppSidebar({
         className="shrink-0 px-2 py-2 group-data-[collapsible=icon]:hidden"
       >
         <ProjectListActionButtons
-          splitEnabled={threadSplitsEnabled}
+          splitEnabled
           newThreadSplit={newThreadSplit}
           onNewChat={handleNewChat}
           threadSearch={{
@@ -405,7 +403,7 @@ export function AppSidebar({
       </div>
       <PluginNavSidebarItems
         onNavigate={closeOnMobile}
-        splitEnabled={threadSplitsEnabled}
+        splitEnabled
         toolsRoutePath={toolsRoutePath}
       />
       <SidebarContent>

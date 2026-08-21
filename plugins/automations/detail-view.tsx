@@ -12,7 +12,7 @@ import type {
 import { AUTOMATION_PROMPT_MAX_LENGTH } from "./src/rpc-types";
 import { RUN_STATE_PRESENTATION } from "@bb/domain/update-state";
 import { Button } from "@bb/shared-ui/button";
-import { DelayedLoading } from "./delayed-loading.js";
+import { DelayedLoading } from "@bb/shared-ui/delayed-loading";
 import { Icon, type IconName } from "@bb/shared-ui/icon";
 import {
   ResourceActionButton,
@@ -66,7 +66,7 @@ import {
 import { AutomationProviderIcon } from "./lib/provider-icon";
 import { AutomationMetadataItem } from "./metadata";
 
-export interface AutomationRunsViewState {
+interface AutomationRunsViewState {
   runs: readonly AutomationRunResponse[];
   nextCursor: string | null;
   loading: boolean;
@@ -76,7 +76,7 @@ export interface AutomationRunsViewState {
   retry: () => void;
 }
 
-export interface AutomationDetailViewProps {
+interface AutomationDetailViewProps {
   automation: AutomationResponse;
   projectLabel: string;
   runsState: AutomationRunsViewState;
@@ -84,6 +84,12 @@ export interface AutomationDetailViewProps {
   executionOptions: AutomationExecutionOptionsResponse | null;
   executionOptionsError: string | null;
   permissionModes: readonly PermissionMode[];
+  /**
+   * The execution provider's display name from the host's provider directory
+   * (`experimental_useProviders`), or undefined when the directory does not
+   * list it; the view then falls back to a readable form of the id.
+   */
+  providerName?: string;
   editing: boolean;
   onToggle: (enabled: boolean) => void;
   onEdit: () => void;
@@ -149,22 +155,10 @@ export function automationIconName(automation: AutomationResponse): IconName {
     : "Calendar";
 }
 
-export function automationScheduleLabel(
-  automation: AutomationResponse,
-): string {
-  return formatScheduleStatusLabel({
-    enabled: automation.enabled,
-    nextRunAt: automation.nextRunAt,
-    trigger: automation.trigger,
-    runCount: automation.runCount,
-    lastRunStatus: automation.lastRunStatus,
-  });
-}
-
 function automationDetailNextRun(
   automation: AutomationResponse,
 ): ReactNode | null {
-  const label = automationDetailScheduleLabel(automation);
+  const label = formatDetailScheduleStatusLabel(automation);
   if (label === null) return null;
   if (!label.startsWith("Next ")) return label;
   return (
@@ -172,18 +166,6 @@ function automationDetailNextRun(
       {label.slice("Next ".length)}
     </AutomationMetadataItem>
   );
-}
-
-function automationDetailScheduleLabel(
-  automation: AutomationResponse,
-): string | null {
-  return formatDetailScheduleStatusLabel({
-    enabled: automation.enabled,
-    nextRunAt: automation.nextRunAt,
-    trigger: automation.trigger,
-    runCount: automation.runCount,
-    lastRunStatus: automation.lastRunStatus,
-  });
 }
 
 function automationBodyLabel(execution: AutomationExecution): string {
@@ -505,7 +487,7 @@ function isSilentRun(run: AutomationRunResponse): boolean {
  * colours success green because a succeeded run is its headline, where the
  * Updates page mutes it because up-to-date is its resting state.
  */
-export const AUTOMATION_RUN_STATUS_VISUALS: Record<
+const AUTOMATION_RUN_STATUS_VISUALS: Record<
   AutomationRunStatus,
   {
     label: string;
@@ -666,6 +648,7 @@ function AgentAutomationDefinition({
   projectContextLabel,
   pending,
   permissionModes,
+  providerName,
   onCancel,
   onUpdate,
 }: {
@@ -677,6 +660,7 @@ function AgentAutomationDefinition({
   projectContextLabel: string;
   pending: boolean;
   permissionModes: readonly PermissionMode[];
+  providerName: string | undefined;
   onCancel: () => void;
   onUpdate: (update: AgentExecutionUpdate) => Promise<void>;
 }) {
@@ -690,6 +674,11 @@ function AgentAutomationDefinition({
     setModel(execution.model);
     setPermissionMode(execution.permissionMode);
   }, [execution.model, execution.permissionMode, execution.prompt]);
+  // The host's provider directory (resolved by the plugin entry) names the
+  // provider; the local formatter only covers an id the directory no longer
+  // lists (a removed plugin).
+  const providerLabel =
+    providerName ?? formatAutomationProviderLabel(execution.providerId);
   const trimmedPrompt = prompt.trim();
   const dirty =
     prompt !== execution.prompt ||
@@ -802,7 +791,7 @@ function AgentAutomationDefinition({
         <div className="flex min-w-0 flex-1 items-center gap-1">
           <AutomationSelector
             label="Provider and model"
-            accessibleLabel={`Provider and model: ${formatAutomationProviderLabel(execution.providerId)}, ${modelOptions.find((option) => option.value === model)?.label ?? model}`}
+            accessibleLabel={`Provider and model: ${providerLabel}, ${modelOptions.find((option) => option.value === model)?.label ?? model}`}
             value={model}
             options={modelOptions}
             disabled={pending || options === null}
@@ -847,11 +836,11 @@ function AgentAutomationDefinition({
                 execution.model,
                 execution.providerId,
               )}
-              accessibleValue={`${formatAutomationProviderLabel(execution.providerId)}, ${formatAutomationModelLabel(execution.model, execution.providerId)}`}
+              accessibleValue={`${providerLabel}, ${formatAutomationModelLabel(execution.model, execution.providerId)}`}
               leading={
                 <AutomationProviderIcon providerId={execution.providerId} />
               }
-              title={`${formatAutomationProviderLabel(execution.providerId)}: ${formatAutomationModelLabel(execution.model, execution.providerId)}`}
+              title={`${providerLabel}: ${formatAutomationModelLabel(execution.model, execution.providerId)}`}
             />
           ),
         },
@@ -899,6 +888,7 @@ export function AutomationDetailView({
   onRunNow,
   onDelete,
   onOpenThread,
+  providerName,
   footer,
 }: AutomationDetailViewProps) {
   useResourceRouteLabel(automation.name);
@@ -955,7 +945,7 @@ export function AutomationDetailView({
             oneShotLifecycle === "expired"
               ? "Expired automation; edit to reschedule"
               : lifecycleLocked
-                ? `${automationScheduleLabel(automation)} automation`
+                ? `${formatScheduleStatusLabel(automation)} automation`
                 : automation.enabled
                   ? "Pause automation"
                   : "Resume automation"
@@ -1006,6 +996,7 @@ export function AutomationDetailView({
               permissionModes={permissionModes}
               personalProject={personalProject}
               projectContextLabel={projectContextLabel}
+              providerName={providerName}
               onCancel={onCancelEdit}
               onUpdate={onUpdateAgent}
             />

@@ -22,9 +22,8 @@ import {
   restorePromptDraftAfterOptionChange,
   type ResolveNewThreadSubmitDisabledReasonArgs,
 } from "@/components/promptbox/NewThreadComposer";
-import { subscribeComposerFocusRequests } from "@/lib/composer-focus-requests";
-import { getProjectStoredPromptAttachmentPaths } from "@/lib/prompt-draft";
-import { THREAD_HANDOFF_CREATE_SEED_LOCATION_STATE_KEY } from "@/lib/thread-handoff-request";
+import { getProjectStoredPromptAttachmentPaths } from "@bb/client-core";
+import { THREAD_HANDOFF_CREATE_SEED_LOCATION_STATE_KEY } from "@bb/client-core";
 import {
   buildRootComposeTerminalSessions,
   buildMobileRecentThreads,
@@ -33,13 +32,11 @@ import {
   readSectionIdFromLocationState,
   readRootComposeSectionTargetFromLocationState,
   readInitialPromptFromLocationState,
-  requestRootComposePluginFocus,
-  resolveRootComposeProjectFileRouting,
-  resolveRootComposePanelThreadId,
   shouldReplaceInitialPromptFromLocationState,
   shouldStartComposingFromLocationState,
   shouldNavigateAfterThreadCreate,
 } from "./RootComposeView";
+import { resolveRootComposeProjectFileRouting } from "./RootComposePanelTabContent";
 import {
   buildReuseThreadOptions,
   resolveProjectSourceWorktreeDisabledReason,
@@ -48,23 +45,6 @@ import {
   resolveRootComposeProjectRouting,
   resolveRootComposeProviderRouting,
 } from "./root-compose-environment-selection";
-
-describe("requestRootComposePluginFocus", () => {
-  it("routes host focus through the subscriber that reveals the root composer", () => {
-    let focusRequests = 0;
-    const unsubscribe = subscribeComposerFocusRequests(
-      "bb.promptDraft.new-thread",
-      () => {
-        focusRequests += 1;
-      },
-    );
-
-    requestRootComposePluginFocus("bb.promptDraft.new-thread");
-
-    expect(focusRequests).toBe(1);
-    unsubscribe();
-  });
-});
 
 describe("root-compose project file routing", () => {
   it("uses a persisted opener host instead of the newly selected context", () => {
@@ -1223,55 +1203,6 @@ describe("buildRootComposeTerminalSessions", () => {
         },
       }),
     ).toEqual([matching]);
-  });
-});
-
-describe("resolveRootComposePanelThreadId", () => {
-  it("uses the most-recent thread from the selected reuse worktree", () => {
-    expect(
-      resolveRootComposePanelThreadId({
-        environmentId: "env_b",
-        reuseThreadOptions: [
-          {
-            value: "reuse:env_a",
-            environmentId: "env_a",
-            path: "/workspace/a",
-            branchName: "main",
-            name: null,
-            threads: [{ id: "thr_a", title: "Thread A" }],
-          },
-          {
-            value: "reuse:env_b",
-            environmentId: "env_b",
-            path: "/workspace/b",
-            branchName: "feature",
-            name: "Feature worktree",
-            threads: [
-              { id: "thr_b_recent", title: "Recent thread" },
-              { id: "thr_b_old", title: "Old thread" },
-            ],
-          },
-        ],
-      }),
-    ).toBe("thr_b_recent");
-  });
-
-  it("returns null without a selected reuse worktree", () => {
-    expect(
-      resolveRootComposePanelThreadId({
-        environmentId: null,
-        reuseThreadOptions: [
-          {
-            value: "reuse:env_a",
-            environmentId: "env_a",
-            path: "/workspace/a",
-            branchName: "main",
-            name: null,
-            threads: [{ id: "thr_a", title: "Thread A" }],
-          },
-        ],
-      }),
-    ).toBeNull();
   });
 });
 

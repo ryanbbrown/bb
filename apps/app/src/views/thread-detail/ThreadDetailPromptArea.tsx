@@ -66,7 +66,6 @@ import { ThreadEnvironmentSummary } from "@/components/promptbox/ThreadEnvironme
 import type { WorkspaceCheckoutDisplay } from "@/lib/workspace-checkout-display";
 import { useComposerTextEffects } from "@/lib/composer-text-effects";
 import { useLatestRef } from "@/hooks/useLatestRef";
-import { useEscapeToHide } from "@/hooks/useEscapeToHide";
 import { useThreadCreationOptions } from "@/hooks/useThreadCreationOptions";
 import { useProjectDisplayName } from "@/hooks/queries/sidebar-navigation-query";
 import {
@@ -96,13 +95,13 @@ import { promptHistoryEntriesToDrafts } from "@/lib/prompt-history";
 import { usePromptHistoryEnabled } from "@/hooks/usePromptHistoryEnabled";
 import { getProjectComposeRoutePath } from "@/lib/route-paths";
 import { getThreadDisplayTitle } from "@/lib/thread-title";
-import { buildThreadHandoffLocationState } from "@/lib/thread-handoff-request";
+import { buildThreadHandoffLocationState } from "@bb/client-core";
 import { appToast } from "@/components/ui/app-toast";
 import {
   promptDraftToInput,
   type PromptDraftAttachment,
   type PromptDraftState,
-} from "@/lib/prompt-draft";
+} from "@bb/client-core";
 import {
   FollowUpPromptBox,
   type FollowUpComposerProps,
@@ -119,7 +118,7 @@ import {
   resolveDefaultExecutionOptionsState,
   shouldQueueFollowUpMessage,
   type FollowUpExecutionSelection,
-} from "./threadDetailPromptSubmission";
+} from "@bb/client-core";
 
 const ignorePromptBannerFileClick = () => {};
 
@@ -138,8 +137,7 @@ export interface ThreadDetailSentMessageEdit {
   ) => void;
 }
 
-export const THREAD_DETAIL_COMPOSER_TEXTAREA_ID =
-  "thread-detail-follow-up-composer";
+const THREAD_DETAIL_COMPOSER_TEXTAREA_ID = "thread-detail-follow-up-composer";
 
 interface ThreadDetailPromptAreaProps {
   activeBackgroundAgentCount: number;
@@ -161,7 +159,6 @@ interface ThreadDetailPromptAreaProps {
   environmentIcon?: IconName;
   environmentLabel?: string;
   onCreateNewThreadInWorktree?: () => void;
-  onEscapeEmptyPrompt?: () => void;
   onPullRequestDraft?: () => void;
   onPullRequestMerge?: (method: PullRequestMergeMethod) => void;
   onPullRequestReady?: () => void;
@@ -170,7 +167,6 @@ interface ThreadDetailPromptAreaProps {
   pendingInteractions: readonly PendingInteraction[];
   pendingInteractionsInitialLoading: boolean;
   onChangedFileClick: (selection: WorkspaceChangedFileSelection) => void;
-  openThreadDiffPanel: () => void;
   projectId: string;
   /** Click handler for inserted mention pills (navigate to threads, open file previews). */
   resolveMentionLink: PromptMentionLinkResolver;
@@ -243,6 +239,8 @@ interface InlineDraftComposerOptions {
   historyResetKey: string;
   isSubmitting: boolean;
   onChangeMessage: FollowUpComposerProps["onChangeMessage"];
+  /** Escape pressed in the editor; passes the editor's cancel action. */
+  onEscape?: FollowUpComposerProps["onEscape"];
   onSelectHistoryEntry: (draft: PromptDraftState) => void;
   permission: FollowUpPromptBoxProps["permission"];
   pluginComposerHost: PluginComposerHost;
@@ -255,7 +253,7 @@ interface InlineDraftComposerOptions {
   textEffects: FollowUpPromptBoxProps["textEffects"];
   threadRuntimeDisplayStatus: FollowUpComposerProps["threadRuntimeDisplayStatus"];
   typeahead: FollowUpPromptBoxProps["typeahead"];
-  zenModeResetKey: string;
+  collapseResetKey: string;
 }
 
 /**
@@ -284,6 +282,7 @@ function buildInlineDraftComposer(options: InlineDraftComposerOptions) {
         onChangeMessage: options.onChangeMessage,
         onModifierSubmit: options.submit,
         onSubmit: options.submit,
+        onEscape: options.onEscape,
         submitTitle: options.submitTitle,
         compactPromptPlaceholder: options.compactPromptPlaceholder,
         promptPlaceholder: options.promptPlaceholder,
@@ -306,7 +305,7 @@ function buildInlineDraftComposer(options: InlineDraftComposerOptions) {
       permissionReadOnly
       typeahead={options.typeahead}
       promptActions={options.promptActions}
-      zenModeResetKey={options.zenModeResetKey}
+      collapseResetKey={options.collapseResetKey}
       focusEndKey={`${options.focusSessionKey}:${options.editFocusNonce}`}
       isPrimaryComposer={false}
       showScrollToBottomButton={false}
@@ -408,7 +407,6 @@ export function ThreadDetailPromptArea({
   environmentIcon,
   environmentLabel,
   onCreateNewThreadInWorktree,
-  onEscapeEmptyPrompt,
   onPullRequestDraft,
   onPullRequestMerge,
   onPullRequestReady,
@@ -417,7 +415,6 @@ export function ThreadDetailPromptArea({
   pendingInteractions,
   pendingInteractionsInitialLoading,
   onChangedFileClick,
-  openThreadDiffPanel,
   projectId,
   resolveMentionLink,
   workspaceChangedFilesSection,
@@ -659,7 +656,6 @@ export function ThreadDetailPromptArea({
     selectedProviderId,
     providerOptions,
     hasMultipleProviders,
-    selectedProviderDisplayName,
     selectedProviderComposerActions,
     selectedModel,
     setSelectedModel,
@@ -720,7 +716,6 @@ export function ThreadDetailPromptArea({
     mentionsProjectId: projectId,
     providerId: thread.providerId,
     environmentId: thread.environmentId,
-    commandScope: "thread",
     currentThreadId: thread.id,
     selectedProviderComposerActions,
     resolveMentionLink,
@@ -822,18 +817,6 @@ export function ThreadDetailPromptArea({
     [currentPromptDraft, normalPluginComposerHostBinding],
   );
   const hasPromptDraftInput = currentPromptDraftInput.length > 0;
-  const isPromptEmpty = useCallback(
-    () => !hasPromptDraftInput,
-    [hasPromptDraftInput],
-  );
-  const hideEmptyPrompt = useCallback(() => {
-    onEscapeEmptyPrompt?.();
-  }, [onEscapeEmptyPrompt]);
-  useEscapeToHide({
-    enabled: onEscapeEmptyPrompt !== undefined,
-    isEmpty: isPromptEmpty,
-    onHide: hideEmptyPrompt,
-  });
   const canSubmitModifierShortcut = canSubmitFollowUpShortcut({
     hasPromptDraftInput,
     isFollowUpSubmitting,
@@ -932,6 +915,7 @@ export function ThreadDetailPromptArea({
     const submittedDraft = currentPromptDraft;
     const submittedInput = currentPromptDraftInput;
     const shortcutRequest = buildFollowUpShortcutRequest({
+      execution: followUpExecutionSelection,
       input: submittedInput,
       queuedMessages: queuedMessagesRef.current,
       threadId: thread.id,
@@ -981,6 +965,7 @@ export function ThreadDetailPromptArea({
     canSubmitModifierShortcut,
     currentPromptDraft,
     currentPromptDraftInput,
+    followUpExecutionSelection,
     promptDraft,
     queuedMessagesRef,
     sendMessage,
@@ -1000,13 +985,6 @@ export function ThreadDetailPromptArea({
   );
 
   const bottomFocusEndKey = `${composerFocusRequestNonce}:${bottomPluginFocusNonce}`;
-
-  const handlePromptBannerFileClick = useCallback(
-    (selection: WorkspaceChangedFileSelection) => {
-      onChangedFileClick(selection);
-    },
-    [onChangedFileClick],
-  );
 
   const handleToggleBannerSection = useCallback(
     (section: ThreadPromptContextBannerExpandedSection | null) => {
@@ -1159,7 +1137,6 @@ export function ThreadDetailPromptArea({
         options: providerOptions,
         selectedId: selectedProviderId,
         hasMultiple: hasMultipleProviders,
-        displayName: selectedProviderDisplayName,
       },
       model: {
         active: effectiveSelectedModel
@@ -1204,7 +1181,6 @@ export function ThreadDetailPromptArea({
       reasoningLevel,
       reasoningOptions,
       selectedModel,
-      selectedProviderDisplayName,
       selectedProviderId,
       serviceTier,
       serviceTierSupportByProvider,
@@ -1386,7 +1362,7 @@ export function ThreadDetailPromptArea({
         textEffects: queuedComposerTextEffects,
         threadRuntimeDisplayStatus: runtimeDisplayStatus,
         typeahead: typeaheadConfig,
-        zenModeResetKey: `queued-message:${queuedMessageId}`,
+        collapseResetKey: `queued-message:${queuedMessageId}`,
       }),
     };
     return { inlineEditor, pluginComposerHost };
@@ -1464,6 +1440,7 @@ export function ThreadDetailPromptArea({
               text,
               mentions,
             })),
+          onEscape: sentMessageEdit.onCancel,
           onSelectHistoryEntry: (nextDraft) =>
             sentMessageEdit.updateDraft(() => nextDraft),
           permission: bottomPermissionConfig,
@@ -1490,7 +1467,7 @@ export function ThreadDetailPromptArea({
           textEffects: sentMessageComposerTextEffects,
           threadRuntimeDisplayStatus: runtimeDisplayStatus,
           typeahead: typeaheadConfig,
-          zenModeResetKey: `sent-message:${operationId}`,
+          collapseResetKey: `sent-message:${operationId}`,
         })}
       </InlineMessageEditorFrame>,
       hostElement,
@@ -1591,7 +1568,7 @@ export function ThreadDetailPromptArea({
                   changedFiles: workspaceChangedFilesSection,
                   mergeBase: contextBannerMergeBase,
                   onPromptBannerFileClick: canUseGitUi
-                    ? handlePromptBannerFileClick
+                    ? onChangedFileClick
                     : ignorePromptBannerFileClick,
                 }
               : null
@@ -1639,7 +1616,7 @@ export function ThreadDetailPromptArea({
       expandedBannerSection,
       handleDeleteQueuedMessage,
       beginEditQueuedMessage,
-      handlePromptBannerFileClick,
+      onChangedFileClick,
       handleReorderQueuedMessage,
       handleSendQueuedImmediately,
       handleSetQueuedMessageGroupBoundary,
@@ -1725,7 +1702,7 @@ export function ThreadDetailPromptArea({
       pluginComposerHost={normalPluginComposerHost}
       pluginComposerScope={normalPluginComposerHost.scope}
       textEffects={promptTextEffects}
-      zenModeResetKey={thread.id}
+      collapseResetKey={thread.id}
       focusEndKey={bottomFocusEndKey}
       environmentSummary={environmentSummary}
       contextWindowUsage={contextWindowUsage ?? null}

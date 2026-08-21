@@ -18,11 +18,14 @@ import {
   THREAD_DELTA_NOTIFICATION_METHOD,
 } from "@bb/provider-bridge-protocol";
 import {
-  captureBridgeJsonRpcOutput,
-  type BridgeJsonRpcOutputMessage,
-  type CapturedBridgeJsonRpcOutput,
-} from "@bb/provider-bridge-protocol/testing";
-import { assembleCapturedThreadEvents } from "@bb/agent-runtime/test/bridge-delta-assembly";
+  experimental_assembleCapturedThreadEvents as assembleCapturedThreadEvents,
+  experimental_captureBridgeJsonRpcOutput as captureBridgeJsonRpcOutput,
+} from "@get-bb/plugin-sdk/provider-bridge/testing";
+import type {
+  BridgeJsonRpcOutputMessage,
+  CapturedBridgeJsonRpcOutput,
+} from "@get-bb/plugin-sdk/provider-bridge/testing";
+
 import { handleLine } from "./bridge.js";
 import { ACP_BRIDGE_NO_ACTIVE_TURN_ERROR_CODE } from "../bridge-protocol.js";
 import { ACP_BRIDGE_MCP_SERVER_NAME } from "./tool-proxy-mcp.js";
@@ -1688,7 +1691,7 @@ describe("acp bridge", () => {
 
   it("performs client fs writes inside the workspace and reports them", async () => {
     const targetPath = join(workspaceDir, "agent-output.txt");
-    const { bbThreadId, providerThreadId } = await startThread({
+    const { providerThreadId } = await startThread({
       permissionMode: "accept-edits",
       permissionEscalation: "ask",
       envVars: { FAKE_ACP_WRITE_PATH: targetPath },
@@ -1798,7 +1801,7 @@ describe("acp bridge", () => {
   });
 
   it("cancels a hung prompt and continues the same turn with steer input", async () => {
-    const { bbThreadId, providerThreadId } = await startThread();
+    const { providerThreadId } = await startThread();
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "hang", mentions: [] }],
     });
@@ -1819,7 +1822,7 @@ describe("acp bridge", () => {
   });
 
   it("keeps partial output from the cancelled prompt then continues", async () => {
-    const { bbThreadId, providerThreadId } = await startThread();
+    const { providerThreadId } = await startThread();
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "slow first", mentions: [] }],
     });
@@ -1847,7 +1850,7 @@ describe("acp bridge", () => {
   });
 
   it("delivers stacked steers on the same turn", async () => {
-    const { bbThreadId, providerThreadId } = await startThread();
+    const { providerThreadId } = await startThread();
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "hang", mentions: [] }],
     });
@@ -1873,7 +1876,7 @@ describe("acp bridge", () => {
   });
 
   it("cancels a stacked steer prompt that also hangs", async () => {
-    const { bbThreadId, providerThreadId } = await startThread();
+    const { providerThreadId } = await startThread();
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "hang", mentions: [] }],
     });
@@ -2022,7 +2025,7 @@ describe("acp bridge", () => {
   });
 
   it("cancels the active turn on thread/stop", async () => {
-    const { bbThreadId, providerThreadId } = await startThread();
+    const { providerThreadId } = await startThread();
     const turnId = sendTurnRequest("turn/start", providerThreadId, {
       input: [{ type: "text", text: "hang", mentions: [] }],
     });

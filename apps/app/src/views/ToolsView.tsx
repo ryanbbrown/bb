@@ -32,6 +32,7 @@ import {
   PluginDetail,
   PluginDetailBanners,
   pluginIsLocalSource,
+  pluginRemovalDescription,
   pluginRemovalLabel,
 } from "@/components/tools/PluginDetail";
 import {
@@ -56,9 +57,7 @@ import {
   type ToolsSectionId,
 } from "@/components/tools/tools-navigation";
 import { cn } from "@bb/shared-ui/lib/utils";
-import { SkillsLibrary } from "./SkillsView";
-
-export { PluginDetail };
+import { SkillsLibrary } from "@/components/tools/SkillsLibrary";
 
 function ToolsBodyFallback() {
   return (
@@ -74,13 +73,11 @@ function ToolsBodyFallback() {
   );
 }
 
-export function ToolsScrollPage({
+function ToolsScrollPage({
   children,
-  maxWidthClassName = "max-w-5xl",
   fillViewport = false,
 }: {
   children: ReactNode;
-  maxWidthClassName?: string;
   fillViewport?: boolean;
 }) {
   const {
@@ -108,7 +105,7 @@ export function ToolsScrollPage({
         <div
           className={cn(
             "mx-auto box-border min-h-full w-full space-y-4 px-4 pb-4 pt-3 md:px-5 md:pt-4",
-            maxWidthClassName,
+            "max-w-5xl",
           )}
         >
           {children}
@@ -365,11 +362,7 @@ function PluginDetailToolView({ pluginId }: { pluginId: string }) {
                     ? "Remove plugin from bb?"
                     : "Uninstall plugin?"
                 }
-                description={
-                  pluginIsLocalSource(deleteTarget)
-                    ? `Remove "${deleteTarget.id}" from bb? Its source files will stay on disk.`
-                    : `Uninstall "${deleteTarget.id}" and delete its managed files and settings?`
-                }
+                description={pluginRemovalDescription(deleteTarget)}
                 confirmLabel={pluginRemovalLabel(deleteTarget)}
                 pending={pluginDelete.isPending}
                 onConfirm={() => pluginDelete.mutate(deleteTarget)}

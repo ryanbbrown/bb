@@ -16,7 +16,6 @@ export {
   SETTINGS_SECTION_ROUTE_PATH,
   SETTINGS_PLUGINS_ROUTE_PATH,
   SETTINGS_PLUGIN_ROUTE_PATH,
-  SETTINGS_PROVIDER_ROUTE_PATH,
   SETTINGS_MACHINE_ROUTE_PATH,
   TOOLS_ROUTE_PATH,
   TOOLS_SKILLS_ROUTE_PATH,
@@ -43,21 +42,16 @@ export {
   AUTOMATION_DETAIL_ROUTE_PATH,
   AUTOMATION_EDIT_ROUTE_PATH,
   SKILLS_ROUTE_PATH,
-  ROOT_COMPOSE_ROUTE_PATH,
   LEGACY_PROJECT_COMPOSE_ROUTE_PATH,
   PROJECTLESS_ARCHIVED_ROUTE_PATH,
-  PROJECTLESS_THREAD_DETAIL_ROUTE_PATH,
   PROJECT_SETTINGS_ROUTE_PATH,
   PROJECT_ARCHIVED_ROUTE_PATH,
-  THREAD_DETAIL_ROUTE_PATH,
   PLUGIN_PANEL_ROUTE_PATH,
-  ROUTE_PATTERNS,
   isProjectlessProjectId,
   getRootComposeRoutePath,
   getLegacyProjectComposeRoutePath,
   getProjectComposeRoutePath,
   getSettingsRoutePath,
-  getSettingsProviderRoutePath,
   getSettingsMachineRoutePath,
   getSkillsRoutePath,
   getRegistrySkillsRoutePath,
@@ -72,32 +66,24 @@ export {
   getProjectSettingsRoutePath,
   getPluginPanelRoutePath,
   getThreadRoutePath,
-  stripRoutePathSuffix,
 } from "@bb/client-core";
-export type {
-  ThreadRoutePathArgs,
-  SkillDetailRoutePathArgs,
-  RegistrySkillDetailRoutePathArgs,
-  PluginDetailRoutePathArgs,
-  AutomationDetailRoutePathArgs,
-  PluginPanelRoutePathArgs,
-} from "@bb/client-core";
+export type { ThreadRoutePathArgs } from "@bb/client-core";
 
 /** The plugin whose panel `pathname` shows, or null off the panel route. */
 export function getPluginPanelRoutePluginId(pathname: string): string | null {
   return matchPath(PLUGIN_PANEL_ROUTE_PATH, pathname)?.params.pluginId ?? null;
 }
 
-export interface IsRoutePathArgs {
+interface IsRoutePathArgs {
   path: string;
 }
 
-export interface ResolveRouteHrefArgs {
+interface ResolveRouteHrefArgs {
   currentOrigin: string;
   href: string;
 }
 
-export interface RouteHrefResolution {
+interface RouteHrefResolution {
   path: string;
 }
 

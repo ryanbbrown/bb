@@ -9,9 +9,9 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 
-export const BRIDGE_MCP_SERVER_NAME = "bb-bridge";
+import { BB_BRIDGE_MCP_SERVER_NAME } from "../tool-classification.js";
 
-export type DynamicToolDefinition = DynamicTool;
+export const BRIDGE_MCP_SERVER_NAME = BB_BRIDGE_MCP_SERVER_NAME;
 
 type BridgeToolCallContent =
   | { type: "text"; text: string }
@@ -27,7 +27,7 @@ export type ToolCallForwarder = (
 }>;
 
 export function buildBridgeMcpServer(
-  dynamicTools: DynamicToolDefinition[],
+  dynamicTools: DynamicTool[],
   forwardToolCall: ToolCallForwarder,
 ): McpSdkServerConfigWithInstance {
   const toolsByName = new Map(dynamicTools.map((def) => [def.name, def]));
@@ -72,9 +72,7 @@ export function buildBridgeMcpServer(
   return { type: "sdk", name: BRIDGE_MCP_SERVER_NAME, instance };
 }
 
-export function getAllowedToolNames(
-  dynamicTools: DynamicToolDefinition[],
-): string[] {
+export function getAllowedToolNames(dynamicTools: DynamicTool[]): string[] {
   return dynamicTools.map(
     (def) => `mcp__${BRIDGE_MCP_SERVER_NAME}__${def.name}`,
   );

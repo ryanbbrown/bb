@@ -8,6 +8,8 @@ import {
   useState,
 } from "react";
 import type { FileContents } from "@pierre/diffs";
+import type { GitDiffFileChangeKind } from "@bb/server-contract";
+import type { ExperimentalDiffFullFileContents } from "@get-bb/plugin-sdk";
 import { useIntersectionObserver } from "usehooks-ts";
 import { Button } from "@bb/shared-ui/button";
 import { usePointerCoarse } from "@bb/shared-ui/hooks/use-pointer-coarse";
@@ -21,11 +23,9 @@ import {
 import { Skeleton } from "@bb/shared-ui/skeleton";
 import {
   formatGitDiffFileLabel,
-  enrichGitDiffFileForContext,
-  isImageGitDiffFile,
+  isPreviewableImagePath,
   isSvgGitDiffFile,
   normalizeGitDiffPath,
-  type GitDiffFileChangeKind,
   type ParsedGitDiffFile,
 } from "./git-diff-parsing";
 
@@ -57,14 +57,6 @@ export interface DiffImageSizeStat {
 
 export type GitDiffCardSvgDisplayMode = "preview" | "raw";
 
-/**
- * Unchanged lines revealed per expand-up / expand-down click; the library
- * default of 100 is too aggressive for our compact cards. Only sent for a
- * card that can actually fetch full file contents — see
- * {@link BbDiffProps.expansionLineCount}.
- */
-const DIFF_EXPANSION_LINE_COUNT = 30;
-
 const GIT_DIFF_CARD_BODY_STYLE: CSSProperties = {
   contain: "layout paint style",
   contentVisibility: "auto",
@@ -84,7 +76,10 @@ interface DiffFileContentPlan {
 type DiffFileEnrichmentState =
   | { status: "idle" }
   | { status: "loading" }
-  | { status: "ready"; fileDiff: ParsedGitDiffFile }
+  | {
+      status: "ready";
+      fullFileContents: ExperimentalDiffFullFileContents;
+    }
   | {
       status: "ready-image";
       oldImageUrl: string | null;
@@ -94,7 +89,7 @@ type DiffFileEnrichmentState =
     }
   | {
       status: "ready-svg";
-      fileDiff: ParsedGitDiffFile;
+      fullFileContents: ExperimentalDiffFullFileContents;
       oldImageUrl: string | null;
       newImageUrl: string | null;
     }
@@ -116,14 +111,14 @@ type DiffFileEnrichmentState =
  * - `loading` / `error`: show progress or a retry.
  * - `ready`: pierre now owns expansion; the affordance retires.
  */
-export type DiffContextExpansionStatus =
+type DiffContextExpansionStatus =
   | "unavailable"
   | "idle"
   | "loading"
   | "ready"
   | "error";
 
-export interface DiffContextExpansionState {
+interface DiffContextExpansionState {
   status: DiffContextExpansionStatus;
   request: () => void;
 }
@@ -218,6 +213,16 @@ function resolveDiffFileContentSource(
   return fetcher(source.path, source.side);
 }
 
+function toDiffFullFileContents(
+  oldFile: FileContents,
+  newFile: FileContents,
+): ExperimentalDiffFullFileContents {
+  return {
+    old: { path: oldFile.name, content: oldFile.contents },
+    new: { path: newFile.name, content: newFile.contents },
+  };
+}
+
 /**
  * An image change is conveyed as a single-binary swap rather than text hunks,
  * so the card renders inline `<img>` previews instead of a `<DiffView>`. A card
@@ -234,7 +239,7 @@ function isImagePreviewCard(
     fileDiff.hunks.length === 0 &&
     fileDiff.type !== "rename-pure" &&
     onRequestFileContents !== undefined &&
-    isImageGitDiffFile(fileDiff)
+    isPreviewableImagePath(fileDiff.name)
   );
 }
 
@@ -255,15 +260,7 @@ function svgTextToDataUrl(contents: string): string | null {
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(trimmedContents)}`;
 }
 
-function getImageSizeStat(
-  enrichment: DiffFileEnrichmentState,
-  changeKind: GitDiffFileChangeKind,
-): DiffImageSizeStat | null {
-  if (enrichment.status !== "ready-image") return null;
-  return getGitDiffCardImageSizeStat(enrichment, changeKind);
-}
-
-export interface UseGitDiffCardBodyArgs {
+interface UseGitDiffCardBodyArgs {
   fileDiff: ParsedGitDiffFile;
   changeKind: GitDiffFileChangeKind;
   /** When true, holds the body at a skeleton (queued render slots). */
@@ -273,10 +270,10 @@ export interface UseGitDiffCardBodyArgs {
   patchText?: string;
 }
 
-export interface GitDiffCardBodyState {
+interface GitDiffCardBodyState {
   bodySentinelRef: RefCallback<HTMLDivElement>;
   enrichment: DiffFileEnrichmentState;
-  enrichedFileDiff: ParsedGitDiffFile;
+  fileDiff: ParsedGitDiffFile;
   fileDiffLabel: string;
   isImageCard: boolean;
   isSvgPreviewCard: boolean;
@@ -287,6 +284,8 @@ export interface GitDiffCardBodyState {
   imageSizeStat: DiffImageSizeStat | null;
   /** On-demand full-file context for text cards; see {@link DiffContextExpansionState}. */
   contextExpansion: DiffContextExpansionState;
+  /** Resolved text sides forwarded through the public renderer contract. */
+  fullFileContents: ExperimentalDiffFullFileContents | null;
   /**
    * The raw per-file patch the caller supplied, forwarded to the host diff
    * boundary so a plugin replacement gets the caller's own bytes instead of a
@@ -440,17 +439,15 @@ export function useGitDiffCardBody({
           setEnrichment({ status: "unavailable" });
           return;
         }
-        const enrichedFileDiff = enrichGitDiffFileForContext({
-          fileDiff,
-          oldFile: oldResult.file,
-          newFile: newResult.file,
-          patchText,
-        });
+        const fullFileContents = toDiffFullFileContents(
+          oldResult.file,
+          newResult.file,
+        );
         if (isSvgCard) {
           enrichmentStatusRef.current = "ready-svg";
           setEnrichment({
             status: "ready-svg",
-            fileDiff: enrichedFileDiff,
+            fullFileContents,
             oldImageUrl: svgTextToDataUrl(oldResult.file.contents),
             newImageUrl: svgTextToDataUrl(newResult.file.contents),
           });
@@ -459,7 +456,7 @@ export function useGitDiffCardBody({
         enrichmentStatusRef.current = "ready";
         setEnrichment({
           status: "ready",
-          fileDiff: enrichedFileDiff,
+          fullFileContents,
         });
       })
       .catch(() => {
@@ -498,30 +495,32 @@ export function useGitDiffCardBody({
     enrichmentStatus: enrichment.status,
   });
   const contextExpansion = useMemo<DiffContextExpansionState>(
-    () => ({ status: contextExpansionStatus, request: requestContextExpansion }),
+    () => ({
+      status: contextExpansionStatus,
+      request: requestContextExpansion,
+    }),
     [contextExpansionStatus, requestContextExpansion],
   );
 
-  const enrichedFileDiff = useMemo<ParsedGitDiffFile>(() => {
-    if (enrichment.status !== "ready" && enrichment.status !== "ready-svg") {
-      return fileDiff;
-    }
-    return enrichment.fileDiff;
-  }, [fileDiff, enrichment]);
+  const fullFileContents =
+    enrichment.status === "ready" || enrichment.status === "ready-svg"
+      ? enrichment.fullFileContents
+      : null;
 
   const loadDeletedDiff = useCallback(() => {
     setHasLoadedDeletedDiff(true);
     setHasBodyEnteredViewport(true);
   }, []);
 
-  const imageSizeStat = isImageCard
-    ? getImageSizeStat(enrichment, changeKind)
-    : null;
+  const imageSizeStat =
+    isImageCard && enrichment.status === "ready-image"
+      ? getGitDiffCardImageSizeStat(enrichment, changeKind)
+      : null;
 
   return {
     bodySentinelRef,
     enrichment,
-    enrichedFileDiff,
+    fileDiff,
     fileDiffLabel,
     isImageCard,
     isSvgPreviewCard: isSvgCard,
@@ -530,6 +529,7 @@ export function useGitDiffCardBody({
     loadDeletedDiff,
     imageSizeStat,
     contextExpansion,
+    fullFileContents,
     patchText,
   };
 }
@@ -564,7 +564,7 @@ function getDiffContextExpansionStatus({
   }
 }
 
-function GitDiffCardBodySkeleton() {
+export function GitDiffCardBodySkeleton() {
   return (
     <div className="space-y-1.5 px-3 py-3">
       <Skeleton className="h-3 w-full rounded-sm" />
@@ -648,7 +648,7 @@ export function getGitDiffCardImageSizeStat(
   return { addedBytes, removedBytes };
 }
 
-export interface GitDiffCardImagePreviewBodyProps {
+interface GitDiffCardImagePreviewBodyProps {
   preview: GitDiffCardImagePreview;
   fileDiffLabel: string;
   fitToFrame?: boolean;
@@ -775,8 +775,8 @@ interface GitDiffCardSvgBodyProps {
   fileDiff: ParsedGitDiffFile;
   fileDiffLabel: string;
   patchText: string | undefined;
+  fullFileContents: ExperimentalDiffFullFileContents | null;
   presentation: DiffPresentation;
-  expansionLineCount: number | undefined;
   onSelectionAddToChat?: (text: string) => void;
 }
 
@@ -786,8 +786,8 @@ function GitDiffCardSvgBody({
   fileDiff,
   fileDiffLabel,
   patchText,
+  fullFileContents,
   presentation,
-  expansionLineCount,
   onSelectionAddToChat,
 }: GitDiffCardSvgBodyProps) {
   return displayMode === "preview" ? (
@@ -800,14 +800,14 @@ function GitDiffCardSvgBody({
     <DiffHost
       file={fileDiff}
       patchText={patchText}
+      fullFileContents={fullFileContents}
       {...presentation}
-      expansionLineCount={expansionLineCount}
       onSelectionAddToChat={onSelectionAddToChat}
     />
   );
 }
 
-export interface GitDiffCardBodyProps {
+interface GitDiffCardBodyProps {
   state: GitDiffCardBodyState;
   presentation: DiffPresentation;
   svgDisplayMode: GitDiffCardSvgDisplayMode;
@@ -840,7 +840,7 @@ export function GitDiffCardBody({
   const {
     bodySentinelRef,
     enrichment,
-    enrichedFileDiff,
+    fileDiff,
     fileDiffLabel,
     isImageCard,
     isSvgPreviewCard,
@@ -848,15 +848,9 @@ export function GitDiffCardBody({
     shouldRenderDiffView,
     loadDeletedDiff,
     contextExpansion,
+    fullFileContents,
     patchText,
   } = state;
-  // pierre renders an empty diff when it gets an expansion budget for a
-  // hunk-only patch, so only a card that can fetch full contents sends one.
-  // The timeline never can; the diff panel can, through its fetcher.
-  const expansionLineCount =
-    contextExpansion.status === "unavailable"
-      ? undefined
-      : DIFF_EXPANSION_LINE_COUNT;
 
   return (
     <div
@@ -893,20 +887,20 @@ export function GitDiffCardBody({
         <GitDiffCardSvgBody
           displayMode={svgDisplayMode}
           enrichment={enrichment}
-          fileDiff={enrichedFileDiff}
+          fileDiff={fileDiff}
           fileDiffLabel={fileDiffLabel}
           patchText={patchText}
+          fullFileContents={fullFileContents}
           presentation={presentation}
-          expansionLineCount={expansionLineCount}
           onSelectionAddToChat={onSelectionAddToChat}
         />
       ) : (
         <>
           <DiffHost
-            file={enrichedFileDiff}
+            file={fileDiff}
             patchText={patchText}
+            fullFileContents={fullFileContents}
             {...presentation}
-            expansionLineCount={expansionLineCount}
             fallback={<GitDiffCardBodySkeleton />}
             onSelectionAddToChat={onSelectionAddToChat}
           />

@@ -42,7 +42,7 @@ type EmitStepArgs = {
   metadata?: ProvisioningTranscriptEntry["metadata"];
 };
 
-export interface CreateWorkspaceArgs {
+interface CreateWorkspaceArgs {
   /** Local repo path for worktrees */
   sourcePath: string;
   targetPath: string;
@@ -57,25 +57,26 @@ export interface CreateWorkspaceArgs {
   /** Setup script timeout in ms. Controlled by the server. */
   timeoutMs: number;
   /** Resolved user-shell PATH for the setup script. */
-  setupPath?: string;
+  shellPath?: string;
   onProgress?: ProgressCallback;
   pruneEmptyParent?: boolean;
   signal?: AbortSignal;
 }
 
-export interface RunSetupScriptArgs {
+interface RunSetupScriptArgs {
   workspacePath: string;
   timeoutMs: number;
   /** Resolved user-shell PATH. Falls back to the daemon process PATH. */
-  setupPath?: string;
+  shellPath?: string;
   onProgress?: ProgressCallback;
   signal?: AbortSignal;
 }
 
-export interface RemoveWorktreeArgs {
+interface RemoveWorktreeArgs {
   path: string;
   force?: boolean;
   pruneEmptyParent?: boolean;
+  shellPath?: string;
 }
 
 interface SetupScriptCommand {
@@ -154,12 +155,15 @@ function emitGitOutput(
 async function ensureExistingWorkspaceMatches(
   targetPath: string,
   branchName: string,
+  shellPath: string | undefined,
 ): Promise<boolean> {
   if (!(await pathExists(targetPath))) {
     return false;
   }
 
-  const workspace = new Workspace(targetPath);
+  const workspace = new Workspace(targetPath, {
+    ...(shellPath !== undefined ? { shellPath } : {}),
+  });
   if (!(await workspace.isGitRepo)) {
     throw new WorkspaceError(
       "path_exists",
@@ -215,7 +219,7 @@ function createProvisionCancelledError(cause?: unknown): WorkspaceError {
   );
 }
 
-function throwIfProvisionAborted(signal: AbortSignal | undefined): void {
+export function throwIfProvisionAborted(signal: AbortSignal | undefined): void {
   if (signal?.aborted) {
     throw createProvisionCancelledError(signal.reason);
   }
@@ -230,13 +234,20 @@ function isProvisionAbortError(error: unknown): boolean {
 async function resolveRemoteBaseBranch(
   sourcePath: string,
   baseBranch: string,
+  shellPath: string | undefined,
   signal: AbortSignal | undefined,
 ): Promise<{ remote: string; branch: string } | null> {
   if (!baseBranch.includes("/")) {
     return null;
   }
 
-  const remotes = (await runGit(["remote"], { cwd: sourcePath, signal })).stdout
+  const remotes = (
+    await runGit(["remote"], {
+      cwd: sourcePath,
+      signal,
+      ...(shellPath !== undefined ? { shellPath } : {}),
+    })
+  ).stdout
     .split("\n")
     .map((remote) => remote.trim())
     .filter(Boolean);
@@ -262,11 +273,13 @@ async function fetchRemoteBaseBranch(args: {
   sourcePath: string;
   baseBranch: string;
   onProgress: ProgressCallback | undefined;
+  shellPath: string | undefined;
   signal: AbortSignal | undefined;
 }): Promise<void> {
   const remoteBase = await resolveRemoteBaseBranch(
     args.sourcePath,
     args.baseBranch,
+    args.shellPath,
     args.signal,
   );
   if (!remoteBase) {
@@ -286,6 +299,7 @@ async function fetchRemoteBaseBranch(args: {
   try {
     await runGit(["fetch", "--quiet", remoteBase.remote, refspec], {
       cwd: args.sourcePath,
+      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
       signal: args.signal,
     });
     emitStep({
@@ -321,13 +335,18 @@ export async function createWorktree(
     await ensureExistingWorkspaceMatches(
       args.targetPath,
       args.checkout.branchName,
+      args.shellPath,
     )
   ) {
     return { path: args.targetPath };
   }
 
   throwIfProvisionAborted(args.signal);
-  switch (await readGitRepositoryState(args.sourcePath)) {
+  switch (
+    await readGitRepositoryState(args.sourcePath, {
+      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
+    })
+  ) {
     case "not_git":
       throw new WorkspaceError(
         "not_git_repo",
@@ -355,13 +374,16 @@ export async function createWorktree(
     sourcePath: args.sourcePath,
     baseBranch: startPoint,
     onProgress: args.onProgress,
+    shellPath: args.shellPath,
     signal: args.signal,
   });
 
   if (args.checkout.kind === "existing-branch") {
-    const existingWorktree = (await listGitWorktrees(args.sourcePath)).find(
-      (worktree) => worktree.branchName === args.checkout.branchName,
-    );
+    const existingWorktree = (
+      await listGitWorktrees(args.sourcePath, {
+        ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
+      })
+    ).find((worktree) => worktree.branchName === args.checkout.branchName);
     if (existingWorktree) {
       throw new WorkspaceError(
         "branch_already_checked_out",
@@ -379,7 +401,14 @@ export async function createWorktree(
           "--quiet",
           `refs/heads/${args.checkout.branchName}`,
         ],
-        { cwd: args.sourcePath, allowFailure: true, signal: args.signal },
+        {
+          cwd: args.sourcePath,
+          allowFailure: true,
+          ...(args.shellPath !== undefined
+            ? { shellPath: args.shellPath }
+            : {}),
+          signal: args.signal,
+        },
       )
     ).exitCode === 0;
   if (
@@ -389,10 +418,15 @@ export async function createWorktree(
   ) {
     const localHead = await runGit(
       ["rev-parse", `refs/heads/${args.checkout.branchName}`],
-      { cwd: args.sourcePath, signal: args.signal },
+      {
+        cwd: args.sourcePath,
+        ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
+        signal: args.signal,
+      },
     );
     const remoteHead = await runGit(["rev-parse", args.checkout.startPoint], {
       cwd: args.sourcePath,
+      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
       signal: args.signal,
     });
     if (localHead.stdout.trim() !== remoteHead.stdout.trim()) {
@@ -434,6 +468,7 @@ export async function createWorktree(
   try {
     const result = await runGitWithWorktreeMetadataLock(gitArgs, {
       cwd: args.sourcePath,
+      ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
       signal: args.signal,
     });
     emitGitOutput(args.onProgress, "git-worktree", result);
@@ -457,7 +492,13 @@ export async function createWorktree(
           args.checkout.upstream,
           args.checkout.branchName,
         ],
-        { cwd: args.targetPath, signal: args.signal },
+        {
+          cwd: args.targetPath,
+          ...(args.shellPath !== undefined
+            ? { shellPath: args.shellPath }
+            : {}),
+          signal: args.signal,
+        },
       );
     }
     emitCwd({
@@ -469,12 +510,13 @@ export async function createWorktree(
       sourcePath: args.sourcePath,
       targetPath: args.targetPath,
       onProgress: args.onProgress,
+      shellPath: args.shellPath,
       signal: args.signal,
     });
     await runSetupScript({
       workspacePath: args.targetPath,
       timeoutMs: args.timeoutMs,
-      setupPath: args.setupPath,
+      shellPath: args.shellPath,
       onProgress: args.onProgress,
       signal: args.signal,
     });
@@ -494,6 +536,7 @@ export async function createWorktree(
       path: args.targetPath,
       force: true,
       pruneEmptyParent: args.pruneEmptyParent,
+      shellPath: args.shellPath,
     });
     throw error;
   }
@@ -524,6 +567,7 @@ async function copyIncludedFiles(args: {
   sourcePath: string;
   targetPath: string;
   onProgress: ProgressCallback | undefined;
+  shellPath: string | undefined;
   signal: AbortSignal | undefined;
 }): Promise<void> {
   throwIfProvisionAborted(args.signal);
@@ -533,6 +577,7 @@ async function copyIncludedFiles(args: {
     result = await copyWorktreeIncludeFiles({
       sourcePath: args.sourcePath,
       targetPath: args.targetPath,
+      shellPath: args.shellPath,
       signal: args.signal,
     });
   } catch (error) {
@@ -610,10 +655,10 @@ export async function runSetupScript(
   });
 
   const { timeoutMs } = args;
-  const env = sanitizeInheritedChildProcessEnv({ env: process.env });
-  if (args.setupPath !== undefined) {
-    env.PATH = args.setupPath;
-  }
+  const env = sanitizeInheritedChildProcessEnv({
+    env: process.env,
+    ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
+  });
   const child = spawnPortableOutputProcess({
     command: command.command,
     args: command.args,
@@ -773,6 +818,7 @@ export async function removeWorktree(args: RemoveWorktreeArgs): Promise<void> {
 
   const commonDirResult = await runGit(["rev-parse", "--git-common-dir"], {
     cwd: workspacePath,
+    ...(args.shellPath !== undefined ? { shellPath: args.shellPath } : {}),
     allowFailure: true,
   });
 
@@ -784,23 +830,30 @@ export async function removeWorktree(args: RemoveWorktreeArgs): Promise<void> {
     // Lock order is checkout mutation first, worktree metadata second. Keep
     // every path that needs both locks in this order so two callers cannot each
     // hold one git lock domain while waiting for the other.
-    await tryWithCheckoutMutationLock(workspacePath, () =>
-      withWorktreeMetadataLock(commonDir, () =>
-        runGit(
-          [
-            "--git-dir",
-            commonDir,
-            "worktree",
-            "remove",
-            workspacePath,
-            ...(force ? ["--force"] : []),
-          ],
-          {
-            cwd: path.dirname(workspacePath),
-            allowFailure: true,
-          },
+    await tryWithCheckoutMutationLock(
+      workspacePath,
+      () =>
+        withWorktreeMetadataLock(commonDir, () =>
+          runGit(
+            [
+              "--git-dir",
+              commonDir,
+              "worktree",
+              "remove",
+              workspacePath,
+              ...(force ? ["--force"] : []),
+            ],
+            {
+              cwd: path.dirname(workspacePath),
+              ...(args.shellPath !== undefined
+                ? { shellPath: args.shellPath }
+                : {}),
+              allowFailure: true,
+            },
+          ),
         ),
-      ),
+      undefined,
+      args.shellPath === undefined ? {} : { shellPath: args.shellPath },
     );
   }
 
@@ -811,10 +864,6 @@ export async function removeWorktree(args: RemoveWorktreeArgs): Promise<void> {
   if (args.pruneEmptyParent) {
     await removeDirectoryIfEmpty(parentPath);
   }
-}
-
-export async function removeDirectory(args: { path: string }): Promise<void> {
-  await fs.rm(args.path, { recursive: true, force: true });
 }
 
 async function removeDirectoryIfEmpty(pathToRemove: string): Promise<void> {

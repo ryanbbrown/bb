@@ -38,6 +38,7 @@ import remarkBreaks from "remark-breaks";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
 import { ImageLightbox } from "./image-lightbox.js";
+import { normalizeMathFences } from "./markdown-math-fences.js";
 import {
   markdownMayContainMath,
   useRehypeKatex,
@@ -105,18 +106,16 @@ import {
   useRawThreadMentionResources,
 } from "@/components/thread/ThreadTitleMentions.js";
 
-export interface MarkdownPreviewProps {
+interface MarkdownPreviewProps {
   allowHtml?: boolean;
   className?: string;
   content: string;
-  expandedImageAlt?: string;
   /**
    * Controls whether Markdown image nodes mount browser image subresources.
    * Use `"alt-text"` for untrusted generated previews that should retain a
    * readable placeholder without issuing a request to the image URL.
    */
   imagePolicy?: MarkdownImagePolicy;
-  imageLightboxTitle?: string;
   linkRouting?: MarkdownLinkRouting;
   /**
    * When supplied, serialized `@thread:<id>` tokens and exact raw persisted
@@ -151,7 +150,7 @@ export interface MarkdownPreviewProps {
   urlTransform?: UrlTransform;
 }
 
-export type MarkdownImagePolicy = "alt-text" | "render";
+type MarkdownImagePolicy = "alt-text" | "render";
 
 export interface MarkdownThreadMentions {
   mentions: readonly PromptTextMention[];
@@ -475,11 +474,7 @@ const areMarkdownPreviewPropsEqual: MarkdownPreviewPropsEqual = (
   (previous.allowHtml ?? false) === (next.allowHtml ?? false) &&
   previous.className === next.className &&
   previous.content === next.content &&
-  (previous.expandedImageAlt ?? "Expanded image") ===
-    (next.expandedImageAlt ?? "Expanded image") &&
   (previous.imagePolicy ?? "render") === (next.imagePolicy ?? "render") &&
-  (previous.imageLightboxTitle ?? "Expanded image preview") ===
-    (next.imageLightboxTitle ?? "Expanded image preview") &&
   previous.urlTransform === next.urlTransform &&
   areMarkdownThreadMentionsEqual({
     next: next.threadMentions,
@@ -1665,9 +1660,7 @@ function MarkdownPreviewComponent({
   allowHtml = false,
   className,
   content,
-  expandedImageAlt = "Expanded image",
   imagePolicy = "render",
-  imageLightboxTitle = "Expanded image preview",
   linkRouting,
   threadMentions,
   promptMentions,
@@ -1718,10 +1711,13 @@ function MarkdownPreviewComponent({
         : markdownContent,
     [markdownContent, promptMentions],
   );
-  const { frontmatter, body } = useMemo(
-    () => splitMarkdownFrontmatter(promptMarkdownContent),
-    [promptMarkdownContent],
-  );
+  const { frontmatter, body } = useMemo(() => {
+    const split = splitMarkdownFrontmatter(promptMarkdownContent);
+    return {
+      frontmatter: split.frontmatter,
+      body: normalizeMathFences(split.body),
+    };
+  }, [promptMarkdownContent]);
   // The remark transform fills this shared mount table on every parse. Keep it
   // stable while assistant text streams so the custom React component type
   // also stays stable and an already-complete directive does not remount when
@@ -1868,8 +1864,8 @@ function MarkdownPreviewComponent({
 
       <ImageLightbox
         imageSrc={expandedImageUrl}
-        imageAlt={expandedImageAlt}
-        title={imageLightboxTitle}
+        imageAlt="Expanded image"
+        title="Expanded image preview"
         onClose={() => setExpandedImageUrl(null)}
       />
     </>

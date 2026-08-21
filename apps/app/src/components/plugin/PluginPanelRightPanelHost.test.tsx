@@ -62,6 +62,7 @@ interface TestNewThreadPanelActionRegistration {
 }
 
 const browserState = vi.hoisted(() => ({ available: false }));
+const viewportState = vi.hoisted(() => ({ isCompactViewport: false }));
 const createTerminal = vi.hoisted(() => vi.fn());
 const threadTabsApi = vi.hoisted(() => ({
   get: vi.fn(),
@@ -141,7 +142,7 @@ vi.mock("@/lib/sdk", async (importOriginal) => {
 });
 
 vi.mock("@bb/shared-ui/hooks/use-compact-viewport", () => ({
-  useIsCompactViewport: () => false,
+  useIsCompactViewport: () => viewportState.isCompactViewport,
 }));
 
 vi.mock("@/components/commands/AppCommandProvider", () => ({
@@ -285,7 +286,6 @@ vi.mock("@/components/secondary-panel/ThreadSecondaryPanel", () => ({
     onOpenNewTab,
     renderBrowserDeck,
     splitPanelStateId,
-    topChromeSurface,
   }: {
     activeTab: { id: string } | null;
     tabs: Array<{
@@ -316,7 +316,6 @@ vi.mock("@/components/secondary-panel/ThreadSecondaryPanel", () => ({
       pane: { isFocused: boolean; onFocusPane: () => void },
     ) => ReactNode;
     splitPanelStateId?: string;
-    topChromeSurface?: "panel" | "page";
   }) => {
     const pane = { isFocused: true, onFocusPane: () => undefined };
     const activeFixedTab = fixedTabs.find(
@@ -338,7 +337,6 @@ vi.mock("@/components/secondary-panel/ThreadSecondaryPanel", () => ({
         data-file-tab-content-fills-region={
           activeRenderableTab?.contentFillsRegion === true ? "true" : "false"
         }
-        data-top-chrome-surface={topChromeSurface ?? "panel"}
       >
         {tabs.map((tab) => (
           <div key={tab.tab.id}>
@@ -597,6 +595,7 @@ function renderHost(panelPath = "board", subPath = "", store = createStore()) {
 describe("PluginPanelRightPanelHost", () => {
   beforeEach(() => {
     browserState.available = false;
+    viewportState.isCompactViewport = false;
     createTerminal.mockReset();
     createTerminal.mockResolvedValue({ id: "terminal-1" });
     threadTabsApi.get.mockReset();
@@ -620,6 +619,29 @@ describe("PluginPanelRightPanelHost", () => {
     cleanup();
   });
 
+  // The host's own trigger is portaled into the page header, so it does not
+  // inherit the glyph the thread header resolves. A compact viewport opens
+  // this panel as a bottom drawer (SecondaryPanelLayout), and the trigger has
+  // to disclose that edge.
+  it("shows the drawer glyph on the trigger for a compact viewport", async () => {
+    viewportState.isCompactViewport = true;
+    renderHost();
+
+    const showButton = await screen.findByRole("button", {
+      name: "Show right panel",
+    });
+    expect(showButton.querySelector('[data-icon="PanelBottom"]')).toBeTruthy();
+  });
+
+  it("shows the side-panel glyph on the trigger for a wide viewport", async () => {
+    renderHost();
+
+    const showButton = await screen.findByRole("button", {
+      name: "Show right panel",
+    });
+    expect(showButton.querySelector('[data-icon="PanelRight"]')).toBeTruthy();
+  });
+
   it("keeps one panel toggle and mounts the collapsed panel before opening", async () => {
     renderHost();
 
@@ -627,7 +649,6 @@ describe("PluginPanelRightPanelHost", () => {
     const collapsedPanel = await screen.findByTestId(
       "shared-thread-secondary-panel",
     );
-    expect(collapsedPanel.dataset.topChromeSurface).toBe("panel");
     await waitFor(() =>
       expect(
         screen

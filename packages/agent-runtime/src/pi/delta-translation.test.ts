@@ -8,7 +8,7 @@ import type { AgentSessionEvent } from "@earendil-works/pi-coding-agent";
 import {
   createDeltaAssembler,
   type DeltaAssembler,
-} from "../delta-assembler.js";
+} from "@bb/provider-bridge-protocol/assembler";
 import {
   createPiDeltaTranslator,
   type PiModelContextWindowResolver,

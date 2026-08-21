@@ -7,11 +7,7 @@ import { Hono } from "hono";
 import { terminalWebSocketQuerySchema } from "@bb/server-contract";
 import { compress } from "hono/compress";
 import { cors } from "hono/cors";
-import {
-  buildLocalAppOrigins,
-  type BuildLocalAppOriginsArgs,
-} from "@bb/config/local-app-origins";
-import type { AppDeps, ServerAppDeps } from "./types.js";
+import type { ServerAppDeps } from "./types.js";
 import { ApiError, errorToResponse } from "./errors.js";
 import { registerEnvironmentRoutes } from "./routes/environments.js";
 import { registerFileRoutes } from "./routes/files.js";
@@ -73,9 +69,11 @@ import {
   createPluginCatalogService,
   type PluginCatalogService,
 } from "./services/plugin-catalog/plugin-catalog-service.js";
-import type { ProviderRegistryService } from "./services/providers/provider-registry.js";
 import { callHostRetryableOnlineRpc } from "./services/hosts/online-rpc.js";
-import { browserRequestProblem } from "./browser-request-guard.js";
+import {
+  allowedAppOrigins,
+  browserRequestProblem,
+} from "./browser-request-guard.js";
 import {
   callPluginHostRpc,
   disposePluginHostWorkers,
@@ -89,17 +87,16 @@ const PLUGIN_WIRE_HTTP_PATH = /^\/api\/v1\/plugins\/[^/]+\/http(?:\/|$)/u;
 import { rankAcceptedAssetEncodings } from "./asset-content-encoding.js";
 import { apiJsonCompression } from "./api-response-compression.js";
 
-export type CloseWebSockets = () => Promise<void>;
+type CloseWebSockets = () => Promise<void>;
 type NodeWebSocketServer = ReturnType<typeof createNodeWebSocket>["wss"];
 type WebSocketCloseError = Error | undefined;
 
-export interface ServerApp {
+interface ServerApp {
   app: Hono;
   closeWebSockets: CloseWebSockets;
   injectWebSocket: ReturnType<typeof createNodeWebSocket>["injectWebSocket"];
   pluginService: PluginService;
   pluginCatalogService: PluginCatalogService;
-  providerRegistry: ProviderRegistryService;
 }
 
 interface CloseWebSocketServerArgs {
@@ -247,20 +244,6 @@ async function findPrecompressedStaticFile(args: {
   return null;
 }
 
-function buildAllowedCorsOrigins(deps: AppDeps): Set<string> {
-  const originArgs: BuildLocalAppOriginsArgs = {
-    serverPort: deps.config.serverPort,
-  };
-  if (deps.config.appUrl !== undefined) {
-    originArgs.appUrl = deps.config.appUrl;
-  }
-  if (deps.config.devAppPort !== undefined) {
-    originArgs.devAppPort = deps.config.devAppPort;
-  }
-
-  return new Set<string>(buildLocalAppOrigins(originArgs));
-}
-
 function closeWebSocketServer(args: CloseWebSocketServerArgs): Promise<void> {
   for (const client of args.server.clients) {
     client.close(WEB_SOCKET_SHUTDOWN_CODE, args.reason);
@@ -317,7 +300,7 @@ export function createApp(
     "*",
     cors({
       origin: (origin, context) => {
-        const allowedCorsOrigins = buildAllowedCorsOrigins(deps);
+        const allowedCorsOrigins = allowedAppOrigins(deps);
         const requestOrigin = new URL(context.req.url).origin;
         if (origin === requestOrigin || allowedCorsOrigins.has(origin)) {
           return origin;
@@ -343,7 +326,16 @@ export function createApp(
     });
   });
   app.onError((error) => errorToResponse(error, deps.logger));
-  app.get("/health", (context) => context.json({ ok: true }));
+  // The launch id lets the bb-app launcher prove that the process answering on
+  // its port is the child it just spawned, not another bb server that already
+  // owned the port (its own child then dies with EADDRINUSE a moment later).
+  app.get("/health", (context) =>
+    context.json(
+      deps.config.launchId === undefined
+        ? { ok: true }
+        : { ok: true, launchId: deps.config.launchId },
+    ),
+  );
   app.get("/install.sh", async (context) => {
     const script = await readFile(INSTALL_MACHINE_SCRIPT_PATH);
     return new Response(script, {
@@ -698,6 +690,5 @@ export function createApp(
     injectWebSocket,
     pluginService,
     pluginCatalogService,
-    providerRegistry: deps.providerRegistry,
   };
 }

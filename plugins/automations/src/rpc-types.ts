@@ -1,15 +1,15 @@
 import { z } from "zod";
 
-export const AUTOMATION_NAME_MAX_LENGTH = 200;
+const AUTOMATION_NAME_MAX_LENGTH = 200;
 export const AUTOMATION_PROMPT_MAX_LENGTH = 8_000;
-export const AUTOMATION_SCRIPT_MAX_LENGTH = 262_144;
-export const AUTOMATION_SCRIPT_FILE_MAX_LENGTH = 200;
-export const SCHEDULE_CRON_MAX_LENGTH = 100;
-export const SCHEDULE_TIMEZONE_MAX_LENGTH = 100;
-export const AUTOMATION_IDEMPOTENCY_KEY_MAX_LENGTH = 200;
+const AUTOMATION_SCRIPT_MAX_LENGTH = 262_144;
+const AUTOMATION_SCRIPT_FILE_MAX_LENGTH = 200;
+const SCHEDULE_CRON_MAX_LENGTH = 100;
+const SCHEDULE_TIMEZONE_MAX_LENGTH = 100;
+const AUTOMATION_IDEMPOTENCY_KEY_MAX_LENGTH = 200;
 export const AUTOMATION_SCRIPT_TIMEOUT_DEFAULT_MS = 120_000;
 export const AUTOMATION_SCRIPT_TIMEOUT_MAX_MS = 900_000;
-export const AUTOMATION_RUNS_LIMIT_DEFAULT = 50;
+const AUTOMATION_RUNS_LIMIT_DEFAULT = 50;
 export const AUTOMATION_RUNS_LIMIT_MAX = 200;
 
 export const permissionModeSchema = z.enum(["accept-edits", "auto", "full"]);
@@ -105,14 +105,14 @@ export type AutomationScriptInterpreter = z.infer<
   typeof automationScriptInterpreterSchema
 >;
 
-export const automationScheduleTriggerSchema = z
+const automationScheduleTriggerSchema = z
   .object({
     triggerType: z.literal("schedule"),
     cron: z.string().min(1).max(SCHEDULE_CRON_MAX_LENGTH),
     timezone: z.string().min(1).max(SCHEDULE_TIMEZONE_MAX_LENGTH),
   })
   .strict();
-export const automationOnceTriggerSchema = z
+const automationOnceTriggerSchema = z
   .object({
     triggerType: z.literal("once"),
     runAt: z.number().int().positive(),
@@ -124,7 +124,7 @@ export const automationTriggerSchema = z.discriminatedUnion("triggerType", [
 ]);
 export type AutomationTrigger = z.infer<typeof automationTriggerSchema>;
 
-export const automationAgentExecutionSchema = z
+const automationAgentExecutionSchema = z
   .object({
     mode: z.literal("agent"),
     prompt: z.string().min(1).max(AUTOMATION_PROMPT_MAX_LENGTH),
@@ -136,7 +136,7 @@ export const automationAgentExecutionSchema = z
   })
   .strict();
 
-export const automationScriptExecutionSchema = z
+const automationScriptExecutionSchema = z
   .object({
     mode: z.literal("script"),
     script: z.string().min(1).max(AUTOMATION_SCRIPT_MAX_LENGTH).optional(),
@@ -178,8 +178,9 @@ function requireExactlyOneScriptSource(
   }
 }
 
-export const automationExecutionRequestSchema =
-  automationExecutionSchema.superRefine(requireExactlyOneScriptSource);
+const automationExecutionRequestSchema = automationExecutionSchema.superRefine(
+  requireExactlyOneScriptSource,
+);
 
 /**
  * Execution as returned to clients. Script automations add `storedScriptPath`:
@@ -187,17 +188,14 @@ export const automationExecutionRequestSchema =
  * a snapshot taken at create/update time; edits to the original `--script-file`
  * source do not reach it.
  */
-export const automationResponseExecutionSchema = z.discriminatedUnion("mode", [
+const automationResponseExecutionSchema = z.discriminatedUnion("mode", [
   automationAgentExecutionSchema,
   automationScriptExecutionSchema
     .extend({ storedScriptPath: z.string().min(1).optional() })
     .strict(),
 ]);
-export type AutomationResponseExecution = z.infer<
-  typeof automationResponseExecutionSchema
->;
 
-export const agentExecutionTargetSchema = z.discriminatedUnion("type", [
+const agentExecutionTargetSchema = z.discriminatedUnion("type", [
   z
     .object({
       type: z.literal("target-thread"),
@@ -211,9 +209,8 @@ export const agentExecutionTargetSchema = z.discriminatedUnion("type", [
     })
     .strict(),
 ]);
-export type AgentExecutionTarget = z.infer<typeof agentExecutionTargetSchema>;
 
-export const agentExecutionUpdateSchema = z
+const agentExecutionUpdateSchema = z
   .object({
     prompt: z.string().min(1).max(AUTOMATION_PROMPT_MAX_LENGTH).optional(),
     model: z.string().min(1).optional(),
@@ -305,14 +302,10 @@ export const projectAutomationInputSchema = z
     automationId: z.string().min(1),
   })
   .strict();
-export type ProjectAutomationInput = z.infer<
-  typeof projectAutomationInputSchema
->;
 
 export const listAutomationsInputSchema = z
   .object({ projectId: z.string().min(1) })
   .strict();
-export type ListAutomationsInput = z.infer<typeof listAutomationsInputSchema>;
 
 export const createAutomationInputSchema = z
   .object({
@@ -378,15 +371,11 @@ export const automationRunsInputSchema = projectAutomationInputSchema
     cursor: z.string().min(1).optional(),
   })
   .strict();
-export type AutomationRunsInput = z.input<typeof automationRunsInputSchema>;
 export type ResolvedAutomationRunsInput = z.output<
   typeof automationRunsInputSchema
 >;
 
 export const automationListResponseSchema = z.array(automationResponseSchema);
-export type AutomationListResponse = z.infer<
-  typeof automationListResponseSchema
->;
 
 export const automationRunListResponseSchema = z
   .object({
@@ -405,7 +394,7 @@ export type AutomationRunRpcResponse = z.infer<
   typeof automationRunRpcResponseSchema
 >;
 
-export const automationsOverviewEntrySchema = z
+const automationsOverviewEntrySchema = z
   .object({
     automation: automationResponseSchema,
     project: z.object({ id: z.string(), name: z.string() }).strict(),

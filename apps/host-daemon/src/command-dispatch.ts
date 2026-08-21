@@ -88,13 +88,13 @@ import {
   resolveWorkspaceForCommand,
   workspaceResolutionFailureFromError,
 } from "./workspace-resolution.js";
+import { userExecutableProcessOptions } from "./user-executable-env.js";
 
 const THREAD_STOP_ACTIVE_TURN_WAIT_MS = 5_000;
 
 export {
   CommandDispatchError,
   getErrorCode,
-  noopEventSink,
   type CommandDispatchOptions,
 } from "./command-dispatch-support.js";
 
@@ -504,6 +504,7 @@ const commandHandlers: CommandHandlerMap = {
       dataDir: options.dataDir,
       projectSlug: command.projectSlug,
       remoteUrl: command.remoteUrl,
+      ...userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
       ...(command.targetPath !== undefined
         ? { targetPath: command.targetPath }
         : {}),
@@ -557,18 +558,30 @@ const commandHandlers: CommandHandlerMap = {
       runtimeManager: options.runtimeManager,
       workspaceContext: command.workspaceContext,
     });
+    const cliOptions = userExecutableProcessOptions(
+      options.runtimeManager.getShellEnv(),
+    );
     switch (command.operation) {
       case "ready":
-        await entry.workspace.runPullRequestAction({ operation: "ready" });
+        await entry.workspace.runPullRequestAction(
+          { operation: "ready" },
+          cliOptions,
+        );
         break;
       case "draft":
-        await entry.workspace.runPullRequestAction({ operation: "draft" });
+        await entry.workspace.runPullRequestAction(
+          { operation: "draft" },
+          cliOptions,
+        );
         break;
       case "merge":
-        await entry.workspace.runPullRequestAction({
-          operation: "merge",
-          method: command.method,
-        });
+        await entry.workspace.runPullRequestAction(
+          {
+            operation: "merge",
+            method: command.method,
+          },
+          cliOptions,
+        );
         break;
       default: {
         const _exhaustive: never = command;
@@ -593,7 +606,11 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
   "host.remove_path": removeHostPath,
   "host.browse_directory": browseHostDirectory,
   "host.paths_exist": checkHostPathsExist,
-  "project.inspect": async (command) => inspectProjectPath(command.path),
+  "project.inspect": async (command, options) =>
+    inspectProjectPath(
+      command.path,
+      userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
+    ),
   "project.clone_default_path": async (command, options) => ({
     path: resolveProjectCloneDefaultPath(options.dataDir, command.projectSlug),
   }),
@@ -825,7 +842,9 @@ const onlineRpcHandlers: OnlineRpcHandlerMap = {
         ? { outcome: "absent" }
         : { outcome: "unavailable", message: resolution.failure.message };
     }
-    const lookup = await resolution.entry.workspace.getPullRequest();
+    const lookup = await resolution.entry.workspace.getPullRequest(
+      userExecutableProcessOptions(options.runtimeManager.getShellEnv()),
+    );
     switch (lookup.outcome) {
       case "found":
         return { outcome: "available", pullRequest: lookup.pullRequest };

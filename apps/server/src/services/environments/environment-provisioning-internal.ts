@@ -38,10 +38,7 @@ import {
   resolveManagedTargetPath,
   resolvePersonalTargetPath,
 } from "../threads/worktree-paths.js";
-import {
-  buildDirectEnvironmentProvisionRequest,
-  type EnvironmentProvisionRequest,
-} from "./environment-provision-request.js";
+import type { EnvironmentProvisionRequest } from "./environment-provision-request.js";
 import { ensureHostSessionReadyForWork } from "../hosts/host-lifecycle.js";
 import {
   createLiveHostCommandExecution,
@@ -58,12 +55,9 @@ import {
   forgetActiveThreadProvisionContext,
   getActiveThreadProvisionContext,
 } from "../threads/thread-provisioning-active-context.js";
+import { advanceThreadProvisioning } from "../threads/thread-provisioning.js";
+import { ensureWorkspaceReadyEventInTransaction } from "../threads/thread-provisioning-environment.js";
 import {
-  advanceThreadProvisioning,
-  recordThreadProvisionWorkspaceReadyInTransaction,
-} from "../threads/thread-provisioning.js";
-import {
-  finalizeStoppedThreadAndRequestCleanupAdvance,
   finalizeStoppedThreadInTransaction,
   requestThreadStopForCurrentState,
 } from "../threads/thread-lifecycle.js";
@@ -272,9 +266,7 @@ const WORKSPACE_PROVISIONING_TRANSCRIPT_KEYS = new Set([
 
 const activeEnvironmentProvisionRpcEnvironmentIds = new Set<string>();
 
-export function hasLiveEnvironmentProvisionInFlight(
-  environmentId: string,
-): boolean {
+function hasLiveEnvironmentProvisionInFlight(environmentId: string): boolean {
   return activeEnvironmentProvisionRpcEnvironmentIds.has(environmentId);
 }
 
@@ -635,35 +627,15 @@ export function settleEnvironmentProvisionCommandResult(
 
     for (const thread of boundThreads) {
       if (thread.deletedAt !== null) {
-        const finalized = finalizeStoppedThreadInTransaction(args.deps, {
+        finalizeStoppedThreadInTransaction(args.deps, {
           threadId: thread.id,
         });
-        if (finalized) {
-          postCommitActions.push({
-            name: "Environment cleanup advance after deleted thread finalize",
-            context: {
+        postCommitActions.push({
+          run: (deps) =>
+            runEnvironmentCleanupAdvance(deps, {
               environmentId: args.command.environmentId,
-              threadId: thread.id,
-            },
-            run: (deps) =>
-              runEnvironmentCleanupAdvance(deps, {
-                environmentId: args.command.environmentId,
-              }),
-          });
-        } else {
-          postCommitActions.push({
-            name: "Deleted thread finalization retry after environment provision",
-            context: {
-              environmentId: args.command.environmentId,
-              threadId: thread.id,
-            },
-            run: (deps) => {
-              finalizeStoppedThreadAndRequestCleanupAdvance(deps, {
-                threadId: thread.id,
-              });
-            },
-          });
-        }
+            }),
+        });
         continue;
       }
       if (
@@ -705,26 +677,17 @@ export function settleEnvironmentProvisionCommandResult(
         continue;
       }
 
-      recordThreadProvisionWorkspaceReadyInTransaction(args.deps, {
+      ensureWorkspaceReadyEventInTransaction(args.deps, {
         threadId: thread.id,
         environmentId: args.command.environmentId,
         entries,
       });
       postCommitActions.push({
-        name: "Thread provisioning advance after workspace ready",
-        context: {
-          environmentId: args.command.environmentId,
-          threadId: thread.id,
-        },
         run: (deps) => advanceThreadProvisioning(deps, { threadId: thread.id }),
       });
     }
 
     postCommitActions.push({
-      name: "Environment cleanup advance after provision result",
-      context: {
-        environmentId: args.command.environmentId,
-      },
       run: (deps) =>
         runEnvironmentCleanupAdvance(deps, {
           environmentId: args.command.environmentId,
@@ -755,10 +718,6 @@ export function settleEnvironmentProvisionCommandResult(
   );
   if (failureHandled) {
     postCommitActions.push({
-      name: "Environment cleanup advance after provision failure",
-      context: {
-        environmentId: args.command.environmentId,
-      },
       run: (deps) => {
         requestEnvironmentCleanup(deps, {
           environmentId: args.command.environmentId,
@@ -805,10 +764,6 @@ export function settleEnvironmentProvisionCancelCommandResult(
     return {
       postCommitActions: [
         {
-          name: "Retry thread stop after provision cancellation failure",
-          context: {
-            environmentId: args.command.environmentId,
-          },
           run: (deps) => {
             for (const thread of stoppedThreads) {
               requestThreadStopForCurrentState(
@@ -850,20 +805,15 @@ export function settleEnvironmentProvisionCancelCommandResult(
     });
   }
 
-  let finalizedThread = false;
   for (const thread of stoppedThreads) {
-    finalizedThread =
-      finalizeStoppedThreadInTransaction(args.deps, {
-        threadId: thread.id,
-      }) || finalizedThread;
+    finalizeStoppedThreadInTransaction(args.deps, {
+      threadId: thread.id,
+    });
   }
+  const finalizedThread = stoppedThreads.length > 0;
 
   if (finalizedThread || restoredProvisioningEnvironment) {
     postCommitActions.push({
-      name: "Environment cleanup advance after provision cancellation",
-      context: {
-        environmentId: args.command.environmentId,
-      },
       run: (deps) => {
         requestEnvironmentCleanup(deps, {
           environmentId: args.command.environmentId,
@@ -878,7 +828,7 @@ export function settleEnvironmentProvisionCancelCommandResult(
   return { postCommitActions };
 }
 
-export function interruptUnrecoverableEnvironmentProvisioning(
+function interruptUnrecoverableEnvironmentProvisioning(
   deps: CommandResultSideEffectsDeps,
   args: InterruptUnrecoverableEnvironmentProvisioningArgs,
 ): void {
@@ -972,9 +922,9 @@ function startTrackedEnvironmentProvisionCommand(
 export async function advanceEnvironmentProvisioning(
   deps: CommandResultSideEffectsDeps,
   args: AdvanceEnvironmentProvisioningArgs,
-): Promise<string | null> {
+): Promise<void> {
   if (!args.environmentId) {
-    return null;
+    return;
   }
 
   const environment = getEnvironment(deps.db, args.environmentId);
@@ -983,24 +933,23 @@ export async function advanceEnvironmentProvisioning(
   // reality still permits from "destroyed") is applied by the writer at the
   // request call sites, not here.
   if (!environment || environment.status === "destroyed") {
-    return null;
+    return;
   }
   if (!args.request) {
     if (hasLiveEnvironmentProvisionInFlight(environment.id)) {
-      return null;
+      return;
     }
     interruptUnrecoverableEnvironmentProvisioning(deps, {
       environmentId: environment.id,
       reason:
         "Environment setup did not finish. Retry provisioning to continue.",
     });
-    return null;
+    return;
   }
   startTrackedEnvironmentProvisionCommand(deps, {
     environment,
     request: args.request,
   });
-  return null;
 }
 
 export const MANAGED_REPROVISION_STARTED = "started" as const;
@@ -1130,10 +1079,7 @@ export async function dispatchManagedEnvironmentReprovision(
   });
   await advanceEnvironmentProvisioning(deps, {
     environmentId: args.environment.id,
-    request: buildDirectEnvironmentProvisionRequest({
-      command,
-      provisioningId: args.provisioningId,
-    }),
+    request: { command },
   });
   return {
     provisionEventSequence: args.provisionEventSequence,

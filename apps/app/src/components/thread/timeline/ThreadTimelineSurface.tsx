@@ -68,9 +68,10 @@ export interface ThreadTimelineSurfaceProps {
   ongoingIndicatorLabel?: string;
   isStopping?: boolean;
   stoppingAnchorAt?: number;
-  timelineErrorLabel?: string;
   timelineErrorClassName?: string;
   timelineRows: TimelineRow[];
+  /** Outline destination kept mounted while timeline windowing is enabled. */
+  timelineNavigationTargetRowId?: string | null;
   threadId: string;
   threadRuntimeDisplayStatus: ThreadRuntimeDisplayStatus;
   unreadDividerAutoScroll?: boolean;
@@ -169,9 +170,9 @@ export function ThreadTimelineSurface({
   ongoingIndicatorLabel,
   isStopping = false,
   stoppingAnchorAt = 0,
-  timelineErrorLabel = "Failed to load timeline",
   timelineErrorClassName = "mt-6 text-destructive",
   timelineRows,
+  timelineNavigationTargetRowId,
   threadId,
   threadRuntimeDisplayStatus,
   unreadDividerAutoScroll,
@@ -218,7 +219,7 @@ export function ThreadTimelineSurface({
         (loadingContent ?? <DelayedThreadLoadingIndicator />)
       ) : timelineError ? (
         <TimelineStatusIndicator
-          label={timelineErrorLabel}
+          label="Failed to load timeline"
           className={timelineErrorClassName}
         />
       ) : timelineRowsWithPendingStop.length > 0 ? (
@@ -244,6 +245,7 @@ export function ThreadTimelineSurface({
           isLoadingOlderTimelineRows={isLoadingOlderTimelineRows}
           onLoadOlderRows={onLoadOlderRows}
           timelineRows={timelineRowsWithPendingStop}
+          timelineNavigationTargetRowId={timelineNavigationTargetRowId}
           timelineWindowingEnabled={timelineWindowingEnabled}
           threadId={threadId}
           threadRuntimeDisplayStatus={threadRuntimeDisplayStatus}
@@ -322,7 +324,7 @@ function LoadOlderMessages({
 }
 
 // Delay before revealing the loading indicator so fast loads don't flash.
-export const LOADING_INDICATOR_REVEAL_DELAY_MS = 200;
+const LOADING_INDICATOR_REVEAL_DELAY_MS = 200;
 
 function DelayedThreadLoadingIndicator() {
   const [visible, setVisible] = useState(false);

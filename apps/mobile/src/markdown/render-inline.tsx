@@ -61,7 +61,7 @@ function spanStyle(state: InlineState): TextStyle {
 }
 
 /** Mono span style for inline code / inline math. */
-export function inlineCodeStyle(
+function inlineCodeStyle(
   ctx: MarkdownContextValue,
   state: InlineState,
 ): TextStyle {
@@ -79,10 +79,7 @@ export function inlineCodeStyle(
 }
 
 /** Opens a link per the context callbacks; exported for the pills/blocks. */
-export function pressMarkdownLink(
-  ctx: MarkdownContextValue,
-  href: string,
-): void {
+function pressMarkdownLink(ctx: MarkdownContextValue, href: string): void {
   const target = classifyMarkdownLink(href, {
     rewriteLocalhostLinks: ctx.rewriteLocalhostLinks,
     serverHostname: ctx.serverHostname,
@@ -177,8 +174,13 @@ function collapseSoftBreaks(value: string): string {
     : value;
 }
 
-/** Padding inside an inline code span: RN nested text cannot pad, so thin spaces. */
-const CODE_PAD = "\u2009";
+/**
+ * Padding inside an inline code span: RN nested text cannot pad, so narrow
+ * spaces. They must be NO-BREAK (U+202F, not U+2009): a breaking pad lets the
+ * line wrap right after the leading space, which strands an empty highlighted
+ * fragment at the end of one line and puts the code on the next.
+ */
+const CODE_PAD = "\u202f";
 
 function renderText(value: string, state: InlineState, key: string): ReactNode {
   const text = collapseSoftBreaks(value);

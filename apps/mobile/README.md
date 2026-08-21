@@ -15,7 +15,7 @@ thread creation on the shared composer (mentions, attachments, voice, fork /
 handoff seeds), the thread detail screen (`/threads/[id]`: the virtualized
 timeline with every row kind, markdown, inline diffs, terminal output, images +
 lightbox, sticky-bottom, older pages, unread divider; the
-prompt area with pending-interaction banners, prompt-stack cards, the context
+prompt area with pending-interaction banners, the prompt chip row, the context
 banner, the queued-message list and the follow-up composer; header / message /
 git action sheets), deep links, and the workspace panel
 (a bottom sheet with Info · Diff · Files · Terminal + the thread's synced file
@@ -86,8 +86,7 @@ src/
                          useConnectionBanner), useAppBoot, PaletteProvider,
                          client-registry (per-profile clients + the global
                          mutation-error toast), e2e reset wiring,
-                         waitForActiveConnection, useOpenThreadInProfile
-                         (switch profile → wait → push thread),
+                         waitForActiveConnection,
                          ThreadOpenSignalHandler (realtime `thread-open` →
                          navigate, like the web's wsManager.onThreadOpen)
   notifications/         push notifications arrive in a later PR (RN glue:
@@ -106,9 +105,11 @@ src/
                          thread/ — thread detail: ThreadDetailScreen (list +
                          prompt area inside KeyboardPaddingView), the native
                          header pieces (title + status subtitle, panel + "…"),
-                         cards/ (workflow, background commands, plan + Exit,
-                         goal + Clear, to-dos, model fallback, context-window
-                         ring), prompt-area/
+                         cards/ (PromptChip + the prompt chip row: workflows,
+                         background tasks (glyph shimmers while live), plan +
+                         Exit, goal + Clear, to-dos, model fallback, plus the
+                         context/ chips, each a pill that opens a detail
+                         sheet; context-window ring), prompt-area/
                          (ThreadPromptArea: banner-or-stack + the follow-up
                          Composer; useFollowUpComposer: draft, submit mode,
                          send / queue / steer / stop, edit modes, quoting;
@@ -128,12 +129,13 @@ src/
                          host/ TimelineRowHostProvider (server URL, sender
                          metadata, thread navigation, image lightbox,
                          long-press message actions); lightbox/);
-                         banner/ — ThreadContextBanner (parent / fork row,
-                         active children card, pull request row + Mark ready /
-                         Merge sheet, changed-files row → WorkspaceChangesList +
-                         merge-base row → MergeBasePickerSheet, archived /
-                         environment-gone rows), use-thread-context-banner.ts
-                         (data assembly), pure banner-model.ts;
+                         context/ — ThreadContextChips (related-thread chip,
+                         child threads / needs-input chip, pull request chip +
+                         Mark ready / merge methods, changed-files chip → sheet
+                         with WorkspaceChangesList, merge base →
+                         MergeBasePickerSheet, Open diff; archived /
+                         environment-gone status chip), use-thread-context-chips.ts
+                         (data assembly), pure context-model.ts;
                          actions/ — MessageActionSheet + message-actions-model
                          (copy / quote paragraph / add to chat / edit / fork /
                          send to main), useMessageActionHandlers (fork →
@@ -146,7 +148,7 @@ src/
                          interactions/ — PendingInteractionBanner (approval /
                          user question / ask-user-question + secret-request
                          plugin forms / unsupported-plugin card), QuestionForm,
-                         SecretRequestForm, ChildThreadPendingInteractions;
+                         SecretRequestForm;
                          queue/ — QueuedMessagesList (send now, edit via
                          onEdit, move up/down, group toggle, delete);
                          dev/ — renderer showcases (markdown, work rows) +
@@ -165,10 +167,9 @@ src/
                          DiffTabFileCard over @/diff DiffFileCard with
                          skeleton / "Load diff" / too large / error bodies
                          and per-file "Add to chat"), DiffTargetPickerSheet,
-                         DiffTabHost context (quoteIntoComposer /
-                         openFilePreview), register.tsx (the `git-diff`
-                         panel registration: scroll-to path, close-then-quote
-                         into the thread's composer host);
+                         register.tsx (the `git-diff` panel registration:
+                         scroll-to path, close-then-quote into the thread's
+                         composer host via the `quoteIntoComposer` prop);
                          terminal/ — the terminal (Phase 6): TerminalView
                          (xterm in a react-native-webview page + the RN-owned
                          attach socket), TerminalTabContent (terminal +
@@ -264,7 +265,9 @@ src/
   theme/                 generated tokens, ThemeProvider, fonts (see src/ui/README.md)
   ui/                    NativeWind primitives (Text, Button, ListRow, Sheet, …;
                          KeyboardPaddingView — JS-state keyboard padding for
-                         bottom-anchored composer screens)
+                         bottom-anchored composer screens; OverlayBounds — the
+                         region under the header the composer's floating
+                         typeahead may cover)
 e2e/flows/               Maestro flows (smoke, phase1-shell, phase3-threads, phase3-compose,
                          phase4a-timeline, phase4a-diff-showcase,
                          phase4a-conversation-rows, phase4a-work-rows,
@@ -516,9 +519,8 @@ argument drives a dev client through Metro instead.
   `kind` (`workspace` | `host` | `storage` | `project`), `path`, `line`
   (`12` or `12-20`), `source` (`working-tree` | `head` | `merge-base:<ref>`)
   and `status` (`deleted`).
-- **Opening files**: `useThreadFileOpener(threadId)` — an explicit
-  `FileOpenerProvider` override, else the mounted workspace panel
-  (`panel.openFile`, the file becomes a tab), else the route. Every open of a
+- **Opening files**: `useThreadFileOpener(threadId)` — the mounted workspace
+  panel (`panel.openFile`, the file becomes a tab), else the route. Every open of a
   workspace / storage file lands in the thread's Recent list (MMKV
   `bb.thread.recentItems-<threadId>-1`, the web's key and JSON shape).
 - **Local file links**: `useThreadLocalFileLinks` routes markdown
@@ -586,8 +588,8 @@ argument drives a dev client through Metro instead.
   key and, full screen, a "…" that opens the same menu as the header
   (rename / restart / new / close). Cursor keys follow DECCKM (SS3 in
   application mode), Ctrl+arrow sends `CSI 1;5<final>`.
-- **Data** (`src/data/terminals`): `useTerminals(scope)` /
-  `useThreadTerminals(threadId)` (`GET /terminals?threadId|environmentId|hostId`),
+- **Data** (`src/data/terminals`): `useTerminals(scope)`
+  (`GET /terminals?threadId|environmentId|hostId`),
   `useTerminalSession(id)`, `useCreateTerminal` / `useRestartTerminal` /
   `useCloseTerminal` / `useRenameTerminal`, `useFetchTerminalOutput`. Realtime
   `terminals-changed` (thread scope) invalidates the lists; the attach
@@ -788,11 +790,22 @@ push key); nobody needs a local Xcode signing setup to ship.
   `eas build -p ios --profile <profile> [--auto-submit]` with
   `EXPO_TOKEN`. EAS builds, then uploads to TestFlight; the job waits for
   both and fails when either fails. Logs are on expo.dev under the project's
-  Builds and Submissions (the run summary links them).
+  Builds and Submissions (the run summary links them). After a submit, the
+  job runs `scripts/testflight-distribute.mjs`, which waits for App Store
+  Connect to process the build, submits it for Beta App Review when it has
+  none, and adds it to the external group named by the `external_group`
+  input (default `External testers`; empty skips the step). Run the script
+  by hand with `node scripts/testflight-distribute.mjs --version X.Y.Z
+  --build N` from `apps/mobile` with the `.p8` in place.
   Run it alone from the Actions tab ("Mobile iOS (EAS)") or
   `gh workflow run mobile-ios-eas.yml -f profile=production -f submit=true`.
   The nightly `publish-bb-app.yml` calls the same workflow after the npm
-  nightly publish with the numeric base of the nightly version. Repo
+  nightly publish with an empty `version`, so every nightly keeps the
+  marketing version committed in `app.json` and only the EAS build number
+  moves. This is deliberate: TestFlight needs a Beta App Review for the
+  first build of each new marketing version, and later builds of the same
+  version skip it. Bump `app.json` `version` only when you want a new
+  review, for example for a store release. Repo
   secrets: `EXPO_TOKEN` (a robot token from the `bb-team` Expo org) and
   `ASC_API_KEY_P8` (the `.p8` contents).
 - The `expo-modules-jsi` pnpm patch and the `lightningcss` override ship
@@ -812,9 +825,13 @@ push key); nobody needs a local Xcode signing setup to ship.
 App Store Connect finishes processing it, usually within 30 minutes. The group
 `bb team` exists and the nightly feeds it.
 
-**External testers** need a Beta App Review on the first build, and Apple
-usually auto-approves later builds. Before a build can go to an external group,
-App Store Connect needs all of this:
+**External testers** need a Beta App Review on the first build of each
+marketing version, and Apple usually auto-approves later builds of that
+version. The nightly keeps one marketing version for this reason (see "CI"
+above). Apple offers "Automatically distribute builds" only for internal
+groups, so the CI distribute step adds each submitted build to the external
+group through the App Store Connect API. Before a build can go to an external
+group, App Store Connect needs all of this:
 
 - **Test Information** (`betaAppLocalizations`): a feedback email, a beta
   description, and the privacy policy URL <https://getbb.app/privacy>. Per
@@ -854,11 +871,9 @@ Write to <EMAIL> if the server does not respond.
 Rehearse it before submitting: hand a colleague a phone that has never run bb,
 give them only these notes, and check that they reach a thread.
 
-The marketing version climbs on every nightly, because the EAS job writes the
-npm version into `app.json`. A new version string is more likely to trigger a
-fresh Beta App Review than another build of the same version. If external
-testers become the main audience, pin the TestFlight marketing version and let
-the EAS build number tell nightlies apart.
+The nightly keeps the marketing version in `app.json` and lets the EAS build
+number tell nightlies apart, because a new version string triggers a fresh
+Beta App Review and another build of the same version usually does not.
 
 ## Local state
 

@@ -89,10 +89,9 @@ message agents, or inspect projects, providers, and environments.
 - The `steerActiveThreadOnEnter` General preference defaults to false. Outside
   an open composer typeahead menu, enable it to make Enter steer a running
   thread and Command+Enter queue a follow-up; when disabled, those actions are
-  reversed. Shift+Enter inserts a newline, while zen mode also makes
-  unmodified Enter insert one. On coarse-pointer touch devices, the software
-  keyboard keeps Return as a newline; iPadOS WebKit preserves the Enter
-  shortcuts for a connected Magic Keyboard. Update the preference with
+  reversed. Shift+Enter inserts a newline. On coarse-pointer touch devices,
+  the software keyboard keeps Return as a newline; iPadOS WebKit preserves the
+  Enter shortcuts for a connected Magic Keyboard. Update the preference with
   `bb settings general steerActiveThreadOnEnter <true|false>`.
 - The `streamerMode` General preference defaults to false. Enable it to hide
   every `customModels` entry from `~/.bb/config.json` in all model lists
@@ -302,7 +301,8 @@ status|install` to inspect or install provider CLIs on a selected machine.
   returning the stable server attachment DTO. Optional `--filename` and
   `--mime-type` override inferred metadata. Pass the returned relative `path`
   to thread `--file` or `--image`; image MIME types are capped at 10MB and
-  other files at 25MB. `bb project attachment download <project-id>
+  other files at 25MB, and image/heic or image/heif uploads are rejected
+  (convert them to JPEG or PNG first). `bb project attachment download <project-id>
 <attachment-path> --client-file <path>` writes existing attachment bytes on
   the CLI machine. There is no project-attachment list or per-file remove API.
 - `bb project history|reorder` exposes project prompt recall and sidebar order.
@@ -384,6 +384,13 @@ or artifacts, validation performed, and blockers.
 <seconds>` when you need a shorter or longer budget.
 - Use `bb thread tell <thread-id> "..."` when requirements change, a blocker
   needs clarification, or follow-up work is needed.
+- Add `--plan` to `bb thread spawn` or `bb thread tell` to send the prompt as
+  the provider's structured `/plan` action: the agent proposes a plan for
+  approval before executing (Claude Code and Codex). Plain `/plan ...` text is
+  not recognized and reaches the provider as literal text. Review the proposed
+  plan with `bb thread interactions`; `bb thread cancel-plan` leaves Plan mode
+  early. The SDK equivalent is `input: [createBuiltinPlanCommandTextInput(text)]`
+  (exported by `@bb/sdk`) on `threads.spawn` / `threads.send`.
 - Use `bb thread edit-message <thread-id> --message "..."` to replace and rerun
   the latest eligible user message in a Codex, Claude Code, or Pi thread. Pass
   `--expected-request-sequence <sequence>` to select an earlier message. Failed
@@ -409,7 +416,13 @@ or artifacts, validation performed, and blockers.
 - Use `bb thread show <thread-id>` for status, parent, environment, pull request
   status, and result.
 - Use `bb thread show <thread-id> --git-diff` to review file changes.
-- Use `bb thread log <thread-id>` to inspect the conversation.
+- Use `bb thread log <thread-id>` to inspect the conversation. The default
+  shows only the newest 20 user-message turns and ends with a notice when older
+  history was omitted; `--limit <n>` (max 100) widens the window and `--all`
+  prints the whole thread. `--json` prints the oldest 100 raw events and warns
+  on stderr when more exist; page with `--after-seq <seq>` or pass `--all`.
+  Grep the `--all` output, not the default page, when checking whether a
+  thread ever received a message.
 - Use `bb thread output <thread-id>` to read the latest final output, or
   `bb thread output --self` for the current thread.
 
@@ -527,7 +540,10 @@ For review or fix pipelines, get the environment ID from
 add <key-or-comment-id> --file <path>` (task key = task-level; comment ID
   = that comment). Avoid progress spam.
 - Delegated threads are attached automatically. For work started independently,
-  run `bb tasks attach <key-or-id>` from the working thread.
+  run `bb tasks attach <key-or-id>` from the working thread. When a thread is
+  done with a task or a respawned worker replaced it, run `bb tasks detach
+<key-or-id> [--thread <thread-id>]`. `bb tasks threads <key>` lists live
+  threads first, newest first.
 - When implementation is ready for review, run `bb tasks update <key-or-id>
 --status in_review`; if blocked, leave the status accurate and explain the
   blocker in a comment.
@@ -818,9 +834,12 @@ them by mixing ink into canvas), the `--primary` accent, the secondary text tier
     both exist the install fails — write `@semver:<range>` or `@ref:<name>`.
     Installs prompt for confirmation (plugins are full-trust code);
     pass `--yes` to skip. Reinstalling an already-installed managed plugin is
-    refused — use `bb plugin update`. Plugins that declare a frontend (`bb.app`)
-    are built at install time for path sources and git sources without a
-    prebuilt app when their imported dependencies are already available;
+    refused — use `bb plugin update`. Installing a local path for an id that
+    is already installed from another local path moves the plugin to the new
+    directory and keeps its settings, secrets, and schedules. Plugins that
+    declare a frontend (`bb.app`) are built at install time for path sources
+    and git sources without a prebuilt app when their imported dependencies
+    are already available;
     git/npm packages can also ship a metadata-validated prebuilt `dist/`, and
     npm packages must. Managed git/npm installs refuse `engines.bb` /
     `engines.bbPluginSdk` mismatches, manifest vs. artifact identity mismatches,
@@ -840,15 +859,23 @@ them by mixing ink into canvas), the `--primary` accent, the secondary text tier
     updates for tracking sources, including newer tags that satisfy a Git
     semver range. Same full-trust confirmation as install (`--yes` skips;
     non-TTY refuses without it). Use `bb plugin outdated` to preview available
-    updates; changing a pinned source requires reinstalling it after removal.
+    updates. Changing a pinned git:/npm: source requires `bb plugin remove`
+    (which deletes the plugin's settings, secrets, and schedules) and a fresh
+    install. A local path plugin is never removed to change it: edit it in
+    place and `bb plugin reload <id>`, or `bb plugin install path:<new dir>`
+    to move it; both keep its configuration.
   - `bb plugin list` — status, background services, schedules, handler timings,
     and each plugin's contributed `bb` command.
   - `bb plugin source <id> [--json]` — requested and resolved source, the
     repository subdirectory for a nested plugin, the semver range with its tag
     prefix and resolved tag for a Git range install, engine ranges, install
     time, integrity/registry details, and recent activation history.
-  - `bb plugin enable|disable <id>`, `bb plugin reload [id]`,
-    `bb plugin remove <id>` (builtin removals are remembered).
+  - `bb plugin enable|disable <id>`, `bb plugin reload [id]` (exits 1 when a
+    reloaded plugin does not come up on its current sources: the previous
+    instance was kept, or it is degraded because a service ignored its abort),
+    `bb plugin remove <id>` (deletes the plugin's settings, secrets, and
+    schedules; managed git/npm files are deleted, local path sources stay on
+    disk, builtin removals are remembered).
   - `bb plugin config <id> [set <key> <value> | unset <key>]` — declared
     settings. Reload the plugin after configuring (`bb plugin reload <id>`).
   - `bb plugin logs <id> [-n N] [-f]` — the plugin's `bb.log` output.

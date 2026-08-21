@@ -23,6 +23,9 @@ import {
 } from "./areas/thread-sections.js";
 
 export type * from "./public-types.js";
+// Structured prompt input for the provider's plan action; pass it as
+// `input` to `threads.spawn` / `threads.send` (the CLI's `--plan`).
+export { createBuiltinPlanCommandTextInput } from "@bb/domain";
 
 export interface CreateBbSdkArgs {
   context?: BbSdkContext;
@@ -63,8 +66,7 @@ export function createBbSdk(args: CreateBbSdkArgs): BbSdkAreas;
 export function createBbSdk(
   args: CreateBbSdkArgs | CreateBbSdkWithGuideArgs,
 ): BbSdkAreas | BbSdk {
-  const context = args.context ?? {};
-  const sdkContext = { transport: args.transport, context };
+  const sdkContext = { transport: args.transport };
   const realtime = createBbRealtimeClient({
     transport: args.transport,
   });

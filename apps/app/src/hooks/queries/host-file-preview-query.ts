@@ -1,21 +1,18 @@
 import { useQuery } from "@tanstack/react-query";
+import { decodeBase64Bytes, encodeBase64Bytes } from "@/lib/base64-bytes";
 import { sdk } from "@/lib/sdk";
 import {
   buildFilePreview,
   isHtmlFilePreviewPath,
   normalizeFilePreviewMimeType,
   type FilePreview,
-} from "@/lib/file-preview";
+} from "@bb/client-core";
+import type { QueryOptions } from "./query-helpers";
 import { hostFilePreviewQueryKey } from "./query-keys";
 import { HEAVY_PAYLOAD_QUERY_POLICY } from "./query-policies";
 
-interface QueryOptions {
-  enabled?: boolean;
-}
-
 /** React Query pauses this poll while the document is hidden. */
 const HOST_FILE_PREVIEW_POLL_MS = 5_000;
-
 interface HostMediaPreviewType {
   kind: "image" | "video";
   mimeType: string;
@@ -48,26 +45,6 @@ const HOST_MEDIA_PREVIEW_TYPES = new Map<string, HostMediaPreviewType>([
   [".webm", { kind: "video", mimeType: "video/webm" }],
   [".wmv", { kind: "video", mimeType: "video/x-ms-wmv" }],
 ]);
-
-function decodeBase64Bytes(content: string): Uint8Array {
-  const binaryContent = atob(content);
-  const bytes = new Uint8Array(binaryContent.length);
-  for (let index = 0; index < binaryContent.length; index += 1) {
-    bytes[index] = binaryContent.charCodeAt(index);
-  }
-  return bytes;
-}
-
-function encodeBase64Bytes(bytes: Uint8Array): string {
-  const chunkSize = 0x8000;
-  const binaryChunks: string[] = [];
-  for (let index = 0; index < bytes.length; index += chunkSize) {
-    binaryChunks.push(
-      String.fromCharCode(...bytes.subarray(index, index + chunkSize)),
-    );
-  }
-  return btoa(binaryChunks.join(""));
-}
 
 function splitAbsoluteHostFilePath(path: string): {
   name: string;

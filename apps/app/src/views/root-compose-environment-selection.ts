@@ -26,7 +26,7 @@ import { getThreadDisplayTitle } from "@/lib/thread-title";
  * create-thread environment the same way.
  */
 
-export interface ResolveRootComposeEffectiveEnvironmentValueArgs {
+interface ResolveRootComposeEffectiveEnvironmentValueArgs {
   environmentSelectionValue: string;
   isProjectless: boolean;
   /** Ids of all hosts known to the server. */

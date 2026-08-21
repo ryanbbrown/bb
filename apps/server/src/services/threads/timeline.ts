@@ -6,10 +6,12 @@ import {
   type AcceptedClientRequestContext,
   type ThreadEventWithMeta,
 } from "@bb/thread-view";
+import { LEGACY_CODEX_GOAL_EXTENSION_KIND } from "@bb/domain";
 import type {
   ClientTurnRequestId,
   ProviderComposerCommand,
   Thread,
+  ThreadEventItemType,
 } from "@bb/domain";
 import type {
   ThreadConversationOutlineItem,
@@ -39,7 +41,7 @@ import {
   listStoredBufferedTextDeltaRowsByItems,
   listStoredItemLifecycleRowsByItems,
   listLatestBackgroundTaskStateRowsByItemIds,
-  listLatestGoalEventRowsByThreadIds,
+  listLatestThreadStateEventRowsByThreadIds,
   listLatestOpenBackgroundTaskStateRowsForThread,
   listStoredTimelineWindowEventRows,
   listTodoSnapshotEventRowsForThread,
@@ -70,13 +72,6 @@ import {
   type TimelineSequenceWindowStart,
 } from "./timeline-pagination.js";
 import { DEFAULT_MAX_INLINE_OUTPUT_CHARS } from "./timeline-output-truncation.js";
-
-export type {
-  LatestThreadTimelinePageRequest,
-  OlderThreadTimelinePageRequest,
-  ThreadTimelinePageKind,
-  ThreadTimelinePageRequest,
-} from "./timeline-pagination.js";
 
 interface TimelineTurnSummarySelection {
   sourceSeqEnd: number;
@@ -176,7 +171,7 @@ export const THREAD_TIMELINE_SEGMENT_LIMIT_MAX = 100;
  */
 export const THREAD_TIMELINE_EVENT_DATA_BYTE_LIMIT = 4 * 1024 * 1024;
 
-export type ThreadTimelineBuildProfileStage =
+type ThreadTimelineBuildProfileStage =
   | "event-query"
   | "accepted-client-request-context-query"
   | "event-json-decode"
@@ -184,12 +179,11 @@ export type ThreadTimelineBuildProfileStage =
   | "context-window-query"
   | "context-window-json-decode"
   | "thread-view-projection"
-  | "pagination-segmentation"
-  | "response-serialization";
+  | "pagination-segmentation";
 
-export type ThreadTimelineEventSelectionStrategy = "full" | "standard-window";
+type ThreadTimelineEventSelectionStrategy = "full" | "standard-window";
 
-export interface ThreadTimelineBuildProfileStageTiming {
+interface ThreadTimelineBuildProfileStageTiming {
   durationMs: number;
   stage: ThreadTimelineBuildProfileStage;
 }
@@ -203,14 +197,6 @@ export interface ThreadTimelineBuildProfile {
   eventRowCount: number;
   pageKind: ThreadTimelinePageKind;
   projectedRowCount: number;
-  /**
-   * Null unless `measureResponseBytes` was requested. Measuring it means
-   * serializing the whole response a second time, which on a large thread is
-   * megabytes of `JSON.stringify` — the exact cost this profile exists to
-   * diagnose. The slow-build log path leaves it off and relies on the cheap
-   * counters instead.
-   */
-  responseJsonBytes: number | null;
   responseRowCount: number;
   returnedSegmentCount: number;
   segmentLimit: number;
@@ -232,7 +218,6 @@ interface ThreadTimelineBuildProfileAccumulator {
   eventDataBytes: number;
   eventRowCount: number;
   projectedRowCount: number;
-  responseJsonBytes: number | null;
   responseRowCount: number;
   returnedSegmentCount: number;
   selectionStrategy: ThreadTimelineEventSelectionStrategy;
@@ -241,8 +226,6 @@ interface ThreadTimelineBuildProfileAccumulator {
 
 interface BuildThreadTimelineInternalOptions extends BuildThreadTimelineOptions {
   includeProfile: boolean;
-  /** See {@link ThreadTimelineBuildProfile.responseJsonBytes}. */
-  measureResponseBytes: boolean;
 }
 
 interface TimelineEventRowSelection {
@@ -270,7 +253,6 @@ interface TimelineWindowRowsArgs {
  * backfills it has to say how much inline output it is willing to read.
  */
 interface TimelineWindowParentedRowsArgs extends TimelineWindowRowsArgs {
-  includeParentContext?: boolean;
   /** See {@link InlineOutputCharLimit}. */
   maxInlineOutputChars: InlineOutputCharLimit;
   /** Extra byte budget for child rows outside `sequenceBounds`. */
@@ -494,13 +476,6 @@ function ensureTimelineWindowParentedRows(
     rows = mergeStoredEventRowsById([...rows, ...newChildRows]);
   }
 
-  if (args.includeParentContext === false) {
-    return {
-      contextOnlyToolCallIds: new Set(),
-      rows,
-    };
-  }
-
   const contextOnlyToolCallIds = new Set<string>();
   const missingParentToolCallIds = collectStoredParentToolCallIds(rows).filter(
     (parentToolCallId) => !visibleToolCallIds.has(parentToolCallId),
@@ -604,15 +579,54 @@ function partitionAcceptedInputRowsByRequestedTurn(
   };
 }
 
+/**
+ * Item kinds the projection tracks by bare call id across turns. A tool can
+ * outlive the turn that spawned it; its terminal row then arrives scoped to a
+ * later turn, and the projection merges it into the spawning turn's row. File
+ * edits are partitioned by scope, buffered text is keyed per turn, and
+ * background tasks carry their own thread-scoped state rows, so none of those
+ * cross turns.
+ */
+const CROSS_TURN_TOOL_ITEM_KINDS: ReadonlySet<ThreadEventItemType> = new Set([
+  "commandExecution",
+  "toolCall",
+  "webSearch",
+  "webFetch",
+  "imageView",
+]);
+
 function filterExactEventRowsForRequestedTurn(
   args: FilterExactEventRowsForRequestedTurnArgs,
 ): FilterExactEventRowsForRequestedTurnResult {
   const rows: StoredEventRow[] = [];
   let removedRows = false;
+  // Tool calls the requested turn started that have not ended yet. A later
+  // turn's `item/*` row for one of these ids is the same lifecycle the
+  // projection merges into the spawning turn, so the details keep it; dropping
+  // it would render the call unfinished forever. The id leaves the set at its
+  // `item/completed`, so a later turn that reuses the id for a new item (a
+  // resumed ACP session restarting its counter) stays out of this turn.
+  const openToolCallIds = new Set<string>();
   for (const row of args.exactEventRows) {
     if (row.scopeKind === "turn" && row.turnId !== args.turnId) {
-      removedRows = true;
-      continue;
+      const continuesOpenToolCall =
+        row.itemId !== null &&
+        row.type.startsWith("item/") &&
+        openToolCallIds.has(row.itemId);
+      if (!continuesOpenToolCall) {
+        removedRows = true;
+        continue;
+      }
+    } else if (
+      row.type === "item/started" &&
+      row.itemId !== null &&
+      row.itemKind !== null &&
+      CROSS_TURN_TOOL_ITEM_KINDS.has(row.itemKind)
+    ) {
+      openToolCallIds.add(row.itemId);
+    }
+    if (row.type === "item/completed" && row.itemId !== null) {
+      openToolCallIds.delete(row.itemId);
     }
 
     const requestId = tryReadClientTurnRequestedRequestId(row);
@@ -991,7 +1005,10 @@ function ensureLatestTimelineHeadStateRows(
   args: TimelineWindowRowsArgs,
 ): StoredEventRow[] {
   const headStateRows = [
-    ...listLatestGoalEventRowsByThreadIds(db, { threadIds: [args.threadId] }),
+    ...listLatestThreadStateEventRowsByThreadIds(db, {
+      threadIds: [args.threadId],
+      kind: LEGACY_CODEX_GOAL_EXTENSION_KIND,
+    }),
     ...listTodoSnapshotEventRowsForThread(db, { threadId: args.threadId }),
   ];
   if (headStateRows.length === 0) {
@@ -1477,20 +1494,6 @@ function selectStandardTimelineEventRows(
   };
 }
 
-function selectTimelineEventRows(
-  db: DbConnection,
-  thread: Thread,
-  options: BuildThreadTimelineInternalOptions,
-): TimelineEventRowSelection {
-  return selectStandardTimelineEventRows(
-    db,
-    thread,
-    options.page,
-    options.eventBudget,
-    options.maxInlineOutputChars,
-  );
-}
-
 function byteLengthOfStoredEventRows(rows: readonly StoredEventRow[]): number {
   let byteLength = 0;
   for (const row of rows) {
@@ -1563,7 +1566,6 @@ function createThreadTimelineBuildProfileAccumulator(): ThreadTimelineBuildProfi
     eventDataBytes: 0,
     eventRowCount: 0,
     projectedRowCount: 0,
-    responseJsonBytes: null,
     responseRowCount: 0,
     returnedSegmentCount: 0,
     selectionStrategy: "full",
@@ -1592,15 +1594,7 @@ function measureThreadTimelineStage<TResult>(
 function completeThreadTimelineBuildProfile(
   accumulator: ThreadTimelineBuildProfileAccumulator,
   options: BuildThreadTimelineInternalOptions,
-  response: ThreadTimelineResponse,
 ): ThreadTimelineBuildProfile {
-  if (options.measureResponseBytes) {
-    accumulator.responseJsonBytes = measureThreadTimelineStage(
-      accumulator,
-      "response-serialization",
-      () => Buffer.byteLength(JSON.stringify(response), "utf8"),
-    );
-  }
   return {
     compactedEventCount: accumulator.compactedEventCount,
     contextWindowEventDataBytes: accumulator.contextWindowEventDataBytes,
@@ -1610,7 +1604,6 @@ function completeThreadTimelineBuildProfile(
     eventRowCount: accumulator.eventRowCount,
     pageKind: options.page.kind,
     projectedRowCount: accumulator.projectedRowCount,
-    responseJsonBytes: accumulator.responseJsonBytes,
     responseRowCount: accumulator.responseRowCount,
     returnedSegmentCount: accumulator.returnedSegmentCount,
     segmentLimit: options.page.segmentLimit,
@@ -1639,7 +1632,14 @@ function buildThreadTimelineInternal(
   const eventSelection = measureThreadTimelineStage(
     profile,
     "event-query",
-    () => selectTimelineEventRows(db, thread, options),
+    () =>
+      selectStandardTimelineEventRows(
+        db,
+        thread,
+        options.page,
+        options.eventBudget,
+        options.maxInlineOutputChars,
+      ),
   );
   const rawEventRows = eventSelection.rows;
   if (profile) {
@@ -1687,7 +1687,6 @@ function buildThreadTimelineInternal(
     profile.contextWindowEventRowCount = contextWindowUsageRows.length;
   }
   const commonProjectionOptions = {
-    includeDebugRawEvents: false,
     includeProviderUnhandledOperations,
     isLatestPage: options.page.kind === "latest",
     providerDisplayName: options.providerDisplayName,
@@ -1791,7 +1790,7 @@ function buildThreadTimelineInternal(
     profile:
       profile === null
         ? null
-        : completeThreadTimelineBuildProfile(profile, options, response),
+        : completeThreadTimelineBuildProfile(profile, options),
   };
 }
 
@@ -1806,7 +1805,6 @@ export function buildThreadTimeline(
       buildThreadTimelineInternal(db, thread, {
         ...options,
         includeProfile: false,
-        measureResponseBytes: false,
       }).response,
   );
 }
@@ -1825,7 +1823,6 @@ export function buildThreadTimelineWithProfile(
     const result = buildThreadTimelineInternal(db, thread, {
       ...options,
       includeProfile: true,
-      measureResponseBytes: false,
     });
     if (result.profile === null) {
       throw new Error("Profiled timeline build returned no profile");
@@ -1834,7 +1831,7 @@ export function buildThreadTimelineWithProfile(
   });
 }
 
-export interface BuildThreadConversationOutlineOptions {
+interface BuildThreadConversationOutlineOptions {
   /** Thread high-water event sequence this outline reflects (echoed to clients). */
   maxSeq: number;
   providerDisplayName?: string;
@@ -1904,7 +1901,6 @@ export function buildThreadConversationOutline(
       contextWindowEvents: [],
       events: decodedEvents,
       options: {
-        includeDebugRawEvents: false,
         includeNestedRows: false,
         includeProviderUnhandledOperations: false,
         isLatestPage: true,

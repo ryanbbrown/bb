@@ -38,7 +38,7 @@ import {
 } from "@/components/pickers/environment-picker-value";
 import { useRootComposeReuseEnvironment } from "@/lib/root-compose-selection";
 import { getPromptDraftAccessor } from "@/hooks/usePromptDraftStorage";
-import { buildThreadHandoffLocationState } from "@/lib/thread-handoff-request";
+import { buildThreadHandoffLocationState } from "@bb/client-core";
 import { makeThreadListEntry } from "@/test/fixtures/thread-list-entries";
 import { RootComposeView } from "@/views/RootComposeView";
 import { PluginNewThreadComposer } from "./PluginNewThreadComposer";
@@ -333,9 +333,7 @@ function ForkSeedSurface({ composer }: { composer: NewThreadComposerState }) {
   useEffect(() => {
     seedEnvironmentSelectionValue(encodeReuseValue("env-source"));
   }, [seedEnvironmentSelectionValue]);
-  return composer.renderPromptBox({
-    zenModeStorageKey: "bb.promptbox.zen-mode.test-root-fork",
-  });
+  return composer.renderPromptBox({});
 }
 
 function composerElement(

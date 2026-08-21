@@ -1,3 +1,6 @@
+// Version 152 preserves Pi's legacy canonical-item semantics while including
+// all wire changes through version 151.
+//
 // Version 149 keeps Pi assistant `message_start` events out of the translated
 // protocol, so consecutive assistant output without a tool boundary remains on
 // one canonical item. Version 148 daemons split those outputs into distinct
@@ -6,6 +9,56 @@
 // Version 147 adds worktree discovery, canonical host path resolution, and
 // explicit managed checkout intents for new and continued branches. Older
 // daemons reject these commands and provisioning fields.
+//
+// Version 151 lets the daemon re-resolve an auto/steer turn target from its
+// live runtime after the server observed an active thread but before it had a
+// turn id. A command that an older daemon reports as `appliedAs: "new-turn"`
+// can now report `appliedAs: "steer"`, preventing a child/system notification
+// from replacing the user turn that was still starting.
+//
+// Version 150 adds an OPTIONAL `presentation` to each bb-injected tool
+// definition (`dynamicTools[]` on thread.start, turn.submit and the resume
+// contexts): how a call to the tool reads as a timeline row (grammar v3),
+// resolved once by the server from the owning plugin's declaration and
+// stamped by the bridge, beside `server: "bb"`, on the call's
+// item.open/item.close. Additive and tolerated by an older daemon — the
+// field is optional and `dynamicToolSchema` is not strict, so an old daemon
+// strips the unknown key and keeps working; bumped per the repository rule
+// that a widened server↔daemon wire bumps unless compatibility was
+// deliberately tested. Stabilization makes the field required.
+//
+// Version 149 makes the thread runtime execution options provider-agnostic.
+// `claudeCodePermissionMode`, `workflowsEnabled`, `memoryEnabled`, and
+// `providerSubagentsEnabled` are gone from `options`; a REQUIRED
+// `providerOptions` JSON object (derived per command by the owning provider
+// plugin and opaque to the daemon) and an optional `promptMode: "plan"`
+// replace them. `bridgeLaunch` gains a REQUIRED `envPassthrough` list naming
+// the daemon environment variables the bridge may read, replacing the
+// hardcoded `BB_CLAUDE_CODE_EXECUTABLE` forwarding. The schemas are strict,
+// so an older daemon rejects the new payloads outright, and a newer daemon
+// would treat an older server's provider knobs as absent.
+//
+// Version 148 is the generic assembler and the v3 delta grammar cutover. The
+// daemon now emits `thread/extensionState/updated` (plugin-declared thread
+// state) in its event batches — a new union member an older server's batch
+// schema would reject — and its bridge runtime assembles the `thread/delta`
+// grammar v3 only: the v2 streaming and usage dialects are gone, and every
+// plugin bridge the server serves reports `grammarVersions: [3, 3]`. A
+// version-147 daemon would refuse those bridges at the handshake, so the
+// mismatch is what moves enrolled machines onto a daemon that speaks the
+// grammar its bridges emit.
+//
+// Version 147 carries the provider plugin v3 contract across the daemon wire:
+// the thread-event item union gains fileRead, search, delegation, planSteps
+// and namespaced extension items plus an optional persisted `presentation`,
+// two thread-scoped `item/delegation/*` events join the backgroundTask pair,
+// and the interaction payload gains the `tool_use` approval subject. Every
+// addition is a new union member or an optional field, so an older daemon's
+// traffic still parses and nothing in this version emits the new shapes yet;
+// the bump exists because the repository does not ship a widened event wire
+// on an untested compatibility assumption — the version mismatch is what
+// moves enrolled machines onto a daemon whose bridge runtime also negotiates
+// the `thread/delta` grammar range (bridge protocol `grammarVersions`).
 //
 // Version 146 adds the lightweight `host.list_branch_options` RPC so branch
 // pickers can read cached refs while the daemon refreshes remotes in the
@@ -119,7 +172,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 149 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 152 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

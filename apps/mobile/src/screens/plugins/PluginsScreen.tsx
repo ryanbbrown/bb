@@ -6,6 +6,7 @@ import {
   describePluginRow,
   filterPlugins,
   pluginDisplayName,
+  pluginRemovalDescription,
   pluginRemovalLabel,
   pluginRowSignal,
   sortPlugins,
@@ -15,6 +16,7 @@ import {
   useRemovePlugin,
   useSetPluginEnabled,
 } from "@/data/plugins";
+import { describeError } from "@/lib/describe-error";
 import { haptic } from "@/lib/haptics";
 import { useTheme } from "@/theme";
 import {
@@ -38,10 +40,6 @@ import { Screen } from "../shell/Screen";
 import { AddPluginSheet } from "./AddPluginSheet";
 import { PluginSignalPill, SettingsSection } from "./plugin-ui";
 import { PluginIcon } from "./ServerSvgIcon";
-
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
 
 /**
  * Installed plugins (`/settings/plugins`; web Extensions → Plugins →
@@ -325,11 +323,7 @@ export function PluginsScreen() {
             ? `${pluginRemovalLabel(target)} ${pluginDisplayName(target)}?`
             : undefined
         }
-        message={
-          target && target.source.startsWith("path:")
-            ? "bb stops loading this plugin. Its files stay where they are."
-            : "bb stops the plugin and deletes its installed files. Its settings and data are kept for a reinstall."
-        }
+        message={target ? pluginRemovalDescription(target) : undefined}
         actions={
           target
             ? [

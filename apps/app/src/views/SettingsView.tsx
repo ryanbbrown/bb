@@ -41,6 +41,7 @@ import {
 } from "@/hooks/useTheme";
 import { useHostDaemon, useLocalHostDaemonAccess } from "@/hooks/useHostDaemon";
 import { UsageLimitsSettingsSection } from "@/components/settings/UsageLimitsSettingsSection";
+import { ProvidersSettingsSection } from "@/components/settings/ProvidersSettingsSection";
 import { CodeRendererSettings } from "@/components/settings/CodeRendererSettings";
 import { SidebarThreadListSetting } from "@/components/settings/SidebarThreadListSetting";
 import { SplitDimmingSetting } from "@/components/settings/SplitDimmingSetting";
@@ -125,51 +126,13 @@ export interface LocalOpenTargetSettingsSectionProps {
   targets: WorkspaceOpenTarget[];
 }
 
-export interface InAppBrowserLinkSettingsControlProps {
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface RewriteLocalhostLinksSettingsControlProps {
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface RootComposeBehaviorSettingsControlProps {
-  navigateToThreadAfterCreate: boolean;
-  onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
-}
-
-export interface SteerActiveThreadOnEnterSettingsControlProps {
-  disabled: boolean;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface StreamerModeSettingsControlProps {
-  disabled: boolean;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface RichTextEditingSettingsControlProps {
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface UnhandledProviderEventsSettingsControlProps {
-  disabled: boolean;
-  enabled: boolean;
-  onEnabledChange: (enabled: boolean) => void;
-}
-
-export interface FaviconColorSettingsControlProps {
+interface FaviconColorSettingsControlProps {
   disabled: boolean;
   faviconColor: FaviconColorPreference;
   onFaviconColorChange: (faviconColor: FaviconColorPreference) => void;
 }
 
-export interface AppearanceSettingsSectionProps {
+interface AppearanceSettingsSectionProps {
   appearance: AppTheme;
   appearanceDisabled: boolean;
   customThemes: readonly string[];
@@ -182,7 +145,7 @@ export interface AppearanceSettingsSectionProps {
   themePreference: ThemePreference;
 }
 
-export interface GeneralSettingsSectionProps {
+interface GeneralSettingsSectionProps {
   desktopBrowserAvailable: boolean;
   navigateToThreadAfterCreate: boolean;
   onNavigateToThreadAfterCreateChange: (enabled: boolean) => void;
@@ -200,8 +163,11 @@ export interface GeneralSettingsSectionProps {
   streamerModeDisabled: boolean;
 }
 
-export type DebugSettingsSectionProps =
-  UnhandledProviderEventsSettingsControlProps;
+interface DebugSettingsSectionProps {
+  disabled: boolean;
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+}
 
 function appPaletteLabel(
   appearance: AppTheme,
@@ -215,7 +181,7 @@ function appPaletteLabel(
   );
 }
 
-export interface ExperimentsSettingsSectionProps {
+interface ExperimentsSettingsSectionProps {
   /** True while the config query hasn't loaded or a toggle write is in flight. */
   disabled: boolean;
   changelogPreviewEnabled: boolean;
@@ -293,7 +259,7 @@ function FaviconColorPreview({ value }: { value: FaviconColorPreference }) {
   );
 }
 
-export function FaviconColorSettingsControl({
+function FaviconColorSettingsControl({
   disabled,
   faviconColor,
   onFaviconColorChange,
@@ -575,132 +541,6 @@ const STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL =
   "Steer running threads on Enter";
 const STREAMER_MODE_SETTING_LABEL = "Streamer mode";
 
-export function RootComposeBehaviorSettingsControl({
-  navigateToThreadAfterCreate,
-  onNavigateToThreadAfterCreateChange,
-}: RootComposeBehaviorSettingsControlProps) {
-  return (
-    <SettingsWithControl label={NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL}>
-      <Switch
-        checked={navigateToThreadAfterCreate}
-        onCheckedChange={onNavigateToThreadAfterCreateChange}
-        aria-label={NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function SteerActiveThreadOnEnterSettingsControl({
-  disabled,
-  enabled,
-  onEnabledChange,
-}: SteerActiveThreadOnEnterSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
-      description="Use Enter to steer the current run and Command+Enter to queue a follow-up."
-    >
-      <Switch
-        checked={enabled}
-        disabled={disabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function StreamerModeSettingsControl({
-  disabled,
-  enabled,
-  onEnabledChange,
-}: StreamerModeSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={STREAMER_MODE_SETTING_LABEL}
-      description="Hide the custom models from config.json in every model picker, so a screen share does not show them."
-    >
-      <Switch
-        checked={enabled}
-        disabled={disabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={STREAMER_MODE_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function InAppBrowserLinkSettingsControl({
-  enabled,
-  onEnabledChange,
-}: InAppBrowserLinkSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={IN_APP_BROWSER_LINK_SETTING_LABEL}
-      description="Open web links inside bb."
-    >
-      <Switch
-        checked={enabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={IN_APP_BROWSER_LINK_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function RewriteLocalhostLinksSettingsControl({
-  enabled,
-  onEnabledChange,
-}: RewriteLocalhostLinksSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={REWRITE_LOCALHOST_LINKS_SETTING_LABEL}
-      description="Point localhost links at this host."
-    >
-      <Switch
-        checked={enabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={REWRITE_LOCALHOST_LINKS_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function RichTextEditingSettingsControl({
-  enabled,
-  onEnabledChange,
-}: RichTextEditingSettingsControlProps) {
-  return (
-    <SettingsWithControl label={RICH_TEXT_EDITING_SETTING_LABEL}>
-      <Switch
-        checked={enabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={RICH_TEXT_EDITING_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
-export function UnhandledProviderEventsSettingsControl({
-  disabled,
-  enabled,
-  onEnabledChange,
-}: UnhandledProviderEventsSettingsControlProps) {
-  return (
-    <SettingsWithControl
-      label={UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL}
-      description="Show raw provider events bb does not recognize. Development builds always show these events."
-    >
-      <Switch
-        checked={enabled}
-        disabled={disabled}
-        onCheckedChange={onEnabledChange}
-        aria-label={UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL}
-      />
-    </SettingsWithControl>
-  );
-}
-
 export function AppearanceSettingsSection({
   appearance,
   appearanceDisabled,
@@ -875,41 +715,71 @@ export function GeneralSettingsSection({
   return (
     <SettingsSection title="General">
       <div className="space-y-5">
-        <RootComposeBehaviorSettingsControl
-          navigateToThreadAfterCreate={navigateToThreadAfterCreate}
-          onNavigateToThreadAfterCreateChange={
-            onNavigateToThreadAfterCreateChange
-          }
-        />
+        <SettingsWithControl
+          label={NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL}
+        >
+          <Switch
+            checked={navigateToThreadAfterCreate}
+            onCheckedChange={onNavigateToThreadAfterCreateChange}
+            aria-label={NAVIGATE_TO_THREAD_AFTER_CREATE_SETTING_LABEL}
+          />
+        </SettingsWithControl>
 
-        <RichTextEditingSettingsControl
-          enabled={richTextEditing}
-          onEnabledChange={onRichTextEditingChange}
-        />
+        <SettingsWithControl label={RICH_TEXT_EDITING_SETTING_LABEL}>
+          <Switch
+            checked={richTextEditing}
+            onCheckedChange={onRichTextEditingChange}
+            aria-label={RICH_TEXT_EDITING_SETTING_LABEL}
+          />
+        </SettingsWithControl>
 
-        <SteerActiveThreadOnEnterSettingsControl
-          disabled={steerActiveThreadOnEnterDisabled}
-          enabled={steerActiveThreadOnEnter}
-          onEnabledChange={onSteerActiveThreadOnEnterChange}
-        />
+        <SettingsWithControl
+          label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
+          description="Use Enter to steer the current run and Command+Enter to queue a follow-up."
+        >
+          <Switch
+            checked={steerActiveThreadOnEnter}
+            disabled={steerActiveThreadOnEnterDisabled}
+            onCheckedChange={onSteerActiveThreadOnEnterChange}
+            aria-label={STEER_ACTIVE_THREAD_ON_ENTER_SETTING_LABEL}
+          />
+        </SettingsWithControl>
 
         {desktopBrowserAvailable ? (
-          <InAppBrowserLinkSettingsControl
-            enabled={openLinksInAppBrowser}
-            onEnabledChange={onOpenLinksInAppBrowserChange}
-          />
+          <SettingsWithControl
+            label={IN_APP_BROWSER_LINK_SETTING_LABEL}
+            description="Open web links inside bb."
+          >
+            <Switch
+              checked={openLinksInAppBrowser}
+              onCheckedChange={onOpenLinksInAppBrowserChange}
+              aria-label={IN_APP_BROWSER_LINK_SETTING_LABEL}
+            />
+          </SettingsWithControl>
         ) : null}
 
-        <RewriteLocalhostLinksSettingsControl
-          enabled={rewriteLocalhostLinks}
-          onEnabledChange={onRewriteLocalhostLinksChange}
-        />
+        <SettingsWithControl
+          label={REWRITE_LOCALHOST_LINKS_SETTING_LABEL}
+          description="Point localhost links at this host."
+        >
+          <Switch
+            checked={rewriteLocalhostLinks}
+            onCheckedChange={onRewriteLocalhostLinksChange}
+            aria-label={REWRITE_LOCALHOST_LINKS_SETTING_LABEL}
+          />
+        </SettingsWithControl>
 
-        <StreamerModeSettingsControl
-          disabled={streamerModeDisabled}
-          enabled={streamerMode}
-          onEnabledChange={onStreamerModeChange}
-        />
+        <SettingsWithControl
+          label={STREAMER_MODE_SETTING_LABEL}
+          description="Hide the custom models from config.json in every model picker, so a screen share does not show them."
+        >
+          <Switch
+            checked={streamerMode}
+            disabled={streamerModeDisabled}
+            onCheckedChange={onStreamerModeChange}
+            aria-label={STREAMER_MODE_SETTING_LABEL}
+          />
+        </SettingsWithControl>
       </div>
     </SettingsSection>
   );
@@ -922,85 +792,17 @@ export function DebugSettingsSection({
 }: DebugSettingsSectionProps) {
   return (
     <SettingsSection title="Debug">
-      <UnhandledProviderEventsSettingsControl
-        disabled={disabled}
-        enabled={enabled}
-        onEnabledChange={onEnabledChange}
-      />
-    </SettingsSection>
-  );
-}
-
-interface ProviderSettingsSectionProps {
-  memoryEnabled: boolean;
-  subagentsDisabled: boolean;
-  workflowsDisabled: boolean;
-  disabled: boolean;
-  onMemoryEnabledChange: (enabled: boolean) => void;
-  onSubagentsDisabledChange: (disabled: boolean) => void;
-  onWorkflowsDisabledChange: (disabled: boolean) => void;
-  providerId: "codex" | "claude-code";
-}
-
-export function ProviderSettingsSection({
-  memoryEnabled,
-  subagentsDisabled,
-  workflowsDisabled,
-  disabled,
-  onMemoryEnabledChange,
-  onSubagentsDisabledChange,
-  onWorkflowsDisabledChange,
-  providerId,
-}: ProviderSettingsSectionProps) {
-  const isCodex = providerId === "codex";
-  const label = isCodex ? "Codex memory" : "Claude Code memory";
-  return (
-    <SettingsSection title={isCodex ? "Codex" : "Claude Code"}>
-      <div className="space-y-4">
-        <SettingsWithControl
-          label={label}
-          description={
-            isCodex
-              ? "Allow Codex to recall existing memories and generate new memories from bb threads."
-              : "Allow Claude Code to read and write its native auto-memory for bb threads."
-          }
-        >
-          <Switch
-            aria-label={label}
-            checked={memoryEnabled}
-            disabled={disabled}
-            onCheckedChange={onMemoryEnabledChange}
-          />
-        </SettingsWithControl>
-        <SettingsWithControl
-          label="Disable provider subagents"
-          description={
-            isCodex
-              ? "Prevent Codex from starting native subagents so agents use bb for delegation."
-              : "Hide Claude Code's native Task tool so agents use bb for delegation."
-          }
-        >
-          <Switch
-            aria-label="Disable provider subagents"
-            checked={subagentsDisabled}
-            disabled={disabled}
-            onCheckedChange={onSubagentsDisabledChange}
-          />
-        </SettingsWithControl>
-        {!isCodex ? (
-          <SettingsWithControl
-            label="Disable Workflow tool"
-            description="Hide Claude Code's native Workflow tool for bb threads."
-          >
-            <Switch
-              aria-label="Disable Workflow tool"
-              checked={workflowsDisabled}
-              disabled={disabled}
-              onCheckedChange={onWorkflowsDisabledChange}
-            />
-          </SettingsWithControl>
-        ) : null}
-      </div>
+      <SettingsWithControl
+        label={UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL}
+        description="Show raw provider events bb does not recognize. Development builds always show these events."
+      >
+        <Switch
+          checked={enabled}
+          disabled={disabled}
+          onCheckedChange={onEnabledChange}
+          aria-label={UNHANDLED_PROVIDER_EVENTS_SETTING_LABEL}
+        />
+      </SettingsWithControl>
     </SettingsSection>
   );
 }
@@ -1124,7 +926,7 @@ export function SettingsView() {
   const updateGeneralSettingsMutation = useUpdateGeneralSettings();
   const appearance = systemConfigQuery.data?.appearance ?? defaultAppTheme;
   const updateAppearanceMutation = useUpdateAppearance();
-  const { activePluginId, activeProviderId, activeSection, hasUnknownSection } =
+  const { activePluginId, activeSection, hasUnknownSection } =
     useSettingsNavState();
   if (hasUnknownSection) {
     return <Navigate to={SETTINGS_ROUTE_PATH} replace />;
@@ -1133,47 +935,16 @@ export function SettingsView() {
   let content: ReactNode = null;
   if (activePluginId !== null) {
     content = <PluginSettingsPage pluginId={activePluginId} />;
-  } else if (activeProviderId !== null) {
-    const isCodex = activeProviderId === "codex";
+  } else if (activeSection === "providers") {
     content = (
-      <ProviderSettingsSection
-        providerId={activeProviderId}
-        memoryEnabled={
-          isCodex
-            ? generalSettings.codexMemoryEnabled
-            : generalSettings.claudeCodeMemoryEnabled
-        }
-        subagentsDisabled={
-          isCodex
-            ? generalSettings.codexSubagentsDisabled
-            : generalSettings.claudeCodeSubagentsDisabled
-        }
-        workflowsDisabled={generalSettings.claudeCodeWorkflowsDisabled}
+      <ProvidersSettingsSection
         disabled={
           systemConfigQuery.data === undefined ||
           updateGeneralSettingsMutation.isPending
         }
-        onMemoryEnabledChange={(enabled) =>
-          updateGeneralSettingsMutation.mutate({
-            ...generalSettings,
-            ...(isCodex
-              ? { codexMemoryEnabled: enabled }
-              : { claudeCodeMemoryEnabled: enabled }),
-          })
-        }
-        onSubagentsDisabledChange={(disabled) =>
-          updateGeneralSettingsMutation.mutate({
-            ...generalSettings,
-            ...(isCodex
-              ? { codexSubagentsDisabled: disabled }
-              : { claudeCodeSubagentsDisabled: disabled }),
-          })
-        }
-        onWorkflowsDisabledChange={(disabled) =>
-          updateGeneralSettingsMutation.mutate({
-            ...generalSettings,
-            claudeCodeWorkflowsDisabled: disabled,
-          })
+        generalSettings={generalSettings}
+        onGeneralSettingsChange={(next) =>
+          updateGeneralSettingsMutation.mutate(next)
         }
       />
     );

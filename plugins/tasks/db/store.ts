@@ -39,7 +39,6 @@ import type {
   UpdateProjectInput,
   UpdateTaskInput,
   UpdateTaskPositionInput,
-  UpdateTaskThreadInput,
   UpsertTaskThreadInput,
 } from "./types";
 
@@ -476,7 +475,7 @@ function validatePresetEnvironment(input: {
   return { environmentKind: input.environmentKind, baseBranch, machineId };
 }
 
-function escapeLike(value: string): string {
+export function escapeLike(value: string): string {
   return value
     .replaceAll("\\", "\\\\")
     .replaceAll("%", "\\%")
@@ -1653,20 +1652,28 @@ export function createTasksStore(db: PluginDatabase) {
     return thread;
   }
 
+  // Live threads first, newest first within each group: after an
+  // orchestrator respawns a worker, the thread holding the work leads the
+  // list and the dead predecessors trail it.
   function listTaskThreads(taskId: string): TaskThread[] {
     return db
       .prepare<[string], TaskThreadRow>(
         `
-        SELECT * FROM task_threads WHERE task_id = ? ORDER BY attached_at, id
+        SELECT * FROM task_threads
+        WHERE task_id = ?
+        ORDER BY
+          CASE WHEN live_status IN ('completed', 'failed') THEN 1 ELSE 0 END,
+          attached_at DESC,
+          id DESC
       `,
       )
       .all(taskId)
       .map(taskThreadFromRow);
   }
 
-  function updateTaskThread(
+  function updateTaskThreadStatus(
     id: string,
-    input: UpdateTaskThreadInput,
+    liveStatus: TaskThreadLiveStatus,
   ): TaskThread {
     const current = requireTaskThread(id);
     db.prepare<[string, string, TaskThreadLiveStatus, string, string]>(
@@ -1675,25 +1682,8 @@ export function createTasksStore(db: PluginDatabase) {
       SET preset_name = ?, title = ?, live_status = ?, updated_at = ?
       WHERE id = ?
     `,
-    ).run(
-      input.presetName === undefined
-        ? current.presetName
-        : requireNonEmpty(input.presetName, "Task thread presetName"),
-      input.title === undefined
-        ? current.title
-        : requireNonEmpty(input.title, "Task thread title"),
-      input.liveStatus ?? current.liveStatus,
-      nowIso(),
-      id,
-    );
+    ).run(current.presetName, current.title, liveStatus, nowIso(), id);
     return requireTaskThread(id);
-  }
-
-  function updateTaskThreadStatus(
-    id: string,
-    liveStatus: TaskThreadLiveStatus,
-  ): TaskThread {
-    return updateTaskThread(id, { liveStatus });
   }
 
   function deleteTaskThread(id: string): boolean {
@@ -1877,7 +1867,6 @@ export function createTasksStore(db: PluginDatabase) {
     getTaskThread,
     getTaskThreadByThreadId,
     listTaskThreads,
-    updateTaskThread,
     updateTaskThreadStatus,
     deleteTaskThread,
     createPreset,

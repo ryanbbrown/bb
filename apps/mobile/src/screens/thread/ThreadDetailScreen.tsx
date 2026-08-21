@@ -1,3 +1,4 @@
+import { isRunningThreadRuntimeDisplayStatus } from "@bb/client-core";
 import type { ThreadQueuedMessage } from "@bb/domain";
 import { BbHttpError } from "@bb/sdk/browser";
 import {
@@ -38,6 +39,7 @@ import {
   EmptyStatePanel,
   COMPOSER_KEYBOARD_GAP,
   KeyboardPaddingView,
+  OverlayBounds,
   Skeleton,
   Text,
   useSheet,
@@ -46,19 +48,20 @@ import { ThreadWorkspacePanelProvider, usePanel } from "../panel";
 import { Screen } from "../shell/Screen";
 import {
   ThreadActionsSheet,
-  ThreadGitActionSheet,
-  useMessageActionHandlers,
   useThreadActionsSheet,
-  useThreadGitActions,
   type ThreadMenuAction,
-} from "./actions";
-import { MergeBasePickerSheet, useThreadContextBanner } from "./banner";
-import { ThreadPromptArea, useFollowUpComposer } from "./prompt-area";
+} from "./actions/ThreadActionsSheet";
+import { ThreadGitActionSheet } from "./actions/ThreadGitActionSheet";
+import { useMessageActionHandlers } from "./actions/use-message-action-handlers";
+import { useThreadGitActions } from "./actions/use-thread-git-actions";
+import { MergeBasePickerSheet } from "./context/MergeBasePickerSheet";
+import { useThreadContextChips } from "./context/use-thread-context-chips";
+import { ThreadPromptArea } from "./prompt-area/ThreadPromptArea";
+import { useFollowUpComposer } from "./prompt-area/use-follow-up-composer";
 import { ThreadHeaderActions, ThreadHeaderTitle } from "./ThreadDetailHeader";
 import {
   describeThreadEnvironment,
   describeThreadStatusPill,
-  isThreadRuntimeBusy,
 } from "./thread-detail-header-model";
 import {
   buildTimelineListEntries,
@@ -159,7 +162,7 @@ function ThreadDetailBody({ threadId }: { threadId: string }) {
   );
 
   const runtimeDisplayStatus = thread?.runtime.displayStatus ?? "idle";
-  const scopeActive = isThreadRuntimeBusy(runtimeDisplayStatus);
+  const scopeActive = isRunningThreadRuntimeDisplayStatus(runtimeDisplayStatus);
   // The client-only "Stop requested" row while the server has not yet
   // written its own interrupted row.
   const threadStopping = thread?.status === "stopping";
@@ -204,16 +207,16 @@ function ThreadDetailBody({ threadId }: { threadId: string }) {
   // facts the header git sheet shares with it.
   // The banner's changed-files rows open the panel's Diff tab (focused on
   // the tapped file).
-  const contextBanner = useThreadContextBanner({
+  const contextChips = useThreadContextChips({
     threadId,
     thread,
     openDiff: panel.openDiff,
   });
   const gitActions = useThreadGitActions({
     thread,
-    environment: contextBanner.workspace.environment,
-    workspaceStatus: contextBanner.workspace.status,
-    mergeBaseBranch: contextBanner.workspace.mergeBaseBranch,
+    environment: contextChips.workspace.environment,
+    workspaceStatus: contextChips.workspace.status,
+    mergeBaseBranch: contextChips.workspace.mergeBaseBranch,
   });
   const gitSheet = useSheet();
   // Header "…" menu (rename, pin, read state, move, links, archive, delete).
@@ -231,7 +234,7 @@ function ThreadDetailBody({ threadId }: { threadId: string }) {
     if (router.canGoBack()) router.back();
     else router.replace("/");
   }, [router]);
-  const environmentGoneStatus = contextBanner.workspace.environmentGoneStatus;
+  const environmentGoneStatus = contextChips.workspace.environmentGoneStatus;
   // The follow-up composer: per-thread draft, submit mode, send / queue /
   // steer, stop, edit modes, quoting. Submissions scroll the list down.
   const scrollTimelineToEnd = useCallback(() => {
@@ -428,77 +431,81 @@ function ThreadDetailBody({ threadId }: { threadId: string }) {
         style={{ flex: 1 }}
         keyboardGap={COMPOSER_KEYBOARD_GAP}
       >
-        {(timelineLoading && entries.length === 0) || !threadReady ? (
-          <View className="flex-1">
-            <TimelineSkeleton />
-          </View>
-        ) : timelineError && entries.length === 0 ? (
-          <View className="flex-1 gap-3 p-4" testID="thread-timeline-error">
-            <EmptyStatePanel>
-              <Text className="text-center text-sm text-muted-foreground">
-                Failed to load the timeline.
-              </Text>
-              <Text variant="caption" className="pt-1 text-center">
-                {timelineError.message}
-              </Text>
-            </EmptyStatePanel>
-            <Button
-              variant="outline"
-              icon="RotateCcw"
-              onPress={() => void refetchLatestTimeline()}
-            >
-              Retry
-            </Button>
-          </View>
-        ) : entries.length === 0 && !showWorkingIndicator ? (
-          <View className="flex-1 px-4 pt-6" testID="thread-timeline-empty">
-            <EmptyStatePanel>No messages yet.</EmptyStatePanel>
-          </View>
-        ) : (
-          <TimelineList
-            ref={listRef}
-            entries={entries}
-            unreadDividerIndex={unreadDividerIndex}
-            unreadDividerAutoScroll={unreadDivider.autoScroll}
-            onToggleRow={toggleRow}
+        {/* The composer's typeahead floats up to the top of this region,
+            never under the header. */}
+        <OverlayBounds style={{ flex: 1 }}>
+          {(timelineLoading && entries.length === 0) || !threadReady ? (
+            <View className="flex-1">
+              <TimelineSkeleton />
+            </View>
+          ) : timelineError && entries.length === 0 ? (
+            <View className="flex-1 gap-3 p-4" testID="thread-timeline-error">
+              <EmptyStatePanel>
+                <Text className="text-center text-sm text-muted-foreground">
+                  Failed to load the timeline.
+                </Text>
+                <Text variant="caption" className="pt-1 text-center">
+                  {timelineError.message}
+                </Text>
+              </EmptyStatePanel>
+              <Button
+                variant="outline"
+                icon="RotateCcw"
+                onPress={() => void refetchLatestTimeline()}
+              >
+                Retry
+              </Button>
+            </View>
+          ) : entries.length === 0 && !showWorkingIndicator ? (
+            <View className="flex-1 px-4 pt-6" testID="thread-timeline-empty">
+              <EmptyStatePanel>No messages yet.</EmptyStatePanel>
+            </View>
+          ) : (
+            <TimelineList
+              ref={listRef}
+              entries={entries}
+              unreadDividerIndex={unreadDividerIndex}
+              unreadDividerAutoScroll={unreadDivider.autoScroll}
+              onToggleRow={toggleRow}
+              threadId={threadId}
+              projectId={thread?.projectId ?? ""}
+              hasOlderRows={hasOlderTimelineRows}
+              isLoadingOlderRows={isLoadingOlderTimelineRows}
+              onLoadOlderRows={loadOlderTimelineRows}
+              footer={footer}
+              bottomInset={8}
+              testID="thread-timeline"
+            />
+          )}
+          <ThreadPromptArea
             threadId={threadId}
-            projectId={thread?.projectId ?? ""}
-            hasOlderRows={hasOlderTimelineRows}
-            isLoadingOlderRows={isLoadingOlderTimelineRows}
-            onLoadOlderRows={loadOlderTimelineRows}
-            footer={footer}
-            bottomInset={8}
-            testID="thread-timeline"
+            thread={thread}
+            environmentId={bootstrap.data?.environment?.id ?? null}
+            hostId={bootstrap.data?.host?.id ?? null}
+            composer={composer}
+            composerRef={composerRef}
+            pendingInteraction={pendingInteraction}
+            childPendingInteractions={childPendingInteractions}
+            queuedMessages={queuedMessages}
+            activeWorkflows={activeWorkflows}
+            activeBackgroundCommands={activeBackgroundCommands}
+            activePromptMode={activePromptMode}
+            goal={goal}
+            pendingTodos={pendingTodos}
+            modelFallback={modelFallback}
+            contextWindowUsage={contextWindowUsage}
+            contextChips={contextChips.chips}
+            onHandoffToNewThread={contextChips.handoffToNewThread}
           />
-        )}
-        <ThreadPromptArea
-          threadId={threadId}
-          thread={thread}
-          environmentId={bootstrap.data?.environment?.id ?? null}
-          hostId={bootstrap.data?.host?.id ?? null}
-          composer={composer}
-          composerRef={composerRef}
-          pendingInteraction={pendingInteraction}
-          childPendingInteractions={childPendingInteractions}
-          queuedMessages={queuedMessages}
-          activeWorkflows={activeWorkflows}
-          activeBackgroundCommands={activeBackgroundCommands}
-          activePromptMode={activePromptMode}
-          goal={goal}
-          pendingTodos={pendingTodos}
-          modelFallback={modelFallback}
-          contextWindowUsage={contextWindowUsage}
-          contextBanner={contextBanner.banner}
-          onHandoffToNewThread={contextBanner.handoffToNewThread}
-        />
+        </OverlayBounds>
       </KeyboardPaddingView>
       {thread ? (
         <ThreadActionsSheet
           controller={threadActions}
           thread={thread}
           onDeleted={handleDeleted}
-          onHandoffToNewThread={contextBanner.handoffToNewThread}
-          onNewThreadInWorktree={contextBanner.newThreadInWorktree}
+          onHandoffToNewThread={contextChips.handoffToNewThread}
+          onNewThreadInWorktree={contextChips.newThreadInWorktree}
           leadingActions={menuLeadingActions}
           headerDetail={menuDetail.length > 0 ? menuDetail : null}
         />
@@ -506,23 +513,23 @@ function ThreadDetailBody({ threadId }: { threadId: string }) {
       <ThreadGitActionSheet
         controller={gitSheet}
         actions={gitActions.actions}
-        branchName={contextBanner.workspace.branchName}
-        gitStatus={contextBanner.workspace.gitStatus}
-        changedFiles={contextBanner.workspace.changedFiles}
+        branchName={contextChips.workspace.branchName}
+        gitStatus={contextChips.workspace.gitStatus}
+        changedFiles={contextChips.workspace.changedFiles}
         mergeBaseBranch={
-          contextBanner.workspace.showMergeBase
-            ? (contextBanner.workspace.mergeBaseBranch ?? null)
+          contextChips.workspace.showMergeBase
+            ? (contextChips.workspace.mergeBaseBranch ?? null)
             : null
         }
         onPickMergeBase={
-          contextBanner.workspace.showMergeBase
-            ? contextBanner.mergeBaseSheet.present
+          contextChips.workspace.showMergeBase
+            ? contextChips.mergeBaseSheet.present
             : null
         }
         pending={gitActions.pending}
         onRun={gitActions.run}
       />
-      <MergeBasePickerSheet {...contextBanner.mergeBasePicker} />
+      <MergeBasePickerSheet {...contextChips.mergeBasePicker} />
     </TimelineRowHostProvider>
   );
 }

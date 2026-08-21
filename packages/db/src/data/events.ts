@@ -474,9 +474,6 @@ function collectDaemonTurnStartLookupKeys(
   const keys: ThreadTurnKey[] = [];
 
   for (const input of eventInputs) {
-    if (input.type === "turn/started") {
-      continue;
-    }
     const turnId = getThreadEventScopeTurnId(input.scope);
     if (turnId === undefined) {
       continue;
@@ -519,22 +516,30 @@ const ORPHAN_DROPPABLE_TURN_EVENT_TYPES: ReadonlySet<ThreadEventType> = new Set(
   "provider/unhandled",
 ]);
 
-type DaemonTurnStartDisposition = "append" | "skip-orphan-snapshot";
+type DaemonTurnStartDisposition =
+  | "append"
+  | "skip-duplicate-turn-start"
+  | "skip-orphan-snapshot";
 
 function resolveDaemonTurnStartDisposition(
   input: AppendDaemonEventInput,
   startedTurnKeys: ReadonlySet<string>,
 ): DaemonTurnStartDisposition {
-  if (input.type === "turn/started") {
-    return "append";
-  }
-
   const turnId = getThreadEventScopeTurnId(input.scope);
   if (turnId === undefined) {
     return "append";
   }
 
   const key = buildThreadTurnKey({ threadId: input.threadId, turnId });
+  if (input.type === "turn/started") {
+    // Daemon delivery is at-least-once: when the server commits a batch but
+    // the acknowledgement is lost (gateway 502/504, dropped connection), the
+    // daemon reposts the same events. A provider turn starts exactly once, so
+    // a turn/started whose (threadId, turnId) is already stored is that replay,
+    // not a new turn. Storing it twice would break timeline projection.
+    return startedTurnKeys.has(key) ? "skip-duplicate-turn-start" : "append";
+  }
+
   if (startedTurnKeys.has(key)) {
     return "append";
   }
@@ -713,11 +718,15 @@ export function appendDaemonEventsInTransaction(
   );
   const now = Date.now();
   for (const [index, input] of eventInputs.entries()) {
-    if (
-      resolveDaemonTurnStartDisposition(input, startedTurnKeys) ===
-      "skip-orphan-snapshot"
-    ) {
+    const turnStartDisposition = resolveDaemonTurnStartDisposition(
+      input,
+      startedTurnKeys,
+    );
+    if (turnStartDisposition === "skip-orphan-snapshot") {
       skippedTurnUnstartedInputIndexes.push(index);
+      continue;
+    }
+    if (turnStartDisposition === "skip-duplicate-turn-start") {
       continue;
     }
 
@@ -1008,17 +1017,6 @@ export interface FindStoredEventRowArgs {
   type: ThreadEventType;
 }
 
-export interface GetLatestStoredEventRowByTypeArgs {
-  threadId: string;
-  type: ThreadEventType;
-}
-
-export interface ListStoredEventRowsInRangeArgs {
-  seqEnd: number;
-  seqStart: number;
-  threadId: string;
-}
-
 export interface ListStoredEventRowsByParentToolCallIdsArgs {
   beforeSequence?: number;
   excludedTypes?: readonly ThreadEventType[];
@@ -1032,13 +1030,10 @@ export interface ListStoredEventRowsByParentToolCallIdsArgs {
 export type GetStoredEventRowsByParentToolCallIdsDataBytesArgs =
   ListStoredEventRowsByParentToolCallIdsArgs;
 
-export interface ListStoredEventRowsByThreadIdsAndTypesArgs {
+export interface ListLatestThreadStateEventRowsByThreadIdsArgs {
   threadIds: readonly string[];
-  types: readonly ThreadEventType[];
-}
-
-export interface ListLatestGoalEventRowsByThreadIdsArgs {
-  threadIds: readonly string[];
+  /** The plugin thread-state kind (`"<pluginId>/<name>"`) to read. */
+  kind: string;
 }
 
 export interface ListOpenTurnInputAcceptedRowsByThreadIdsArgs {
@@ -1079,17 +1074,7 @@ export interface ListStoredClientTurnRequestIdsInRangeArgs {
   threadId: string;
 }
 
-export interface FindStoredClientTurnRequestSequenceByRequestIdArgs {
-  requestId: ClientTurnRequestId;
-  threadId: string;
-}
-
 export interface GetStoredTurnRequestEventForTurnArgs {
-  threadId: string;
-  turnId: string;
-}
-
-export interface GetRootStoredTurnStartedSequenceArgs {
   threadId: string;
   turnId: string;
 }
@@ -1319,47 +1304,34 @@ export function listStoredEventRows(
   return merged;
 }
 
-export function listStoredEventRowsByThreadIdsAndTypes(
-  db: DbConnection,
-  args: ListStoredEventRowsByThreadIdsAndTypesArgs,
-): StoredEventRow[] {
-  if (args.threadIds.length === 0 || args.types.length === 0) {
-    return [];
-  }
-
-  return db
-    .select(storedEventRowFields)
-    .from(events)
-    .where(
-      and(
-        inArray(events.threadId, [...args.threadIds]),
-        inArray(events.type, [...args.types]),
-      ),
-    )
-    .orderBy(events.threadId, events.sequence)
-    .all();
-}
-
-export function listLatestGoalEventRowsByThreadIds(
+export function listLatestThreadStateEventRowsByThreadIds(
   db: DbQueryConnection,
-  args: ListLatestGoalEventRowsByThreadIdsArgs,
+  args: ListLatestThreadStateEventRowsByThreadIdsArgs,
 ): StoredEventRow[] {
   return queryInSqliteVariableBatches({
     dedupeKey: (threadId) => threadId,
-    fixedVariableCount: 0,
+    fixedVariableCount: 1,
     queryBatch: (threadIds) => {
       // This runs over every listed thread on each sidebar bootstrap, so it
-      // must stay proportional to goal events, not all events. Literal goal
-      // types imply the partial-index predicate at prepare time; INDEXED BY
-      // prevents a stats-less planner from walking the full thread index; and
-      // no ORDER BY is needed because sequence is unique per thread (#1131).
-      const goalTypes = [
+      // must stay proportional to thread-state events, not all events. The
+      // literal type list implies the partial-index predicate at prepare
+      // time; INDEXED BY prevents a stats-less planner from walking the full
+      // thread index; and no ORDER BY is needed because sequence is unique
+      // per thread (#1131). Legacy goal rows count as the goal kind (they
+      // convert to it at read time); a live extension-state row counts only
+      // for its own kind.
+      const stateTypes = [
         "thread/goal/updated",
         "thread/goal/cleared",
+        "thread/extensionState/updated",
       ] as const satisfies readonly ThreadEventType[];
-      const goalTypesPredicate = sql.raw(
-        `IN (${goalTypes.map((type) => `'${type}'`).join(", ")})`,
+      const stateTypesPredicate = sql.raw(
+        `IN (${stateTypes.map((type) => `'${type}'`).join(", ")})`,
       );
+      const kindPredicate = sql`(
+        candidate.type <> 'thread/extensionState/updated'
+        OR json_extract(candidate.data, '$.kind') = ${args.kind}
+      )`;
       const threadIdList = sql.join(
         threadIds.map((threadId) => sql`${threadId}`),
         sql`, `,
@@ -1368,19 +1340,21 @@ export function listLatestGoalEventRowsByThreadIds(
         .select(storedEventRowFields)
         .from(events)
         .where(sql`${events}.rowid IN (
-        SELECT latest_goal.rowid
-        FROM ${events} AS latest_goal INDEXED BY events_goal_thread_sequence_idx
-        WHERE latest_goal.thread_id IN (${threadIdList})
-          AND latest_goal.type ${goalTypesPredicate}
-          AND latest_goal.sequence = (
+        SELECT latest_state.rowid
+        FROM ${events} AS latest_state INDEXED BY events_thread_state_thread_sequence_idx
+        WHERE latest_state.thread_id IN (${threadIdList})
+          AND latest_state.type ${stateTypesPredicate}
+          AND latest_state.sequence = (
             SELECT MAX(candidate.sequence)
-            FROM ${events} AS candidate INDEXED BY events_goal_thread_sequence_idx
-            WHERE candidate.thread_id = latest_goal.thread_id
-              AND candidate.type ${goalTypesPredicate}
+            FROM ${events} AS candidate INDEXED BY events_thread_state_thread_sequence_idx
+            WHERE candidate.thread_id = latest_state.thread_id
+              AND candidate.type ${stateTypesPredicate}
+              AND ${kindPredicate}
           )
       )`)
         .all();
     },
+
     values: args.threadIds,
     variableCountPerValue: 1,
   });
@@ -1494,39 +1468,6 @@ export function findStoredEventRow(
       .limit(1)
       .get() ?? null
   );
-}
-
-export function getLatestStoredEventRowByType(
-  db: DbQueryConnection,
-  args: GetLatestStoredEventRowByTypeArgs,
-): StoredEventRow | null {
-  return (
-    db
-      .select(storedEventRowFields)
-      .from(events)
-      .where(and(eq(events.threadId, args.threadId), eq(events.type, args.type)))
-      .orderBy(desc(events.sequence))
-      .limit(1)
-      .get() ?? null
-  );
-}
-
-export function listStoredEventRowsInRange(
-  db: DbQueryConnection,
-  args: ListStoredEventRowsInRangeArgs,
-): StoredEventRow[] {
-  return db
-    .select(storedEventRowFields)
-    .from(events)
-    .where(
-      and(
-        eq(events.threadId, args.threadId),
-        gte(events.sequence, args.seqStart),
-        lte(events.sequence, args.seqEnd),
-      ),
-    )
-    .orderBy(events.sequence)
-    .all();
 }
 
 export function listStoredEventRowsByParentToolCallIds(
@@ -1869,28 +1810,6 @@ export function listStoredClientTurnRequestIdsInRange(
     .all();
 
   return rows.map((row) => clientTurnRequestIdSchema.parse(row.requestId));
-}
-
-export function findStoredClientTurnRequestSequenceByRequestId(
-  db: DbQueryConnection,
-  args: FindStoredClientTurnRequestSequenceByRequestIdArgs,
-): number | null {
-  const row =
-    db
-      .select({
-        sequence: events.sequence,
-      })
-      .from(events)
-      .where(
-        and(
-          eq(events.threadId, args.threadId),
-          eq(events.type, "client/turn/requested"),
-          sql`json_extract(${events.data}, '$.requestId') = ${args.requestId}`,
-        ),
-      )
-      .limit(1)
-      .get() ?? null;
-  return row?.sequence ?? null;
 }
 
 export function getStoredTurnRequestEventForTurn(
@@ -2482,28 +2401,6 @@ export function hasRootStoredTurnStarted(
   return row !== undefined;
 }
 
-export function getRootStoredTurnStartedSequence(
-  db: DbQueryConnection,
-  args: GetRootStoredTurnStartedSequenceArgs,
-): number | null {
-  const row = db
-    .select({ sequence: events.sequence })
-    .from(events)
-    .where(
-      and(
-        eq(events.threadId, args.threadId),
-        eq(events.type, "turn/started"),
-        eq(events.turnId, args.turnId),
-        isRootTurnStartedEventData,
-      ),
-    )
-    .orderBy(events.sequence)
-    .limit(1)
-    .get();
-
-  return row?.sequence ?? null;
-}
-
 export function listRecentStoredEventRows(
   db: DbConnection,
   args: ListRecentStoredEventRowsArgs,
@@ -2864,26 +2761,6 @@ export function listTimelineSegmentAnchorsDescending(
 export interface TimelineSegmentAnchorLookupArgs {
   threadId: string;
   sequence: number;
-}
-
-/** The first segment anchor strictly after `sequence`, if any. */
-export function findTimelineSegmentAnchorSequenceAfter(
-  db: DbConnection,
-  args: TimelineSegmentAnchorLookupArgs,
-): number | undefined {
-  const row = db
-    .select({ sequence: events.sequence })
-    .from(events)
-    .where(
-      and(
-        timelineSegmentAnchorConditions(args.threadId),
-        gt(events.sequence, args.sequence),
-      ),
-    )
-    .orderBy(events.sequence)
-    .limit(1)
-    .get();
-  return row?.sequence;
 }
 
 /** The segment anchor at exactly `sequence`, if that turn qualifies as one. */

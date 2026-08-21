@@ -294,11 +294,14 @@ export function resolveThreadEnvironmentArgs({
             hostId: selection.hostId,
             workspace: {
               type: "managed-worktree",
-              baseBranch: resolveManagedBaseBranch(
-                workspace.baseBranch,
-                defaultBranch,
-                defaultWorktreeBaseBranch,
-              ),
+              checkout: {
+                kind: "new-branch",
+                baseBranch: resolveManagedBaseBranch(
+                  workspace.baseBranch,
+                  defaultBranch,
+                  defaultWorktreeBaseBranch,
+                ),
+              },
             },
           };
         case "unmanaged":

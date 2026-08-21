@@ -6,7 +6,6 @@ import type {
   SystemProvidersQuery,
 } from "@bb/server-contract";
 import { buildAcpProviderInfo } from "../providers/acp-provider-tier.js";
-import { listClaudeCodeFallbackModels } from "./claude-code-fallback-models.js";
 import {
   formatCustomAcpAgentProviderId,
   type CustomAcpAgent,
@@ -40,14 +39,14 @@ import {
 } from "./provider-bridge-launch.js";
 import { mapProviderMaintenanceRequests } from "./provider-maintenance-concurrency.js";
 
-export type SystemExecutionOptionsRequest = SystemExecutionOptionsQuery;
+type SystemExecutionOptionsRequest = SystemExecutionOptionsQuery;
 
 interface BuildModelLoadErrorArgs {
   error: ApiError;
   provider: ProviderInfo;
 }
 
-export interface ResolveSystemProviderModelsArgs {
+interface ResolveSystemProviderModelsArgs {
   cwd?: string;
   hostId: string;
   providerId: string;
@@ -96,16 +95,9 @@ type ListSystemProviderInfosRequest = Omit<
   capability?: ProviderCapabilityFilter;
 };
 
-interface ListSystemProviderInfosResult {
+interface ResolveSystemProviderInfosPlanResult {
   hostId: string | null;
   hostLookupError: ApiError | null;
-  providers: ProviderInfo[];
-}
-
-interface ResolveSystemProviderInfosPlanResult extends Omit<
-  ListSystemProviderInfosResult,
-  "providers"
-> {
   providersPromise: Promise<ProviderInfo[]>;
 }
 
@@ -307,19 +299,6 @@ function resolveSystemProviderInfosPlan(
   }
 }
 
-async function resolveSystemProviderInfos(
-  deps: LoggedWorkSessionDeps,
-  query: ListSystemProviderInfosRequest = {},
-): Promise<ListSystemProviderInfosResult> {
-  const { hostId, hostLookupError, providersPromise } =
-    resolveSystemProviderInfosPlan(deps, query);
-  return {
-    hostId,
-    hostLookupError,
-    providers: await providersPromise,
-  };
-}
-
 export async function listSystemProviderInfos(
   deps: LoggedWorkSessionDeps,
   query: ListSystemProviderInfosRequest = {},
@@ -327,7 +306,7 @@ export async function listSystemProviderInfos(
   // Plugins register their providers after the listener is already serving, so
   // an early request would otherwise report an empty provider list.
   await deps.providerRegistry.whenRegistrationsSettled();
-  return (await resolveSystemProviderInfos(deps, query)).providers;
+  return await resolveSystemProviderInfosPlan(deps, query).providersPromise;
 }
 
 function findCustomAcpAgentForProviderId(
@@ -395,7 +374,7 @@ export async function resolveSystemProviderModels(
  * thread model request bypasses the catalog, and `resolveSystemProviderModels`
  * keeps the full list for default resolution.
  */
-export function listVisibleCustomModels(
+function listVisibleCustomModels(
   deps: Pick<LoggedWorkSessionDeps, "config" | "db">,
 ): CustomProviderModel[] {
   if (deps.config.customModels.length === 0) {
@@ -669,7 +648,7 @@ async function loadSystemProviderModels(
       provider,
     });
     return {
-      models: listFallbackModelsForLoadError({
+      models: listFallbackModelsForLoadError(deps, {
         code: modelLoadError.code,
         providerId: provider.id,
       }),
@@ -721,25 +700,33 @@ async function listProviderModelsMemoized(
 }
 
 // A transient probe failure is not evidence that a model was retired, so the
-// picker gets a provisional list instead of an empty one. `modelLoadError` stays
-// set, which is what keeps callers treating this list as unverified: absence
-// from it must never trigger thread model recovery. `missing_executable` and
-// `auth_required` are excluded on purpose — those are actionable setup states
-// the app routes to an install/auth prompt, so offering models there would only
-// defer the real failure to submit time.
-function listFallbackModelsForLoadError({
-  code,
-  providerId,
-}: {
-  code: SystemExecutionOptionsModelLoadErrorCode;
-  providerId: string;
-}): AvailableModel[] {
-  if (providerId !== "claude-code") {
+// picker gets the provider's declared cold-cache fallback instead of an empty
+// list. `modelLoadError` stays set, which is what keeps callers treating this
+// list as unverified: absence from it must never trigger thread model
+// recovery. `missing_executable` and `auth_required` are excluded on purpose —
+// those are actionable setup states the app routes to an install/auth prompt,
+// so offering models there would only defer the real failure to submit time.
+function listFallbackModelsForLoadError(
+  deps: Pick<LoggedWorkSessionDeps, "providerRegistry">,
+  {
+    code,
+    providerId,
+  }: {
+    code: SystemExecutionOptionsModelLoadErrorCode;
+    providerId: string;
+  },
+): AvailableModel[] {
+  if (code !== "timeout" && code !== "failed") {
     return [];
   }
-  return code === "timeout" || code === "failed"
-    ? listClaudeCodeFallbackModels()
-    : [];
+  const fallback = deps.providerRegistry.get(providerId)?.fallbackModels ?? [];
+  // Fresh objects: these flow into mutable API responses.
+  return fallback.map((model) => ({
+    ...model,
+    supportedReasoningEfforts: model.supportedReasoningEfforts.map(
+      (effort) => ({ ...effort }),
+    ),
+  }));
 }
 
 function buildModelLoadError({

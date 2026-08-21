@@ -8,7 +8,6 @@ import { Workspace } from "../src/workspace.js";
 import {
   buildSetupScriptCommand,
   createWorktree,
-  removeDirectory,
   removeWorktree,
   runSetupScript,
 } from "../src/provisioning.js";
@@ -182,6 +181,39 @@ describe("workspace provisioning", () => {
     expect(first.path).toBe(targetPath);
     expect(second.path).toBe(targetPath);
     expect(await new Workspace(targetPath).currentBranch).toBe("feature");
+  });
+
+  it("creates worktrees from a bare repository root that holds sibling worktrees", async () => {
+    const origin = await initRepoWithOptionalSetup();
+    const root = await makeTempDir("bb-worktree-bare-root-");
+    await runGit(["clone", "--bare", origin, ".bare"], { cwd: root });
+    await fs.writeFile(path.join(root, ".git"), "gitdir: ./.bare\n", "utf8");
+    await runGit(["worktree", "add", "existing", "-b", "existing"], {
+      cwd: root,
+    });
+    const parentDir = await makeTempDir("bb-worktree-bare-parent-");
+    const targetPath = path.join(parentDir, "feature");
+
+    await expect(
+      createWorktree({
+        sourcePath: root,
+        targetPath,
+        checkout: {
+          kind: "new-branch",
+          branchName: "feature",
+          baseBranch: "main",
+        },
+        timeoutMs: 900000,
+      }),
+    ).resolves.toEqual({ path: targetPath });
+
+    expect(await new Workspace(targetPath).currentBranch).toBe("feature");
+    const worktrees = await runGit(["worktree", "list", "--porcelain"], {
+      cwd: root,
+    });
+    expect(worktrees.stdout.split("\n")).toContain(
+      `worktree ${await fs.realpath(targetPath)}`,
+    );
   });
 
   it("fetches remote base branches before creating worktrees", async () => {
@@ -744,7 +776,7 @@ describe("workspace provisioning", () => {
     const result = await runSetupScript({
       workspacePath,
       timeoutMs: 900000,
-      setupPath: `${binPath}${path.delimiter}/usr/bin:/bin`,
+      shellPath: `${binPath}${path.delimiter}/usr/bin:/bin`,
     });
 
     expect(result.ran).toBe(true);
@@ -803,11 +835,6 @@ describe("workspace provisioning", () => {
       cwd: sourceRepo,
     });
     expect(worktrees.stdout).not.toContain(targetPath);
-
-    const directoryPath = await makeTempDir("bb-remove-dir-");
-    await fs.writeFile(path.join(directoryPath, "file.txt"), "data\n", "utf8");
-    await removeDirectory({ path: directoryPath });
-    await expect(fs.stat(directoryPath)).rejects.toThrow();
   });
 
   it("removes orphaned worktree directories after the .git file is gone", async () => {

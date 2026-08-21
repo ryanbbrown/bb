@@ -33,6 +33,7 @@ import {
   BRIDGE_JSON_RPC_ERRORS,
   BRIDGE_NOTIFICATION_METHODS,
   PROVIDER_BRIDGE_PROTOCOL_VERSION,
+  THREAD_DELTA_GRAMMAR_V3,
   THREAD_DELTA_NOTIFICATION_METHOD,
   type InitializeResult,
   experimental_defineProviderBridge,
@@ -59,7 +60,6 @@ import {
   ACP_UPDATE_METHOD,
   ACP_WARNING_METHOD,
   acpBridgeCommandSchema,
-  type AcpBridgeAgentCommand,
   type AcpBridgeCommand,
   type AcpBridgeNativeReasoning,
   type AcpBridgePermissionCli,
@@ -78,6 +78,7 @@ import { acpProfileFromLaunchSpec, type AcpAgentProfile } from "../profiles.js";
 import {
   buildAcpModelListParams,
   buildAcpSessionParams,
+  type AcpAgentCommandParam,
   type AcpModelListParams,
   type AcpSessionParams,
   type AcpSkillRoot,
@@ -119,6 +120,7 @@ import {
   type CursorMcpApproval,
 } from "./cursor-mcp-approval.js";
 import {
+  ACP_NATIVE_REASONING_EFFORTS,
   buildAgentModelCatalog,
   buildAcpNativeReasoningSupport,
   buildModelCatalogFromConfigOptions,
@@ -144,7 +146,6 @@ import {
 
 interface AcpSessionPolicy {
   permissionMode: "accept-edits" | "full";
-  permissionEscalation: "ask" | "deny" | null;
   workspaceWriteRoots: string[];
 }
 
@@ -177,11 +178,9 @@ interface AcpThreadSession {
   /** Every session-scoped notification is translated through this. */
   translator: AcpDeltaTranslator;
   connection: AcpAgentConnection;
-  agentLabel: string;
   supportsImageInput: boolean;
   supportsLoadSession: boolean;
   policy: AcpSessionPolicy;
-  cwd: string;
   pendingInstructions: string | undefined;
   /**
    * Which agent prompt is in flight for this bb turn: an ordinary `"turn"`,
@@ -383,6 +382,9 @@ async function forwardDynamicToolCall(args: {
     return { ok: false, error: "No active ACP session for dynamic tool call." };
   }
 
+  // The agent's own tool_call for this MCP call is the timeline row; the
+  // translator binds it to the bb tool so the row reads as that tool (Q31).
+  session.translator.noteInjectedToolCall(session.bbThreadId, args.tool);
   try {
     const result = await sendRuntimeRequest("item/tool/call", {
       providerThreadId: session.providerThreadId,
@@ -508,12 +510,7 @@ const ACP_DEFAULT_MODEL: AvailableModel = {
   model: ACP_DEFAULT_MODEL_ID,
   displayName: "Agent default",
   description: "Model selection is managed by the connected ACP agent.",
-  supportedReasoningEfforts: [
-    {
-      reasoningEffort: "medium",
-      description: "Reasoning effort is managed by the connected ACP agent.",
-    },
-  ],
+  supportedReasoningEfforts: ACP_NATIVE_REASONING_EFFORTS,
   defaultReasoningEffort: "medium",
   isDefault: true,
 };
@@ -524,7 +521,9 @@ const AUTH_REQUIRED_MODEL_LIST_ERROR_MESSAGE =
   "ACP agent is not authenticated.";
 
 function reasoningSupportFromCli(
-  reasoningCli: AcpBridgeReasoningCli | undefined,
+  reasoningCli:
+    | Pick<AcpBridgeReasoningCli, "supportedLevels" | "defaultLevel">
+    | undefined,
 ):
   | Pick<AvailableModel, "supportedReasoningEfforts" | "defaultReasoningEffort">
   | undefined {
@@ -536,28 +535,6 @@ function reasoningSupportFromCli(
     reasoningCli.defaultLevel !== undefined &&
     supportedLevels.includes(reasoningCli.defaultLevel)
       ? reasoningCli.defaultLevel
-      : supportedLevels.includes("medium")
-        ? "medium"
-        : supportedLevels[0];
-  return {
-    supportedReasoningEfforts: reasoningEffortsForLevels(supportedLevels),
-    defaultReasoningEffort,
-  };
-}
-
-function reasoningSupportFromNativeHint(
-  nativeReasoning: AcpBridgeNativeReasoning | undefined,
-):
-  | Pick<AvailableModel, "supportedReasoningEfforts" | "defaultReasoningEffort">
-  | undefined {
-  if (nativeReasoning === undefined) {
-    return undefined;
-  }
-  const supportedLevels = nativeReasoning.supportedLevels;
-  const defaultReasoningEffort =
-    nativeReasoning.defaultLevel !== undefined &&
-    supportedLevels.includes(nativeReasoning.defaultLevel)
-      ? nativeReasoning.defaultLevel
       : supportedLevels.includes("medium")
         ? "medium"
         : supportedLevels[0];
@@ -592,7 +569,7 @@ function applyNativeReasoningHintToModel(
   model: AvailableModel,
   nativeReasoning: AcpBridgeNativeReasoning | undefined,
 ): AvailableModel {
-  const reasoningSupport = reasoningSupportFromNativeHint(nativeReasoning);
+  const reasoningSupport = reasoningSupportFromCli(nativeReasoning);
   return reasoningSupport === undefined ||
     !modelHasOnlyAgentManagedReasoning(model)
     ? model
@@ -624,28 +601,15 @@ function applyConfiguredReasoningToModels(
   return models.map((model) => applyConfiguredReasoningToModel(model, args));
 }
 
-function resolveReasoningCliValue(args: {
-  reasoningCli: AcpBridgeReasoningCli;
+function resolveHintReasoningValue(args: {
+  hint: Pick<AcpBridgeReasoningCli, "supportedLevels" | "levelValues">;
   reasoningLevel: ReasoningLevel;
 }): string | undefined {
-  const override = args.reasoningCli.levelValues?.[args.reasoningLevel];
+  const override = args.hint.levelValues?.[args.reasoningLevel];
   if (override !== undefined) {
     return override;
   }
-  return args.reasoningCli.supportedLevels.includes(args.reasoningLevel)
-    ? args.reasoningLevel
-    : undefined;
-}
-
-function nativeReasoningLevelToValue(args: {
-  nativeReasoning: AcpBridgeNativeReasoning;
-  reasoningLevel: ReasoningLevel;
-}): string | undefined {
-  const override = args.nativeReasoning.levelValues?.[args.reasoningLevel];
-  if (override !== undefined) {
-    return override;
-  }
-  return args.nativeReasoning.supportedLevels.includes(args.reasoningLevel)
+  return args.hint.supportedLevels.includes(args.reasoningLevel)
     ? args.reasoningLevel
     : undefined;
 }
@@ -657,8 +621,8 @@ function nativeReasoningToThoughtLevelOption(
     return undefined;
   }
   const options = nativeReasoning.supportedLevels.flatMap((level) => {
-    const value = nativeReasoningLevelToValue({
-      nativeReasoning,
+    const value = resolveHintReasoningValue({
+      hint: nativeReasoning,
       reasoningLevel: level,
     });
     return value === undefined
@@ -673,8 +637,8 @@ function nativeReasoningToThoughtLevelOption(
   const currentValue =
     nativeReasoning.defaultLevel === undefined
       ? undefined
-      : nativeReasoningLevelToValue({
-          nativeReasoning,
+      : resolveHintReasoningValue({
+          hint: nativeReasoning,
           reasoningLevel: nativeReasoning.defaultLevel,
         });
   return {
@@ -808,7 +772,7 @@ async function authenticateAcpAgent(args: {
  * the picker to the synthetic entry, session starts to the unresolved id.
  */
 async function loadAgentModelCatalog(
-  listCommand: AcpBridgeAgentCommand,
+  listCommand: AcpAgentCommandParam,
 ): Promise<AgentModelCatalog | null> {
   const stdout = await new Promise<string | null>((resolveExec, rejectExec) => {
     execFile(
@@ -858,7 +822,7 @@ async function loadAgentModelCatalog(
 }
 
 async function loadSessionDiscoveredModels(
-  agent: AcpBridgeAgentCommand,
+  agent: AcpAgentCommandParam,
 ): Promise<AvailableModel[] | null> {
   const key = JSON.stringify(agent);
   if (
@@ -878,6 +842,7 @@ async function loadSessionDiscoveredModels(
     args: agent.args,
     cwd: agent.cwd ?? process.cwd(),
     env: childEnv,
+    recordThreadId: null,
     onNotification: () => {},
     onRequest: (_method, _params, responder) => {
       responder.error(-32601, "ACP model discovery does not support requests");
@@ -1129,8 +1094,8 @@ async function resolveAgentLaunchArgs(
     params.reasoningCli !== undefined &&
     params.launchReasoningLevel !== undefined
   ) {
-    const reasoningValue = resolveReasoningCliValue({
-      reasoningCli: params.reasoningCli,
+    const reasoningValue = resolveHintReasoningValue({
+      hint: params.reasoningCli,
       reasoningLevel: params.launchReasoningLevel,
     });
     if (reasoningValue !== undefined) {
@@ -1420,6 +1385,10 @@ function handlePermissionRequest(
           session.bbThreadId,
           toolCall.toolCallId,
         ),
+        injectedTool: session.translator.getInjectedToolBinding(
+          session.bbThreadId,
+          toolCall.toolCallId,
+        ),
       }
     : undefined;
 
@@ -1633,6 +1602,16 @@ async function startAgentSession(
   }
 
   const translator = createAcpDeltaTranslator();
+  // The session's bb-injected tools: a proxied call to one is a bb tool and
+  // reads the way its definition says (Q31).
+  translator.configureInjectedTools(
+    (params.dynamicTools ?? []).map((tool) => ({
+      name: tool.name,
+      ...(tool.presentation === undefined
+        ? {}
+        : { presentation: tool.presentation }),
+    })),
+  );
   // Ordering guarantee: thread/identity precedes any thread/delta for the
   // session, so pre-identity notifications are held and flushed after the
   // identity goes out.
@@ -1667,6 +1646,7 @@ async function startAgentSession(
     args: launch.args,
     cwd: params.cwd,
     env: childEnv,
+    recordThreadId: bbThreadId,
     onNotification: (method, notificationParams) =>
       handleAgentNotification(session, method, notificationParams),
     onRequest: (method, requestParams, responder) =>
@@ -1692,15 +1672,12 @@ async function startAgentSession(
     providerThreadId: "",
     translator,
     connection,
-    agentLabel,
     supportsImageInput: false,
     supportsLoadSession: false,
     policy: {
       permissionMode: params.permissionMode,
-      permissionEscalation: params.permissionEscalation,
       workspaceWriteRoots: params.workspaceWriteRoots,
     },
-    cwd: params.cwd,
     pendingInstructions: params.instructions,
     activePromptKind: null,
     queuedInputs: [],
@@ -2394,6 +2371,13 @@ async function handleRequest(
           threadGoalClear: false,
           fork: "tip",
           approvalEnforcedBy: "runtime",
+          // grammarVersions [3, 3] — this bridge emits the v3 delta grammar
+          // (one streaming dialect; the v3 item shapes land per bridge in
+          // WS1b). steerMode "queue" — ACP v1 has no mid-loop inject: a hard
+          // steer cancels the live prompt and re-prompts with the queued text
+          // at the next boundary.
+          grammarVersions: [THREAD_DELTA_GRAMMAR_V3, THREAD_DELTA_GRAMMAR_V3],
+          steerMode: "queue",
         },
       };
       sendResult(request.id, result);

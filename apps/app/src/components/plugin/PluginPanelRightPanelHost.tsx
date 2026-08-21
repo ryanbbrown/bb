@@ -21,6 +21,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@bb/shared-ui/tooltip";
 import { useAppCommandHandler } from "@/components/commands/AppCommandProvider";
 import { PluginIcon } from "@/components/plugin/PluginIcon";
 import { PluginSlotMount } from "@/components/plugin/PluginSlotMount";
+import { getRightPanelToggleIconName } from "@/components/secondary-panel/panelToggleControlState";
 import { SecondaryPanelLayout } from "@/components/secondary-panel/SecondaryPanelLayout";
 import {
   LazyBrowserTabDeck,
@@ -36,7 +37,6 @@ import type {
   SecondaryPanelRenderableTab,
 } from "@/components/secondary-panel/ThreadSecondaryPanel";
 import { useThreadFileTabs } from "@/components/secondary-panel/useThreadFileTabs";
-import { terminalStatusLabel } from "@/components/thread/terminal/useThreadTerminalController";
 import {
   useCloseFixedSecondaryPanel,
   useReconciledFixedPanelTabsState,
@@ -51,7 +51,7 @@ import {
   type TerminalFixedPanelTab,
 } from "@/lib/fixed-panel-tabs-state";
 import { createFileOpenerOriginalTab } from "./file-opener-tabs";
-import { activateSecondaryPanelTabInState } from "@/components/secondary-panel/secondaryPanelTabState";
+import { activateSecondaryPanelTabInState } from "@bb/client-core";
 import {
   useCloseTerminal,
   useCreateTerminal,
@@ -89,7 +89,6 @@ import {
 } from "@/components/secondary-panel/TerminalHostSelector";
 import { getPluginPagePanelStateId } from "./plugin-page-panel-state";
 import { PluginPanelTabContent } from "./PluginPanelActions";
-import { pluginPanelTabFillsRegion } from "./plugin-panel-tab-layout";
 
 const TERMINAL_COLS = 100;
 const TERMINAL_ROWS = 30;
@@ -803,7 +802,7 @@ export function PluginPanelRightPanelHost({
                 statusLabel:
                   session === undefined || session.status === "running"
                     ? null
-                    : terminalStatusLabel(session),
+                    : session.status,
                 onClose: () => closeTerminalTab(tab),
               },
             ];
@@ -839,7 +838,13 @@ export function PluginPanelRightPanelHost({
             return [
               {
                 ...shared,
-                contentFillsRegion: pluginPanelTabFillsRegion(tab),
+                // PluginPanelTabContent owns the complete body frame for every
+                // plugin tab: padded actions provide their own padded scroll
+                // container, while flush actions and file openers provide their
+                // own full-bleed layout. Letting the file-preview shell frame a
+                // padded action adds a second scroll container and an extra
+                // bottom gutter.
+                contentFillsRegion: true,
                 label: tab.title,
                 leadingVisual: (
                   <PluginIcon
@@ -945,6 +950,7 @@ export function PluginPanelRightPanelHost({
   );
 
   const toggleLabel = isOpen ? "Hide right panel" : "Show right panel";
+  const toggleIconName = getRightPanelToggleIconName(isCompactViewport);
   const page = (
     <div
       className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${
@@ -991,7 +997,7 @@ export function PluginPanelRightPanelHost({
                     aria-pressed={isOpen}
                     onClick={togglePanel}
                   >
-                    <Icon name="PanelRight" />
+                    <Icon name={toggleIconName} />
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>{toggleLabel}</TooltipContent>

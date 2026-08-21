@@ -4,11 +4,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { serve } from "@hono/node-server";
-import {
-  createAgentRuntimeWithAdapters,
-  createFakeAdapter,
-  type ProviderAdapterFactory,
-} from "@bb/agent-runtime/test";
 import type { DbConnection } from "@bb/db";
 import { defaultFeatureFlags } from "@bb/domain";
 import {
@@ -53,7 +48,7 @@ import { WorkspaceReadCaches } from "../../../apps/server/src/services/environme
 import { createPublicApiClient } from "@bb/server-contract";
 import { waitForHostConnected } from "./assertions.js";
 import { createIntegrationFetch } from "./fetch.js";
-import { removePathWithRetry } from "./remove-path.js";
+import { isNodeError, removePathWithRetry } from "./remove-path.js";
 import { createTestGitRepo } from "./seed.js";
 
 const repoRoot = path.resolve(
@@ -106,7 +101,6 @@ export interface IntegrationHarness {
 }
 
 export interface CreateHarnessOptions {
-  adapterFactory?: ProviderAdapterFactory;
   /**
    * Bind the server to a fixed port instead of an ephemeral one. Long-lived
    * harness backends (mobile e2e) need a stable URL for the app under test.
@@ -144,23 +138,6 @@ function requireListeningAddress(
     throw new Error("Server address was not assigned");
   }
   return address;
-}
-
-function hasAdapterFactoryOverride(options: CreateHarnessOptions): boolean {
-  return Object.prototype.hasOwnProperty.call(options, "adapterFactory");
-}
-
-function resolveAdapterFactory(
-  options: CreateHarnessOptions,
-): ProviderAdapterFactory | undefined {
-  if (hasAdapterFactoryOverride(options)) {
-    return options.adapterFactory;
-  }
-  return () => createFakeAdapter();
-}
-
-function isNodeError(error: unknown): error is NodeJS.ErrnoException {
-  return error instanceof Error;
 }
 
 function isRetryableSessionOpenFailure(error: unknown): boolean {
@@ -224,7 +201,6 @@ export async function loadProjectEnvFile(): Promise<string | null> {
 
 async function startIntegrationServer(
   tmpRoot: string,
-  threadStorageRootPath: string,
   options: CreateHarnessOptions,
 ): Promise<RunningTestServer> {
   const serverDataDir = path.join(tmpRoot, "server-data");
@@ -241,7 +217,6 @@ async function startIntegrationServer(
   const watchInterests = new WatchInterestCoordinator({ db, hub });
   const workspaceReadCaches = new WorkspaceReadCaches({ hub });
   const config: ServerRuntimeConfig = {
-    appSurface: "web",
     appVersion: "0.0.0-dev",
     builtinSkillsRootPath,
     customAcpAgents: [],
@@ -259,7 +234,6 @@ async function startIntegrationServer(
     appUrl: "https://bb.example.test",
     serverPort: 0,
     sharedSkillRoots: { user: [], project: [] },
-    threadStorageRootPath,
     transcriptionModel: "test/mock-transcription",
     isDevelopment: false,
     // The integration harness runs no periodic sweep and has no time control, so
@@ -299,11 +273,11 @@ async function startIntegrationServer(
   // their plugins would.
   await registerFirstPartyProviders(providerRegistry);
   const pluginHostArtifacts = new PluginHostArtifactRegistry();
-  // The fake providers these tests drive are declarations too: every
-  // bridge-bound command carries a `bridgeLaunch`, so a provider with no
-  // declaration and no artifact cannot have a command built for it at all. The
-  // daemon side runs a fake adapter and never reads the launch.
-  registerFakeProviders(providerRegistry, pluginHostArtifacts);
+  // The fake providers these tests drive are declarations too, each backed
+  // by the scripted echo bridge artifact: every bridge-bound command carries
+  // a `bridgeLaunch`, and the daemon runs that artifact through the real
+  // bridge-protocol adapter exactly as it would a product provider's.
+  await registerFakeProviders(providerRegistry, pluginHostArtifacts);
   // Every first-party bridge except Pi's ships as a plugin artifact, and the
   // daemon has no bridge for those providers without one on the wire. The
   // dynamic ACP tier depends on it most: `acp-<slug>` ids are never
@@ -411,15 +385,7 @@ async function startHarnessDaemon(
     // enrollment. Once that succeeds, persist the generated host ID so daemon
     // restarts stay attached to the same host.
     await persistHostId({ dataDir, hostId: identity.hostId });
-    const adapterFactory = resolveAdapterFactory(options);
     const daemonApp = await createHostDaemonApp({
-      createRuntime: adapterFactory
-        ? (runtimeOptions) =>
-            createAgentRuntimeWithAdapters({
-              ...runtimeOptions,
-              adapterFactory,
-            })
-        : undefined,
       dataDir,
       hostKey,
       hostId: identity.hostId,
@@ -430,7 +396,6 @@ async function startHarnessDaemon(
       logger: testLogger,
       releaseLock,
       serverUrl: server.baseUrl,
-      threadStorageRootPath,
     });
     for (
       let attempt = 1;
@@ -570,11 +535,7 @@ export async function createIntegrationHarness(
   }
 
   try {
-    server = await startIntegrationServer(
-      tmpRoot,
-      threadStorageRootPath,
-      options,
-    );
+    server = await startIntegrationServer(tmpRoot, options);
     const api = createPublicApiClient(server.baseUrl, {
       fetch: createIntegrationFetch(),
     });

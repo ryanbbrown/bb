@@ -28,21 +28,12 @@ import { cn } from "@bb/shared-ui/lib/utils";
 export const HEADER_ICON_BUTTON_CLASS = COARSE_POINTER_HEADER_ICON_BUTTON_CLASS;
 
 /**
- * Header icon button whose glyph is painted one optical step smaller than
- * {@link HEADER_ICON_BUTTON_CLASS} while keeping the same button box (and hit
- * target). Used for visually dense glyphs that otherwise read oversized next
- * to compact header controls.
- */
-export const HEADER_REDUCED_GLYPH_ICON_BUTTON_CLASS =
-  COARSE_POINTER_HEADER_REDUCED_GLYPH_ICON_BUTTON_CLASS;
-
-/**
  * Shared geometry for the maximize and close controls at the end of a pane
  * header. Keeping both controls on one class gives their button boxes and
  * glyphs the same center axis.
  */
 export const HEADER_PANE_ACTION_ICON_BUTTON_CLASS =
-  HEADER_REDUCED_GLYPH_ICON_BUTTON_CLASS;
+  COARSE_POINTER_HEADER_REDUCED_GLYPH_ICON_BUTTON_CLASS;
 
 /**
  * Seam that separates a header row from the body below it. Every app header
@@ -104,7 +95,7 @@ export function AppPageHeader({
         CHROME_ROW_HEIGHT_CLASS,
         HEADER_SEAM_CLASS,
         APP_PAGE_HEADER_SURFACE_CLASS,
-        "relative shrink-0 px-4",
+        "relative shrink-0 select-none px-4",
         usesDesktopChrome && isWindowDragRegion && MACOS_WINDOW_DRAG_CLASS,
         className,
       )}

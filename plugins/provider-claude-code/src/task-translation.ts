@@ -23,6 +23,7 @@ import {
   type ClaudeTaskUsage,
   type ClaudeWorkflowAgentRecord,
 } from "./schemas.js";
+import { backgroundTaskPresentation } from "./presentation.js";
 
 /**
  * Claude background-task dialect state → narrow-grammar deltas.
@@ -40,7 +41,7 @@ import {
  * turn state (tasks outlive turns by design); the assembler's eviction guard
  * pins the thread while the materialized item is open.
  */
-export interface ClaudeTrackedTask {
+interface ClaudeTrackedTask {
   taskId: string;
   /**
    * Provider item key for the assembler's id maps. A restarted settled task is
@@ -66,9 +67,8 @@ export interface ClaudeTrackedTask {
 
 export type ClaudeTaskMap = Map<string, ClaudeTrackedTask>;
 
-export interface TranslateClaudeTaskMessageArgs {
+interface TranslateClaudeTaskMessageArgs {
   event: unknown;
-  opaqueTaskIds: Set<string>;
   tasks: ClaudeTaskMap;
   /**
    * The caller's late-drain suppression (#1623): while true, a `task_started`
@@ -77,15 +77,6 @@ export interface TranslateClaudeTaskMessageArgs {
    * translate — they ride the thread-attached item, not a turn.
    */
   turnStartSuppressed: boolean;
-}
-
-export function hasOpenClaudeBackgroundTasks(tasks: ClaudeTaskMap): boolean {
-  for (const task of tasks.values()) {
-    if (!task.terminal) {
-      return true;
-    }
-  }
-  return false;
 }
 
 /**
@@ -294,6 +285,15 @@ function buildClaudeTaskProgressDelta(
   };
 }
 
+/** The row presentation of a task; the description can change by patch. */
+function claudeTaskPresentation(task: ClaudeTrackedTask) {
+  return backgroundTaskPresentation({
+    taskType: task.taskType,
+    description: task.description,
+    workflowName: task.workflowName,
+  });
+}
+
 function buildClaudeTaskCloseDelta(task: ClaudeTrackedTask): ThreadDelta {
   const shape = buildClaudeTaskShape(task);
   return {
@@ -301,6 +301,7 @@ function buildClaudeTaskCloseDelta(task: ClaudeTrackedTask): ThreadDelta {
     key: taskKey(task),
     status: shape.status,
     item: shape,
+    presentation: claudeTaskPresentation(task),
   };
 }
 
@@ -337,10 +338,8 @@ export function translateClaudeTaskMessage(
     const message = started.data;
     const taskType = message.task_type ?? "unknown";
     if (!isMaterializedTaskType(taskType)) {
-      args.opaqueTaskIds.add(message.task_id);
       return [];
     }
-    args.opaqueTaskIds.delete(message.task_id);
     const existing = args.tasks.get(message.task_id);
     if (existing && !existing.terminal) {
       // Duplicate started for an open task — nothing new to materialize.
@@ -375,6 +374,7 @@ export function translateClaudeTaskMessage(
         kind: "item.open",
         key: taskKey(task),
         item: buildClaudeTaskShape(task),
+        presentation: claudeTaskPresentation(task),
       },
     ];
   }
@@ -396,12 +396,6 @@ export function translateClaudeTaskMessage(
   const updated = claudeTaskUpdatedMessageSchema.safeParse(args.event);
   if (updated.success) {
     const message = updated.data;
-    if (
-      message.patch.status !== undefined &&
-      isSettledBackgroundTaskStatus(message.patch.status)
-    ) {
-      args.opaqueTaskIds.delete(message.task_id);
-    }
     const task = args.tasks.get(message.task_id);
     if (!task || task.terminal) {
       return [];
@@ -431,7 +425,6 @@ export function translateClaudeTaskMessage(
   );
   if (notification.success) {
     const message = notification.data;
-    args.opaqueTaskIds.delete(message.task_id);
     const task = args.tasks.get(message.task_id);
     if (!task || task.terminal) {
       return [];
