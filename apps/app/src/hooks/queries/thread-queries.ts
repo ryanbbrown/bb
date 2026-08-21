@@ -94,6 +94,7 @@ interface QueryOptions {
 const THREAD_LIST_STALE_TIME_MS = 10_000;
 const THREAD_SEARCH_STALE_TIME_MS = 10_000;
 const THREAD_DETAIL_STALE_TIME_MS = 5_000;
+const THREAD_HOST_FILE_PREVIEW_POLL_MS = 5_000;
 export const THREAD_MENTION_CANDIDATE_LIMIT = 200;
 export const THREAD_SEARCH_DEBOUNCE_MS = 150;
 export const THREAD_SEARCH_LIMIT_PER_GROUP = 20;
@@ -902,6 +903,12 @@ export function useThreadHostFilePreview(
     enabled,
     ...RESUME_REFETCH_QUERY_POLICY,
     ...HEAVY_PAYLOAD_QUERY_POLICY,
+    // Arbitrary host paths have no file-change signal, so keep open text
+    // previews current while leaving stable media leases alone.
+    refetchInterval: (query) =>
+      query.state.data?.kind === "text"
+        ? THREAD_HOST_FILE_PREVIEW_POLL_MS
+        : false,
   });
 }
 
