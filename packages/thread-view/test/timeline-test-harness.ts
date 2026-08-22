@@ -343,12 +343,12 @@ export interface TimelineEventFactory {
   providerUnhandled(
     args?: ProviderUnhandledArgs,
   ): ThreadEventRowOfType<"provider/unhandled">;
-  providerWarning(
-    args?: ProviderWarningArgs,
-  ): ThreadEventRowOfType<"provider/warning">;
   providerUserMessage(
     args: ProviderUserMessageArgs,
   ): ThreadEventRowOfType<"item/completed">;
+  providerWarning(
+    args?: ProviderWarningArgs,
+  ): ThreadEventRowOfType<"provider/warning">;
   reasoningCompleted(
     args: ReasoningCompletedArgs,
   ): ThreadEventRowOfType<"item/completed">;
@@ -556,6 +556,24 @@ export function createTimelineEventFactory(
             type: "agentMessage",
             id: args.itemId ?? `assistant-${base.seq}`,
             text: args.text,
+            ...(args.parentToolCallId
+              ? { parentToolCallId: args.parentToolCallId }
+              : {}),
+          },
+        },
+      };
+    },
+    providerUserMessage(args) {
+      const base = nextProviderTurnScopedRowBase("provider-user-message", args);
+      return {
+        ...base,
+        type: "item/completed",
+        data: {
+          ...providerFields(args),
+          item: {
+            type: "userMessage",
+            id: args.itemId ?? `provider-input-${base.seq}`,
+            content: args.content ?? [{ type: "text", text: args.text }],
             ...(args.parentToolCallId
               ? { parentToolCallId: args.parentToolCallId }
               : {}),
@@ -807,21 +825,6 @@ export function createTimelineEventFactory(
           category: args.category ?? "general",
           summary: args.summary,
           details: args.details,
-        },
-      };
-    },
-    providerUserMessage(args) {
-      const base = nextProviderTurnScopedRowBase("provider-user-message", args);
-      return {
-        ...base,
-        type: "item/completed",
-        data: {
-          ...providerFields(args),
-          item: {
-            type: "userMessage",
-            id: args.itemId ?? `user-${base.seq}`,
-            content: args.content ?? [{ type: "text", text: args.text }],
-          },
         },
       };
     },

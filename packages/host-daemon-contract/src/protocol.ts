@@ -1,13 +1,15 @@
-// Version 153 uses the upstream managed-worktree provisioning contract and
-// command set. Version 152 daemons expose incompatible personal-only fields.
+// Version 154 combines the version 153 contracts from main and personal. It
+// uses the upstream managed-worktree provisioning contract and adds the
+// optional `sourceProviderCheckpointId` to
+// `thread.start.fork`. A fork requested at an earlier source sequence now
+// clones the source session through that turn's recorded checkpoint instead
+// of silently cloning the tip. A version 153 daemon from either branch does
+// not implement the complete contract, so it must update.
 //
-// Version 152 preserves Pi's legacy canonical-item semantics while including
-// all wire changes through version 151.
-//
-// Version 149 keeps Pi assistant `message_start` events out of the translated
-// protocol, so consecutive assistant output without a tool boundary remains on
-// one canonical item. Version 148 daemons split those outputs into distinct
-// items and can send a different timeline to the server.
+// Version 152 has two Pi fixes. It records a displayed extension message as the
+// `userMessage` item of the turn it woke, and it preserves Pi's legacy
+// canonical-item semantics. Daemons from before these fixes can emit unhandled
+// extension rows or split consecutive assistant output into separate items.
 //
 // Version 151 lets the daemon re-resolve an auto/steer turn target from its
 // live runtime after the server observed an active thread but before it had a
@@ -171,7 +173,7 @@
 //
 // The version mismatch is what triggers the enrolled daemon's automatic update
 // instead of an `invalid-message` reconnect loop.
-export const HOST_DAEMON_PROTOCOL_VERSION = 153 as const;
+export const HOST_DAEMON_PROTOCOL_VERSION = 154 as const;
 
 /**
  * Absolute ceiling for any executable artifact delivered to a host daemon —

@@ -31,7 +31,7 @@ import {
   REALTIME_PROJECT_CHANGE_REGISTRY,
   REALTIME_SYSTEM_CHANGE_REGISTRY,
   REALTIME_THREAD_CHANGE_REGISTRY,
-  shouldFlushThreadChangesImmediately,
+  partitionThreadChangesByFlushPriority,
 } from "./cache-owners/realtime-cache-registry";
 
 const INVALIDATION_DEBOUNCE_MS = 50;
@@ -111,16 +111,33 @@ function mergeEventTypes(
   return Array.from(new Set([...current, ...next]));
 }
 
-function mergeThreadChangeMetadata(
-  current: ThreadChangeMetadata | undefined,
-  next: ThreadChangeMetadata,
-): ThreadChangeMetadata {
+interface MergeThreadChangeMetadataArgs {
+  current: ThreadChangeMetadata | undefined;
+  next: ThreadChangeMetadata;
+  /**
+   * The message carries `status-changed`. Its row snapshot (or the lack of
+   * one) supersedes any earlier snapshot merged while the document was
+   * hidden: a later bare `status-changed` (stop, command failure, host
+   * interruption) must make the flush refetch, not patch the row to the
+   * earlier, now-stale status.
+   */
+  statusChanged: boolean;
+}
+
+function mergeThreadChangeMetadata({
+  current,
+  next,
+  statusChanged,
+}: MergeThreadChangeMetadataArgs): ThreadChangeMetadata {
   const eventTypes = mergeEventTypes(current?.eventTypes, next.eventTypes);
   const backgroundActivityChanged =
     next.backgroundActivityChanged ?? current?.backgroundActivityChanged;
   const hasPendingInteraction =
     next.hasPendingInteraction ?? current?.hasPendingInteraction;
   const projectId = next.projectId ?? current?.projectId;
+  const statusChange = statusChanged
+    ? next.statusChange
+    : (next.statusChange ?? current?.statusChange);
   const metadata: ThreadChangeMetadata = {};
   if (eventTypes) {
     metadata.eventTypes = eventTypes;
@@ -133,6 +150,9 @@ function mergeThreadChangeMetadata(
   }
   if (projectId !== undefined) {
     metadata.projectId = projectId;
+  }
+  if (statusChange !== undefined) {
+    metadata.statusChange = statusChange;
   }
   return metadata;
 }
@@ -180,6 +200,7 @@ function flushThreadInvalidations(
         hasPendingInteraction: undefined,
         projectId: undefined,
         queryClient,
+        statusChange: undefined,
         threadId: undefined,
       },
       handlers: REALTIME_THREAD_CHANGE_REGISTRY[changeKind].dirty,
@@ -197,6 +218,7 @@ function flushThreadInvalidations(
           hasPendingInteraction: metadata?.hasPendingInteraction,
           projectId: metadata?.projectId,
           queryClient,
+          statusChange: metadata?.statusChange,
           threadId,
         },
         handlers: REALTIME_THREAD_CHANGE_REGISTRY[changeKind].dirty,
@@ -205,6 +227,53 @@ function flushThreadInvalidations(
   }
 
   resetThreadChangeState(state);
+}
+
+interface ApplyImmediateThreadChangesArgs {
+  changes: readonly ThreadChangeKind[];
+  id: string | undefined;
+  metadata: ThreadChangeMetadata | undefined;
+  queryClient: QueryClient;
+}
+
+/**
+ * Run the dirty handlers for a message's immediate change kinds against that
+ * message alone. Debounced kinds buffered in {@link ThreadChangeState} stay
+ * untouched: an urgent status flip must not drag the expensive timeline
+ * invalidations out of their coalescing window, and streaming publishes
+ * bundle status-changed with events-appended on every batch.
+ */
+function applyImmediateThreadChanges({
+  changes,
+  id,
+  metadata,
+  queryClient,
+}: ApplyImmediateThreadChangesArgs): void {
+  // Normalize through the same merge the buffered path uses so a metadata
+  // field added there cannot silently diverge from the immediate path.
+  const merged = metadata
+    ? mergeThreadChangeMetadata({
+        current: undefined,
+        next: metadata,
+        statusChanged: changes.includes("status-changed"),
+      })
+    : undefined;
+  const flushOnce = createFlushOncePredicate();
+  for (const changeKind of changes) {
+    executeRealtimeDirtyHandlers({
+      context: {
+        backgroundActivityChanged: merged?.backgroundActivityChanged,
+        eventTypes: merged?.eventTypes,
+        flushOnce,
+        hasPendingInteraction: merged?.hasPendingInteraction,
+        projectId: merged?.projectId,
+        queryClient,
+        statusChange: merged?.statusChange,
+        threadId: id,
+      },
+      handlers: REALTIME_THREAD_CHANGE_REGISTRY[changeKind].dirty,
+    });
+  }
 }
 
 function recordThreadChange(
@@ -221,13 +290,15 @@ function recordThreadChange(
       state,
       threadId: message.id,
     });
-    if (message.metadata) {
+    const statusChanged = message.changes.includes("status-changed");
+    if (message.metadata || statusChanged) {
       state.metadataByThreadId.set(
         message.id,
-        mergeThreadChangeMetadata(
-          state.metadataByThreadId.get(message.id),
-          message.metadata,
-        ),
+        mergeThreadChangeMetadata({
+          current: state.metadataByThreadId.get(message.id),
+          next: message.metadata ?? {},
+          statusChanged,
+        }),
       );
     }
     return;
@@ -426,16 +497,45 @@ export function createRealtimeCacheEffects({
     handleChanged: (message) => {
       const documentVisible = visibility.isDocumentVisible();
       switch (message.entity) {
-        case "thread":
-          recordThreadChange(threadChangeState, message);
+        case "thread": {
           if (!documentVisible) {
+            recordThreadChange(threadChangeState, message);
             hasDeferredThreadChanges = true;
-          } else if (shouldFlushThreadChangesImmediately(message.changes)) {
+            break;
+          }
+          if (message.metadata?.eventTypes?.includes("turn/completed")) {
+            // Turn completion is atomic: the lifecycle publish bundles the
+            // final events-appended with the status flip, and partitioning
+            // them would re-enable the composer up to a debounce window
+            // before the final assistant text renders. A completed stream
+            // needs no coalescing protection, so record every kind and
+            // flush the buffer as one unit.
+            recordThreadChange(threadChangeState, message);
             invalidationScheduler.flush();
-          } else {
+            break;
+          }
+          const { debounced, immediate } =
+            partitionThreadChangesByFlushPriority(message.changes);
+          if (debounced) {
+            recordThreadChange(threadChangeState, {
+              ...message,
+              changes: debounced,
+            });
             invalidationScheduler.schedule();
           }
+          if (immediate) {
+            applyImmediateThreadChanges({
+              changes: immediate,
+              id: message.id,
+              // An id-less message dirties globally; its handlers must see
+              // undefined metadata exactly like the flush's global path, so
+              // a stray projectId cannot narrow the invalidation.
+              metadata: message.id ? message.metadata : undefined,
+              queryClient,
+            });
+          }
           break;
+        }
         case "environment":
           if (!message.id) {
             break;

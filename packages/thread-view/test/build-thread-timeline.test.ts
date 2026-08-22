@@ -2841,7 +2841,7 @@ describe("buildThreadTimelineFromEvents", () => {
         text: "Process build-assets completed successfully",
         turnRequest: {
           isGrouped: false,
-          kind: "message",
+          kind: "steer",
           status: "accepted",
         },
       }),

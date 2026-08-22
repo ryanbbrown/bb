@@ -1038,6 +1038,47 @@ export interface PluginMessageActionRegistration {
   run(context: PluginMessageActionContext): void | Promise<void>;
 }
 
+/** Context handed to a `commandPaletteAction`'s `isAvailable` and `run`. */
+export interface PluginCommandPaletteActionContext {
+  /** The thread in view, or null on a surface without one. */
+  threadId: string | null;
+  projectId: string | null;
+  /**
+   * Open one of this plugin's `threadPanelAction` components in the current
+   * thread's side panel, exactly as `messageAction`'s `openPanel` does.
+   *
+   * Returns true when the host accepted the open; false when it declined —
+   * `params` was not a JSON value, the action id names no `threadPanelAction`
+   * of this plugin, or the surface has no side panel. Only the main thread
+   * view has one, and the palette opens anywhere, so guard with `isAvailable`
+   * rather than assuming.
+   */
+  openPanel(options: PluginTargetedPanelActionOpenOptions): boolean;
+}
+
+/**
+ * A row in bb's quick palette (Mod+Shift+P), listed under the plugin's name
+ * beside bb's own commands. Host-rendered: the plugin supplies a title and
+ * `run`, and the host owns matching, ordering, and recency.
+ */
+export interface PluginCommandPaletteActionRegistration {
+  /** Unique within the plugin; letters, digits, `-`, `_`. */
+  id: string;
+  /** The row's label, e.g. "Linear: open issue for this thread". */
+  title: string;
+  /**
+   * Hide the row when it cannot do anything — typically when it needs a thread
+   * and there is none. Called while the palette is open; keep it cheap and
+   * synchronous. Omitted means always listed.
+   */
+  isAvailable?(context: PluginCommandPaletteActionContext): boolean;
+  /**
+   * Runs after the palette closes and focus is restored. Errors (sync or
+   * async) are contained and logged; they never break the palette.
+   */
+  run(context: PluginCommandPaletteActionContext): void | Promise<void>;
+}
+
 /**
  * Supply the inline React mark bb draws for one agent provider.
  *
@@ -1119,6 +1160,13 @@ export interface PluginAppSlots {
   experimental_diffRenderer(registration: PluginDiffRendererRegistration): void;
   messageDirective(registration: PluginMessageDirectiveRegistration): void;
   messageAction(registration: PluginMessageActionRegistration): void;
+  /**
+   * Add a row to the quick palette (see
+   * {@link PluginCommandPaletteActionRegistration}).
+   */
+  commandPaletteAction(
+    registration: PluginCommandPaletteActionRegistration,
+  ): void;
   /**
    * Draw one agent provider's icon with an inline React component instead of
    * its `<img>`-rendered logo file (see
@@ -1477,6 +1525,61 @@ export interface ThreadChatProps {
    * {@link ThreadChatMessageAction}).
    */
   messageActions?: readonly ThreadChatMessageAction[];
+}
+
+// ---------------------------------------------------------------------------
+// experimental_ProviderModelPicker — host-owned execution selection.
+// ---------------------------------------------------------------------------
+
+/** The controlled execution selection resolved by the picker. */
+export interface ExperimentalProviderModelPickerValue {
+  providerId: string;
+  model: string;
+  reasoningLevel: ReasoningLevel;
+  /** Present only when the selected provider supports service tiers. */
+  serviceTier?: ServiceTier;
+}
+
+/** Where the picker resolves the live provider and model catalog. */
+export type ExperimentalProviderModelPickerRouting =
+  | { kind: "host"; hostId: string }
+  | { kind: "environment"; environmentId: string };
+
+/**
+ * Props of the host-owned `experimental_ProviderModelPicker` component.
+ * Provider switches emit one coherent value after the live catalog resolves
+ * its default model, reasoning level, and service-tier capability. Failed or
+ * empty catalogs leave `value` unchanged. Omit `routing` to use bb's
+ * primary-machine routing. Environment routing is required when a provider's
+ * model catalog depends on the selected workspace.
+ */
+export interface ExperimentalProviderModelPickerProps {
+  value: ExperimentalProviderModelPickerValue;
+  onChange(value: ExperimentalProviderModelPickerValue): void;
+  /** Route discovery through an explicit machine or existing environment. */
+  routing?: ExperimentalProviderModelPickerRouting;
+  /** Allow switching providers. Defaults to true; false hides provider tabs. */
+  allowProviderChange?: boolean;
+  /** Horizontal popover alignment. Defaults to `"start"`. */
+  align?: "start" | "center" | "end";
+  /** Render the shared selection summary without allowing changes. */
+  disabled?: boolean;
+  className?: string;
+}
+
+/** Props of BB's controlled, host-resolved permission-mode picker. */
+export interface ExperimentalPermissionModePickerProps {
+  /** Provider whose supported modes determine the available choices. */
+  providerId: string;
+  value: PermissionMode;
+  onChange(value: PermissionMode): void;
+  /** Route capability and machine-ceiling resolution like the execution picker. */
+  routing?: ExperimentalProviderModelPickerRouting;
+  /** Horizontal menu alignment. Defaults to `"end"`. */
+  align?: "start" | "center" | "end";
+  /** Render the resolved mode without allowing changes. */
+  disabled?: boolean;
+  className?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -1873,6 +1976,19 @@ export interface PluginSdkApp {
    * docs/api_to_audit.md for what to audit before the prefix drops.
    */
   experimental_NewThreadComposer: ComponentType<NewThreadComposerProps>;
+  /**
+   * BB's controlled provider/model/reasoning picker. Provider changes emit
+   * only after the new provider's verified defaults and capabilities resolve,
+   * so `onChange` always receives one coherent value. Experimental: see
+   * docs/api_to_audit.md.
+   */
+  experimental_ProviderModelPicker: ComponentType<ExperimentalProviderModelPickerProps>;
+  /**
+   * BB's controlled permission-mode picker. The host resolves provider
+   * capabilities and the routed machine's permission ceiling. Experimental:
+   * see docs/api_to_audit.md.
+   */
+  experimental_PermissionModePicker: ComponentType<ExperimentalPermissionModePickerProps>;
   /**
    * The host-owned source viewer (see {@link SourceCodeProps}). Renders
    * supplied source text with BB's syntax highlighting, gutters, and live code

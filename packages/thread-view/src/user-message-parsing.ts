@@ -469,6 +469,19 @@ export function parseRejectedUsersFromClientRequest(
   return messages;
 }
 
+/**
+ * Input the provider injected into the turn on its own (a Pi extension's
+ * `sendMessage` custom message that woke or steered the agent). There is no
+ * `client/turn/requested` behind it, so the runtime records it as a
+ * `userMessage` item; project it as a system-initiated row so the transcript
+ * shows what the model was answering.
+ *
+ * The row is an accepted `steer`, never a `message`: the runtime only records
+ * provider input inside an already-open turn, and the server's timeline
+ * pagination anchors segments on `message` rows backed by a stored
+ * `client/turn/requested` event. A `message` row with no such event would
+ * make the page drop every segment before it.
+ */
 export function parseProviderUserMessage(
   decoded: ThreadEvent,
   meta: EventMeta,
@@ -503,15 +516,14 @@ export function parseProviderUserMessage(
     sourceSeqEnd: meta.seq,
     createdAt: meta.createdAt,
     scope: decoded.scope,
+    ...(decoded.item.parentToolCallId
+      ? { parentToolCallId: decoded.item.parentToolCallId }
+      : {}),
     initiator: "system",
     senderThreadId: null,
     systemMessageKind: "unlabeled",
     systemMessageSubject: null,
-    turnRequest: {
-      isGrouped: false,
-      kind: "message",
-      status: "accepted",
-    },
+    turnRequest: { isGrouped: false, kind: "steer", status: "accepted" },
     text: parsedInput.text,
     mentions: [],
     attachments: buildAttachments(parsedInput),
