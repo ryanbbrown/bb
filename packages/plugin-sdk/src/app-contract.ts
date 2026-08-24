@@ -106,6 +106,70 @@ export interface PluginPendingInteractionProps {
 export interface PluginSidebarFooterActionProps {}
 
 /**
+ * A complete, ID-only organization request for BB's native sidebar renderer.
+ * The plugin declares which threads go where; BB renders every row, heading,
+ * menu, and indicator with its own components.
+ *
+ * The request is a full replacement of the scroll area: every thread BB
+ * considers eligible must appear exactly once across `regions`, or be listed
+ * in `excludedThreadIds`. An incomplete or inconsistent projection is rejected
+ * atomically and BB renders `experimental_Original` instead.
+ *
+ * @experimental Audit before relying on this as a stable contract.
+ */
+export interface experimental_PluginSidebarThreadProjection {
+  /** Rendered in order. Every `sticky` region must precede every `flow` one. */
+  regions: readonly experimental_PluginSidebarThreadProjectionRegion[];
+  /** Eligible threads the projection deliberately hides. */
+  excludedThreadIds: readonly string[];
+}
+
+/**
+ * One ordered region of a projected sidebar thread list.
+ *
+ * @experimental Audit before relying on this as a stable contract.
+ */
+export interface experimental_PluginSidebarThreadProjectionRegion {
+  /** Stable within one thread-list registration, and unique in the projection. */
+  id: string;
+  /** Null renders the region's threads with no heading. */
+  label: string | null;
+  /**
+   * `sticky` pins the region heading to the top of the scroll area while its
+   * threads scroll past, exactly like a native sidebar section. `flow` lets the
+   * heading scroll away with its threads.
+   */
+  placement: "sticky" | "flow";
+  /** Draw a horizontal rule after the region. Ignored for the last region. */
+  dividerAfter: boolean;
+  /** Give the heading a collapse control. Requires a non-null `label`. */
+  collapsible: boolean;
+  /**
+   * `native` keeps BB's parent/child thread tree. `flat` renders every thread
+   * in the region as a root row. Worktree environment grouping is never
+   * applied to a projected region.
+   */
+  nesting: "flat" | "native";
+  /**
+   * `none` renders the region's threads as one list. `project` splits them
+   * into BB project groups in `projectOrder`; every project a region's threads
+   * resolve to must appear in that order.
+   */
+  grouping:
+    | { kind: "none" }
+    | {
+        kind: "project";
+        projectOrder: readonly string[];
+        /** Give each project group heading a collapse control. */
+        collapsible: boolean;
+        /** Render a heading for a listed project that holds no threads. */
+        showEmptyProjects: boolean;
+      };
+  /** The region's threads, in exact render order before native nesting. */
+  threadOrder: readonly string[];
+}
+
+/**
  * Props passed to an `experimental_threadList` component — the sidebar's
  * scrolling thread area, replaced wholesale by one plugin.
  */
@@ -135,6 +199,29 @@ export interface PluginThreadListProps {
    * @experimental Audit before relying on this as a stable contract.
    */
   experimental_Original: ComponentType;
+  /**
+   * True while the host search field is open, including when its query is
+   * still empty. `searchQuery === ""` cannot tell the two apart, and BB swaps
+   * the whole scroll area for search results whenever the field is open.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_isSearchFieldOpen: boolean;
+  /**
+   * BB's native sidebar renderer, bound to this sidebar and registration.
+   * Submit thread and project IDs only; BB owns rows, headings, windowing,
+   * collapse, context menus, rename, archive, navigation, status, drafts,
+   * split behavior, thread numbers, and the display-options menu.
+   *
+   * It renders `experimental_Original` instead whenever the host search field
+   * is open or the projection is invalid, so a plugin can render it
+   * unconditionally.
+   *
+   * @experimental Audit before relying on this as a stable contract.
+   */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: experimental_PluginSidebarThreadProjection;
+  }>;
 }
 
 /**
