@@ -1485,40 +1485,60 @@ status glyph. `experimental_SidebarThreadProjection` skips all of that: you
 declare organization only — regions and the thread IDs in them — and BB renders
 its own components.
 
+The projection **fully replaces** the scroll area, so it must be complete:
+every thread `experimental_useSidebarThreads()` hands you appears exactly once
+across `regions` or in `excludedThreadIds`. Leaving one out is a validation
+failure, not a quiet omission — so a "pinned" region always needs a companion
+region (or exclusions) for everything else:
+
 ```tsx
 function FirstmateList({
   experimental_SidebarThreadProjection: Projection,
 }: PluginThreadListProps) {
   const { threads } = experimental_useSidebarThreads();
-  return (
-    <Projection
-      projection={{
-        regions: [
-          {
-            id: "pinned",
-            label: "Pinned",
-            placement: "sticky",
-            dividerAfter: true,
-            collapsible: true,
-            nesting: "flat",
-            grouping: { kind: "none" },
-            threadOrder: threads.filter((t) => t.isPinned).map((t) => t.id),
-          },
-        ],
-        excludedThreadIds: [],
-      }}
-    />
+  // Memoize: BB re-validates whenever this object's identity changes.
+  const projection = useMemo(
+    () => ({
+      regions: [
+        {
+          id: "pinned",
+          label: "Pinned",
+          placement: "sticky" as const,
+          dividerAfter: true,
+          collapsible: true,
+          nesting: "flat" as const,
+          grouping: { kind: "none" as const },
+          threadOrder: threads.filter((t) => t.isPinned).map((t) => t.id),
+        },
+        {
+          id: "rest",
+          label: "Threads",
+          placement: "flow" as const,
+          dividerAfter: false,
+          collapsible: false,
+          nesting: "native" as const,
+          grouping: { kind: "none" as const },
+          threadOrder: threads.filter((t) => !t.isPinned).map((t) => t.id),
+        },
+      ],
+      excludedThreadIds: [],
+    }),
+    [threads],
   );
+  return <Projection projection={projection} />;
 }
 ```
 
-The projection **fully replaces** the scroll area, so it must be complete:
-every thread BB considers eligible appears exactly once across `regions` or in
-`excludedThreadIds`. BB validates the whole request against its current
-snapshot and, on any problem — a duplicate, a stale ID, an uncovered thread, a
-malformed value, a busted limit — renders its own list plus one toast instead.
-It also renders its own list whenever the search field is open, so you can
-render the projection unconditionally.
+BB validates the whole request against its current snapshot and, on any problem
+— a duplicate, an ID it has never heard of, an uncovered thread, a malformed
+value, a busted limit — renders its own list plus one toast instead. It also
+renders its own list whenever the search field is open, so you can render the
+projection unconditionally.
+
+One thing you do not have to handle: BB silently ignores an ID naming a thread
+it considers ineligible for the sidebar. `experimental_useSidebarThreads()`
+already omits those, so this only matters if your projection outlives a
+snapshot change.
 
 Region fields: `placement` (`"sticky"` pins the heading, `"flow"` scrolls it
 away; every sticky region must precede every flow one), `dividerAfter`,
@@ -1526,8 +1546,11 @@ away; every sticky region must precede every flow one), `dividerAfter`,
 parent/child tree, `"flat"` makes every thread a root row), and `grouping`
 (`{ kind: "none" }`, or `{ kind: "project", projectOrder, collapsible,
 showEmptyProjects }`). Worktree environment grouping is not applied inside a
-projection. Limits: 64 regions, 50 000 thread references, 10 000 project
-references, 256 characters per string.
+projection, and neither is drag-to-reorder: your projection owns the order.
+A region that ends up holding nothing is dropped, heading and all, and a
+`dividerAfter` on the last surviving region is ignored. Limits: 64 regions,
+50 000 thread references, 10 000 project references, 256 characters per
+string.
 
 **Reading and acting on threads.** Two hooks back a replaced list:
 

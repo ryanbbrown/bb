@@ -147,16 +147,85 @@ describe("validateSidebarThreadProjection", () => {
     );
   });
 
-  it("rejects a hidden thread placed in a region", () => {
+  // A plugin cannot see `visibility`, so naming a hidden thread is not its
+  // fault and must not cost the user their whole sidebar layout.
+  it("drops a hidden thread placed in a region instead of failing", () => {
+    const result = validate(
+      {
+        regions: [makeRegion({ threadOrder: ["thr_a", "thr_hidden"] })],
+        excludedThreadIds: [],
+      },
+      [
+        makeThread({ id: "thr_a" }),
+        makeThread({ id: "thr_hidden", visibility: "hidden" }),
+      ],
+    );
+
+    expect(result.kind).toBe("valid");
+    if (result.kind !== "valid") return;
+    expect(result.projection.regions[0]?.threadOrder).toEqual(["thr_a"]);
+  });
+
+  it("drops a hidden thread listed as an exclusion", () => {
+    const result = validate(
+      {
+        regions: [makeRegion({ threadOrder: ["thr_a"] })],
+        excludedThreadIds: ["thr_hidden"],
+      },
+      [
+        makeThread({ id: "thr_a" }),
+        makeThread({ id: "thr_hidden", visibility: "hidden" }),
+      ],
+    );
+
+    expect(result.kind).toBe("valid");
+    if (result.kind !== "valid") return;
+    expect(result.projection.excludedThreadIds).toEqual([]);
+  });
+
+  it("keeps a dropped id out of its project group", () => {
+    const result = validate(
+      {
+        regions: [
+          makeRegion({
+            threadOrder: ["thr_a", "thr_hidden"],
+            grouping: {
+              kind: "project",
+              projectOrder: ["proj_a", "proj_b"],
+              collapsible: false,
+              showEmptyProjects: false,
+            },
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+      [
+        makeThread({ id: "thr_a", projectId: "proj_a" }),
+        makeThread({
+          id: "thr_hidden",
+          projectId: "proj_b",
+          visibility: "hidden",
+        }),
+      ],
+    );
+
+    expect(result.kind).toBe("valid");
+    if (result.kind !== "valid") return;
+    expect(result.projection.regions[0]?.projectGroups).toEqual([
+      { projectId: "proj_a", threadIds: ["thr_a"] },
+    ]);
+  });
+
+  it("still rejects a thread id absent from the snapshot", () => {
     expectInvalid(
       validate(
         {
-          regions: [makeRegion({ threadOrder: ["thr_hidden"] })],
+          regions: [makeRegion({ threadOrder: ["thr_a", "thr_ghost"] })],
           excludedThreadIds: [],
         },
-        [makeThread({ id: "thr_hidden", visibility: "hidden" })],
+        [makeThread({ id: "thr_a" })],
       ),
-      "ineligible-thread",
+      "unknown-thread",
     );
   });
 
@@ -175,17 +244,21 @@ describe("validateSidebarThreadProjection", () => {
     expect(result.kind).toBe("valid");
   });
 
-  it("rejects an archived thread placed in a region", () => {
-    expectInvalid(
-      validate(
-        {
-          regions: [makeRegion({ threadOrder: ["thr_old"] })],
-          excludedThreadIds: [],
-        },
-        [makeThread({ id: "thr_old", archivedAt: 5 })],
-      ),
-      "ineligible-thread",
+  it("drops an archived thread placed in a region", () => {
+    const result = validate(
+      {
+        regions: [makeRegion({ threadOrder: ["thr_a", "thr_old"] })],
+        excludedThreadIds: [],
+      },
+      [
+        makeThread({ id: "thr_a" }),
+        makeThread({ id: "thr_old", archivedAt: 5 }),
+      ],
     );
+
+    expect(result.kind).toBe("valid");
+    if (result.kind !== "valid") return;
+    expect(result.projection.regions[0]?.threadOrder).toEqual(["thr_a"]);
   });
 
   it("rejects an eligible thread that is neither placed nor excluded", () => {

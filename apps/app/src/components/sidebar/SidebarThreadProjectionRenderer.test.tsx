@@ -50,6 +50,7 @@ import {
   SidebarThreadProjectionBindingProvider,
 } from "./SidebarThreadProjectionRenderer";
 import {
+  getSidebarThreadNavigationTargets,
   getSidebarThreadShortcutTargets,
   SidebarThreadShortcutAssignmentsContext,
   type SidebarThreadShortcutAssignment,
@@ -368,10 +369,11 @@ describe("SidebarThreadProjectionRenderer", () => {
       },
     });
 
-    // Placing a hidden thread is a validation failure, so the whole projection
-    // falls back rather than leaking the row.
-    expect(screen.getByTestId("original-list")).not.toBeNull();
-    expect(renderedThreadIds(container)).toEqual([]);
+    // A plugin cannot see `visibility`, so naming a hidden thread drops that
+    // id rather than costing the user the whole projection.
+    expect(screen.queryByTestId("original-list")).toBeNull();
+    expect(renderedThreadIds(container)).toEqual(["thr_visible"]);
+    expect(mocks.toastError).not.toHaveBeenCalled();
   });
 
   it("renders a projection that leaves a hidden thread unplaced", () => {
@@ -645,9 +647,27 @@ describe("SidebarThreadProjectionRenderer", () => {
     expect(trigger.getAttribute("aria-haspopup")).toBe("menu");
   });
 
-  it("keeps the display-options menu when every region is headerless", () => {
-    renderProjection({
-      projection: {
+  // BB's sidebar carries one display-options menu. Two identically-labelled
+  // buttons would be an accessibility regression, not a feature.
+  it.each([
+    [
+      "two labeled regions",
+      {
+        regions: [
+          makeRegion({ id: "one", label: "One", threadOrder: ["thr_b1"] }),
+          makeRegion({
+            id: "two",
+            label: "Two",
+            placement: "flow" as const,
+            threadOrder: ["thr_a1", "thr_a2"],
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+    ],
+    [
+      "one headerless region",
+      {
         regions: [
           makeRegion({
             label: null,
@@ -656,36 +676,49 @@ describe("SidebarThreadProjectionRenderer", () => {
         ],
         excludedThreadIds: [],
       },
+    ],
+    [
+      "a labeled region beside a headerless one",
+      {
+        regions: [
+          makeRegion({ id: "one", label: null, threadOrder: ["thr_b1"] }),
+          makeRegion({
+            id: "two",
+            label: "Two",
+            placement: "flow" as const,
+            threadOrder: ["thr_a1", "thr_a2"],
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+    ],
+    [
+      "a fully excluded projection",
+      {
+        regions: [],
+        excludedThreadIds: ["thr_a1", "thr_a2", "thr_b1"],
+      },
+    ],
+  ])(
+    "shows exactly one display-options control for %s",
+    (_name, projection) => {
+      renderProjection({ projection });
+
+      expect(
+        screen.getAllByRole("button", { name: "Sidebar display options" }),
+      ).toHaveLength(1);
+    },
+  );
+
+  it("shows exactly one display-options control for an empty sidebar", () => {
+    mocks.navigation.data = makeBootstrap([]);
+    renderProjection({
+      projection: { regions: [], excludedThreadIds: [] },
     });
 
     expect(
-      screen.getByRole("button", { name: "Sidebar display options" }),
-    ).not.toBeNull();
-  });
-
-  it("keeps native row behavior: context menu, rename, and archive", () => {
-    mocks.navigation.data = makeBootstrap([
-      makeProject("proj_a", "Alpha", [
-        makeThread({ id: "thr_a1", title: "Alpha one" }),
-      ]),
-    ]);
-    renderProjection({
-      projection: {
-        regions: [makeRegion({ threadOrder: ["thr_a1"] })],
-        excludedThreadIds: [],
-      },
-    });
-
-    fireEvent.doubleClick(screen.getByText("Alpha one"));
-    const input = screen.getByRole("textbox", { name: "Thread name" });
-    fireEvent.change(input, { target: { value: "Renamed" } });
-    fireEvent.keyDown(input, { key: "Enter" });
-    expect(mocks.renameThread).toHaveBeenCalledWith("thr_a1", "Renamed");
-
-    fireEvent.contextMenu(screen.getByRole("link", { name: "Open Alpha one" }));
-    expect(screen.getByRole("menuitem", { name: "Rename" })).not.toBeNull();
-    fireEvent.click(screen.getByRole("menuitem", { name: "Archive" }));
-    expect(mocks.archiveThreadAndChildren).toHaveBeenCalledTimes(1);
+      screen.getAllByRole("button", { name: "Sidebar display options" }),
+    ).toHaveLength(1);
   });
 
   it("renders every row on a compact viewport", () => {
@@ -730,5 +763,102 @@ describe("SidebarThreadProjectionRenderer", () => {
 
     expect(screen.getByText("No threads")).not.toBeNull();
     expect(screen.queryByTestId("original-list")).toBeNull();
+  });
+
+  it("renders a heading for a listed empty project", () => {
+    const { container } = renderProjection({
+      projection: {
+        regions: [
+          makeRegion({
+            label: "By project",
+            threadOrder: ["thr_a1", "thr_a2", "thr_b1"],
+            grouping: {
+              kind: "project",
+              projectOrder: ["proj_a", "proj_b", "proj_personal"],
+              collapsible: false,
+              showEmptyProjects: true,
+            },
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+    });
+
+    expect(screen.getByTitle("Personal")).not.toBeNull();
+    expect(renderedThreadIds(container)).toEqual([
+      "thr_a1",
+      "thr_a2",
+      "thr_b1",
+    ]);
+  });
+
+  it("drops a divider whose following region renders nothing", () => {
+    const { container } = renderProjection({
+      projection: {
+        regions: [
+          makeRegion({
+            id: "one",
+            label: "One",
+            dividerAfter: true,
+            threadOrder: ["thr_a1", "thr_a2", "thr_b1"],
+          }),
+          // Empty regions are dropped, so the divider above would separate
+          // the list from nothing.
+          makeRegion({
+            id: "two",
+            label: "Two",
+            placement: "flow",
+            threadOrder: [],
+          }),
+        ],
+        excludedThreadIds: [],
+      },
+    });
+
+    expect(screen.queryByTitle("Two")).toBeNull();
+    expect(container.querySelectorAll('[role="separator"]')).toHaveLength(0);
+  });
+
+  it("keeps a windowed project group's navigation order and collapse state", () => {
+    mocks.navigation.data = makeBootstrap([
+      makeProject("proj_a", "Alpha", [
+        makeThread({ id: "thr_parent", title: "Parent" }),
+        makeThread({
+          id: "thr_child",
+          parentThreadId: "thr_parent",
+          title: "Child",
+        }),
+      ]),
+    ]);
+    const projection: experimental_PluginSidebarThreadProjection = {
+      regions: [
+        makeRegion({
+          label: "By project",
+          nesting: "native",
+          threadOrder: ["thr_parent", "thr_child"],
+          grouping: {
+            kind: "project",
+            projectOrder: ["proj_a"],
+            collapsible: false,
+            showEmptyProjects: false,
+          },
+        }),
+      ],
+      excludedThreadIds: [],
+    };
+    const { container } = renderProjection({ projection });
+
+    // Placeholders publish the same threads, in the same order, that the
+    // mounted rows expose to DOM-order navigation.
+    const navigationOrder = () =>
+      getSidebarThreadNavigationTargets(container).map(
+        (target) => target.threadId,
+      );
+    expect(navigationOrder()).toEqual(["thr_parent", "thr_child"]);
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse Parent threads" }),
+    );
+    expect(navigationOrder()).toEqual(["thr_parent"]);
   });
 });

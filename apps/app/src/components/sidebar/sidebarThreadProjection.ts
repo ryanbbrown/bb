@@ -40,8 +40,9 @@ type ReadResult<T> =
 
 /**
  * BB's own sidebar eligibility rule. `visibility` is not part of the plugin
- * thread view, so the host decides this and a projection that references an
- * ineligible thread is rejected rather than silently corrected.
+ * thread view, so a plugin cannot tell a hidden thread from a normal one.
+ * An ineligible id is therefore dropped from a projection rather than
+ * rejecting it: coverage is enforced over eligible threads only.
  */
 export function isSidebarProjectionEligibleThread(
   thread: ThreadListEntry,
@@ -275,10 +276,13 @@ function validateRegion(
     `Projection exceeds ${SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES} thread references.`,
   );
   if (threadOrderResult.kind === "invalid") return threadOrderResult;
-  const threadOrder = threadOrderResult.value;
-  context.budget.threadReferences -= threadOrder.length;
+  const requestedThreadOrder = threadOrderResult.value;
+  context.budget.threadReferences -= requestedThreadOrder.length;
 
-  for (const threadId of threadOrder) {
+  // A plugin cannot see `visibility`, so it cannot avoid naming an ineligible
+  // thread. Drop those ids instead of rejecting the whole projection.
+  const threadOrder: string[] = [];
+  for (const threadId of requestedThreadOrder) {
     const thread = context.threadsById.get(threadId);
     if (thread === undefined) {
       return {
@@ -289,15 +293,7 @@ function validateRegion(
         ),
       };
     }
-    if (!isSidebarProjectionEligibleThread(thread)) {
-      return {
-        kind: "invalid",
-        result: invalid(
-          "ineligible-thread",
-          `Thread ID ${threadId} in region ${id} is not eligible for the sidebar.`,
-        ),
-      };
-    }
+    if (!isSidebarProjectionEligibleThread(thread)) continue;
     if (context.visibleThreadIds.has(threadId)) {
       return {
         kind: "invalid",
@@ -308,6 +304,7 @@ function validateRegion(
       };
     }
     context.visibleThreadIds.add(threadId);
+    threadOrder.push(threadId);
   }
 
   if (!isRecord(rawRegion.grouping)) {
@@ -430,8 +427,12 @@ function validateRegion(
  * Validate and canonicalize one complete projection against one host snapshot.
  *
  * The projection fully replaces the scroll area, so validation is atomic and
- * strict: every eligible thread must be placed exactly once or excluded
- * explicitly. Anything else fails, and the caller renders BB's own list.
+ * strict over the threads BB considers eligible: each must be placed exactly
+ * once or excluded explicitly, or the caller renders BB's own list.
+ *
+ * Ids the plugin cannot reason about are the one exception. An id naming an
+ * ineligible thread is dropped from the canonical result, because eligibility
+ * depends on `visibility`, which the plugin thread view does not expose.
  */
 export function validateSidebarThreadProjection({
   projection,
@@ -468,7 +469,7 @@ export function validateSidebarThreadProjection({
     `Projection exceeds ${SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES} thread references.`,
   );
   if (exclusionsResult.kind === "invalid") return exclusionsResult.result;
-  const excludedThreadIds = exclusionsResult.value;
+  const requestedExclusions = exclusionsResult.value;
 
   const context: RegionValidationContext = {
     projectIds,
@@ -477,7 +478,7 @@ export function validateSidebarThreadProjection({
     regionIds: new Set<string>(),
     budget: {
       threadReferences:
-        SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES - excludedThreadIds.length,
+        SIDEBAR_PROJECTION_MAX_THREAD_REFERENCES - requestedExclusions.length,
       projectReferences: SIDEBAR_PROJECTION_MAX_PROJECT_REFERENCES,
     },
     sawFlowRegion: false,
@@ -495,7 +496,8 @@ export function validateSidebarThreadProjection({
   }
 
   const excludedIds = new Set<string>();
-  for (const threadId of excludedThreadIds) {
+  const excludedThreadIds: string[] = [];
+  for (const threadId of requestedExclusions) {
     const thread = threadsById.get(threadId);
     if (thread === undefined) {
       return invalid(
@@ -503,12 +505,8 @@ export function validateSidebarThreadProjection({
         `Excluded thread ID ${threadId} is stale or unknown.`,
       );
     }
-    if (!isSidebarProjectionEligibleThread(thread)) {
-      return invalid(
-        "ineligible-exclusion",
-        `Excluded thread ID ${threadId} is not eligible for the sidebar.`,
-      );
-    }
+    // Same reason as `threadOrder`: an ineligible id is not the plugin's fault.
+    if (!isSidebarProjectionEligibleThread(thread)) continue;
     if (excludedIds.has(threadId)) {
       return invalid(
         "duplicate-exclusion",
@@ -522,6 +520,7 @@ export function validateSidebarThreadProjection({
       );
     }
     excludedIds.add(threadId);
+    excludedThreadIds.push(threadId);
   }
 
   for (const thread of threads) {

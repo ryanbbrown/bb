@@ -1000,9 +1000,16 @@ keyboard navigation, windowing, thread numbers, and the display-options menu.
 The projection is a strict full replacement of the scroll area: every thread BB
 considers eligible must appear exactly once across `regions` or in
 `excludedThreadIds`. BB validates the whole request against its current
-snapshot and, on any failure, renders `experimental_Original` plus one bounded
-diagnostic toast deduplicated per plugin, generation, and reason. It also
-renders `experimental_Original` while the search field is open.
+snapshot and, on failure, renders `experimental_Original` plus one bounded
+diagnostic toast deduplicated per plugin, registration, generation, and reason.
+It also renders `experimental_Original` while the search field is open.
+
+Eligibility is the one thing a projection may get wrong for free. It turns on
+`visibility`, which `PluginSidebarThread` does not expose, so an ID naming an
+ineligible thread is dropped from `threadOrder` and `excludedThreadIds` instead
+of rejecting the request, and coverage is checked over eligible threads only.
+`experimental_useSidebarThreads` applies the same `isSidebarProjectThread`
+filter, so the two surfaces agree.
 
 **Audit before stabilizing.**
 
@@ -1016,10 +1023,10 @@ renders `experimental_Original` while the search field is open.
    it also means any new thread arriving between two plugin renders fails the
    projection until the plugin catches up. Measure how often that happens with
    a live plugin before deciding whether a "remainder region" would be safer.
-4. Confirm eligibility should stay host-side. `visibility` is deliberately not
-   in `PluginSidebarThread`, so a plugin cannot tell a hidden thread from an
-   absent one, and a hidden ID reads as "unresolvable". Revisit if a plugin
-   needs the distinction for its own rendering.
+4. Re-examine the two-part eligibility rule. Filtering in
+   `experimental_useSidebarThreads` and tolerating stragglers in validation are
+   belt and braces; decide whether exposing the distinction to plugins would be
+   simpler than keeping both.
 5. Check the limits (64 regions, 50 000 thread references, 10 000 project
    references, 256-character strings, 320-character diagnostics) against real
    installs before freezing them.
@@ -1029,10 +1036,16 @@ renders `experimental_Original` while the search field is open.
 7. Verify the fallback path stays crash-free. A host-side throw inside the
    renderer currently surfaces as "Sidebar plugin crashed" and attributes it to
    the plugin, which is misleading if the fault is BB's.
-8. Confirm the display-options menu placement. It renders in every region
-   heading, plus one standalone control when every region is headerless; some
-   of its items (organize mode, sort, section order) do not affect a projected
-   list.
+8. Confirm the display-options menu placement. Exactly one renders: in the
+   first labelled region's heading, or standalone when no region has a heading.
+   Some of its items (organize mode, sort, section order) do not affect a
+   projected list.
+9. Confirm the accepted simplifications. Projected rows use the sidebar's
+   `section` variant rather than native project indentation, and
+   drag-to-reorder is unavailable because the projection owns the order
+   (drag-to-split still works, inside the row).
+10. Verify sticky/flow scroll behavior in a real browser and on iOS. It is
+    structural CSS that jsdom cannot exercise, so no automated test covers it.
 
 ## `PluginFileOpenerProps.experimental_Original` (`@get-bb/plugin-sdk/app`)
 

@@ -276,9 +276,12 @@ own list uses. Rows, headings, indicators, context menus, inline rename,
 archive, split drag, collapse, keyboard navigation, windowing, thread numbers,
 and the display-options menu all stay native and stay current.
 
+Memoize the projection object: bb re-validates whenever its identity changes,
+and validation walks every thread.
+
 ```tsx
-<Projection
-  projection={{
+const projection = useMemo(
+  () => ({
     regions: [
       {
         id: "pinned",
@@ -307,22 +310,31 @@ and the display-options menu all stay native and stay current.
       },
     ],
     excludedThreadIds: [],
-  }}
-/>
+  }),
+  [pinnedThreadIds, projectOrder, remainingThreadIds],
+);
+
+return <Projection projection={projection} />;
 ```
 
 **Completeness is strict.** A projection replaces the whole scroll area, so
-every thread bb considers eligible must appear exactly once across `regions`
-or in `excludedThreadIds`. Eligibility is bb's own rule — hidden threads are
-not eligible and cannot be placed — and `visibility` is not part of
-`PluginSidebarThread`, so the host applies it. Threads must never silently
-vanish; an uncovered thread is a validation failure, not a quiet omission.
+every thread `experimental_useSidebarThreads()` gives you must appear exactly
+once across `regions` or in `excludedThreadIds`. An uncovered thread is a
+validation failure, not a quiet omission — threads must never silently vanish.
 
-**Failure is atomic.** bb validates the whole request against its current
-snapshot. Any duplicate, stale ID, ineligible thread, uncovered thread,
+**Ineligible IDs are ignored, not fatal.** bb's own eligibility rule turns on
+`visibility`, which `PluginSidebarThread` does not expose, so a plugin cannot
+tell a hidden background thread from a normal one. `experimental_useSidebarThreads()`
+already omits them, and if one reaches a projection anyway — a snapshot
+changed under you — bb drops that ID from `threadOrder` and from
+`excludedThreadIds` rather than rejecting the request. Coverage is checked
+over eligible threads only.
+
+**Everything else is atomic.** bb validates the whole request against its
+current snapshot. Any duplicate, ID it has never heard of, uncovered thread,
 malformed value, or exceeded limit rejects the entire projection: bb renders
 `experimental_Original` and shows one bounded diagnostic toast, deduplicated
-per plugin, registration generation, and failure reason. It also renders
+per plugin, registration, generation, and failure reason. It also renders
 `experimental_Original` whenever `experimental_isSearchFieldOpen` is true, so a
 plugin can render the projection unconditionally.
 
@@ -331,7 +343,7 @@ plugin can render the projection unconditionally.
 | Field          | Meaning                                                                                                     |
 | -------------- | ----------------------------------------------------------------------------------------------------------- |
 | `id`           | Unique in the projection; namespaces the region's collapse state.                                           |
-| `label`        | `null` renders no heading. A heading carries the display-options menu.                                      |
+| `label`        | `null` renders no heading. The first labelled region's heading hosts the display-options menu.              |
 | `placement`    | `sticky` pins the heading while its threads scroll; `flow` scrolls it away. Sticky regions must come first. |
 | `dividerAfter` | Rule after the region. Ignored on the last rendered region.                                                 |
 | `collapsible`  | Adds a collapse control. Requires a non-null `label`.                                                       |
@@ -344,8 +356,17 @@ the project of the root it nests under, so a cross-project child follows its
 parent; a `flat` region uses each thread's own project. Every project a
 region's threads resolve to must appear in `projectOrder`.
 
-Worktree environment grouping is the one native behavior a projection does not
-reproduce: those group rows are not part of the projected renderer.
+**What a projection does not reproduce.** Worktree environment grouping: those
+group rows are not part of the projected renderer. Drag-to-reorder: the
+projection owns the order, so reordering by hand would fight it. (Drag-to-split
+still works — that lives in the row.) A `flow` region sits outside bb's sticky
+stack, so neither its heading nor its nested parent rows pin while scrolling;
+use `sticky` for anything that should stay on screen.
+
+**What bb drops.** A region that ends up holding no threads is dropped
+entirely, heading and all, and a `dividerAfter` on the last surviving region is
+ignored — so a divider never trails into nothing. If no region survives, bb
+renders its empty state, still with the display-options menu.
 
 **Limits.** 64 regions, 50 000 thread references (regions plus exclusions),
 10 000 project references, 256 characters per string, 320 characters per

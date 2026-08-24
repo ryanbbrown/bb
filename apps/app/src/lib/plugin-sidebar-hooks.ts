@@ -6,6 +6,7 @@ import {
   type ThreadListEntry,
 } from "@bb/domain";
 import { useIsCompactViewport } from "@bb/shared-ui/hooks/use-compact-viewport";
+import { isSidebarProjectThread } from "@bb/client-core";
 import type {
   PluginSidebarProject,
   PluginSidebarThread,
@@ -115,10 +116,14 @@ export function useSidebarThreads(): PluginSidebarThreadsState {
     const allProjects = [...data.projects, data.personalProject];
     return {
       status: "ready",
+      // Same eligibility rule as the native list. `visibility` is not part of
+      // `PluginSidebarThread`, so a plugin could not filter hidden background
+      // threads itself, and a sidebar projection that named one would be
+      // asking BB to render a row it refuses to render.
       threads: allProjects.flatMap((project) =>
-        project.threads.map((thread) =>
-          toPluginSidebarThreadCached(thread, hostNamesById),
-        ),
+        project.threads
+          .filter(isSidebarProjectThread)
+          .map((thread) => toPluginSidebarThreadCached(thread, hostNamesById)),
       ),
       projects: allProjects.map((project) => ({
         id: project.id,
