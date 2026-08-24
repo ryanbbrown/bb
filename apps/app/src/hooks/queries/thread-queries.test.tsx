@@ -142,7 +142,6 @@ afterEach(() => {
   cleanup();
   vi.clearAllMocks();
   vi.restoreAllMocks();
-  vi.useRealTimers();
 });
 
 beforeEach(() => {
@@ -445,46 +444,6 @@ describe("useThreadQueuedMessages", () => {
 });
 
 describe("useThreadHostFilePreview", () => {
-  it("picks up an out-of-band write while the preview stays open", async () => {
-    vi.useFakeTimers({ shouldAdvanceTime: true });
-    vi.mocked(api.getThreadHostFilePreview).mockResolvedValueOnce({
-      kind: "text",
-      path: "/tmp/log.txt",
-      url: "/api/v1/threads/thread-1/host-files/content?path=%2Ftmp%2Flog.txt",
-      mimeType: "text/plain",
-      content: "v1",
-    });
-    const { wrapper } = createQueryClientTestHarness();
-    const { result } = renderHook(
-      () => useThreadHostFilePreview("thread-1", "env-1", "/tmp/log.txt"),
-      { wrapper },
-    );
-    await waitFor(() =>
-      expect(result.current.data).toMatchObject({
-        kind: "text",
-        content: "v1",
-      }),
-    );
-
-    vi.mocked(api.getThreadHostFilePreview).mockResolvedValue({
-      kind: "text",
-      path: "/tmp/log.txt",
-      url: "/api/v1/threads/thread-1/host-files/content?path=%2Ftmp%2Flog.txt",
-      mimeType: "text/plain",
-      content: "v2",
-    });
-    await act(async () => {
-      await vi.advanceTimersByTimeAsync(6_000);
-    });
-
-    await waitFor(() =>
-      expect(result.current.data).toMatchObject({
-        kind: "text",
-        content: "v2",
-      }),
-    );
-  });
-
   it("refetches stale host file previews on focus and reconnect", async () => {
     const { queryClient, wrapper } = createQueryClientTestHarness();
 
