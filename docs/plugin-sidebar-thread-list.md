@@ -80,6 +80,19 @@ interface PluginThreadListProps {
    * conditionally without re-entering plugin replacement resolution.
    */
   experimental_Original: ComponentType;
+  /**
+   * True while the host search field is open, empty query included.
+   * `searchQuery === ""` cannot tell an open, empty field from a closed one,
+   * and BB swaps the whole scroll area for results whenever the field is open.
+   */
+  experimental_isSearchFieldOpen: boolean;
+  /**
+   * BB's native sidebar renderer, bound to this sidebar and registration.
+   * Submit thread and project IDs only; BB owns every pixel. See §5.1.
+   */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: experimental_PluginSidebarThreadProjection;
+  }>;
 }
 ```
 
@@ -252,6 +265,91 @@ glyphs and its own menu is not really replaced.
 The trade is real and worth stating. A plugin menu will not automatically pick
 up a thread action bb adds later, and it can drift from bb's labels and
 ordering. `docs/api_to_audit.md` tracks that as an open question.
+
+### 5.1 The alternative: project onto bb's native list
+
+Most lists do not want that trade. They want bb's rows in a different order,
+grouped differently — not different rows. For those,
+`experimental_SidebarThreadProjection` inverts the deal: the plugin declares
+**organization only**, and bb renders every pixel with the same components its
+own list uses. Rows, headings, indicators, context menus, inline rename,
+archive, split drag, collapse, keyboard navigation, windowing, thread numbers,
+and the display-options menu all stay native and stay current.
+
+```tsx
+<Projection
+  projection={{
+    regions: [
+      {
+        id: "pinned",
+        label: "Pinned",
+        placement: "sticky",
+        dividerAfter: true,
+        collapsible: true,
+        nesting: "flat",
+        grouping: { kind: "none" },
+        threadOrder: pinnedThreadIds,
+      },
+      {
+        id: "rest",
+        label: "Threads",
+        placement: "flow",
+        dividerAfter: false,
+        collapsible: false,
+        nesting: "native",
+        grouping: {
+          kind: "project",
+          projectOrder,
+          collapsible: true,
+          showEmptyProjects: false,
+        },
+        threadOrder: remainingThreadIds,
+      },
+    ],
+    excludedThreadIds: [],
+  }}
+/>
+```
+
+**Completeness is strict.** A projection replaces the whole scroll area, so
+every thread bb considers eligible must appear exactly once across `regions`
+or in `excludedThreadIds`. Eligibility is bb's own rule — hidden threads are
+not eligible and cannot be placed — and `visibility` is not part of
+`PluginSidebarThread`, so the host applies it. Threads must never silently
+vanish; an uncovered thread is a validation failure, not a quiet omission.
+
+**Failure is atomic.** bb validates the whole request against its current
+snapshot. Any duplicate, stale ID, ineligible thread, uncovered thread,
+malformed value, or exceeded limit rejects the entire projection: bb renders
+`experimental_Original` and shows one bounded diagnostic toast, deduplicated
+per plugin, registration generation, and failure reason. It also renders
+`experimental_Original` whenever `experimental_isSearchFieldOpen` is true, so a
+plugin can render the projection unconditionally.
+
+**Region semantics.**
+
+| Field          | Meaning                                                                                                     |
+| -------------- | ----------------------------------------------------------------------------------------------------------- |
+| `id`           | Unique in the projection; namespaces the region's collapse state.                                           |
+| `label`        | `null` renders no heading. A heading carries the display-options menu.                                      |
+| `placement`    | `sticky` pins the heading while its threads scroll; `flow` scrolls it away. Sticky regions must come first. |
+| `dividerAfter` | Rule after the region. Ignored on the last rendered region.                                                 |
+| `collapsible`  | Adds a collapse control. Requires a non-null `label`.                                                       |
+| `nesting`      | `native` keeps bb's parent/child tree; `flat` makes every thread a root row.                                |
+| `grouping`     | `{ kind: "none" }`, or `{ kind: "project", projectOrder, collapsible, showEmptyProjects }`.                 |
+| `threadOrder`  | Exact render order, before native nesting rearranges children under parents.                                |
+
+Under `grouping.kind === "project"`, a `native` region resolves each thread to
+the project of the root it nests under, so a cross-project child follows its
+parent; a `flat` region uses each thread's own project. Every project a
+region's threads resolve to must appear in `projectOrder`.
+
+Worktree environment grouping is the one native behavior a projection does not
+reproduce: those group rows are not part of the projected renderer.
+
+**Limits.** 64 regions, 50 000 thread references (regions plus exclusions),
+10 000 project references, 256 characters per string, 320 characters per
+diagnostic.
 
 ---
 

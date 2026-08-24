@@ -1468,8 +1468,66 @@ interface PluginThreadListProps {
   /** BB's bound thread list. Render it to delegate conditionally without
       re-entering plugin replacement resolution. */
   experimental_Original: ComponentType;
+  /** True while the host search field is open, empty query included.
+      `searchQuery === ""` cannot tell an open, empty field from a closed one. */
+  experimental_isSearchFieldOpen: boolean;
+  /** BB's native renderer. Submit thread and project IDs only; BB draws
+      every pixel. See "Projecting onto BB's native list" below. */
+  experimental_SidebarThreadProjection: ComponentType<{
+    projection: experimental_PluginSidebarThreadProjection;
+  }>;
 }
 ```
+
+**Projecting onto BB's native list.** Building rows yourself means rebuilding
+context menus, inline rename, split drag, thread numbers, windowing, and every
+status glyph. `experimental_SidebarThreadProjection` skips all of that: you
+declare organization only — regions and the thread IDs in them — and BB renders
+its own components.
+
+```tsx
+function FirstmateList({
+  experimental_SidebarThreadProjection: Projection,
+}: PluginThreadListProps) {
+  const { threads } = experimental_useSidebarThreads();
+  return (
+    <Projection
+      projection={{
+        regions: [
+          {
+            id: "pinned",
+            label: "Pinned",
+            placement: "sticky",
+            dividerAfter: true,
+            collapsible: true,
+            nesting: "flat",
+            grouping: { kind: "none" },
+            threadOrder: threads.filter((t) => t.isPinned).map((t) => t.id),
+          },
+        ],
+        excludedThreadIds: [],
+      }}
+    />
+  );
+}
+```
+
+The projection **fully replaces** the scroll area, so it must be complete:
+every thread BB considers eligible appears exactly once across `regions` or in
+`excludedThreadIds`. BB validates the whole request against its current
+snapshot and, on any problem — a duplicate, a stale ID, an uncovered thread, a
+malformed value, a busted limit — renders its own list plus one toast instead.
+It also renders its own list whenever the search field is open, so you can
+render the projection unconditionally.
+
+Region fields: `placement` (`"sticky"` pins the heading, `"flow"` scrolls it
+away; every sticky region must precede every flow one), `dividerAfter`,
+`collapsible` (needs a non-null `label`), `nesting` (`"native"` keeps BB's
+parent/child tree, `"flat"` makes every thread a root row), and `grouping`
+(`{ kind: "none" }`, or `{ kind: "project", projectOrder, collapsible,
+showEmptyProjects }`). Worktree environment grouping is not applied inside a
+projection. Limits: 64 regions, 50 000 thread references, 10 000 project
+references, 256 characters per string.
 
 **Reading and acting on threads.** Two hooks back a replaced list:
 

@@ -241,6 +241,8 @@ const FRONTEND_SLOT_PROP_FIELDS = {
     "onNavigate",
     "searchQuery",
     "experimental_Original",
+    "experimental_isSearchFieldOpen",
+    "experimental_SidebarThreadProjection",
   ],
   experimental_threadHeaderAction: [
     "threadId",
