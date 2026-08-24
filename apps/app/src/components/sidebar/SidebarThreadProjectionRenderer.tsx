@@ -781,6 +781,9 @@ function SidebarThreadProjectionHost({
 
   return (
     <>
+      {renderedRegions.every((region) => region.label === null) ? (
+        <ProjectionHeaderlessDisplayOptions />
+      ) : null}
       {stickyRegions.length > 0 ? (
         <ProjectListShell>{stickyRegions.map(renderRegion)}</ProjectListShell>
       ) : null}
@@ -788,9 +791,6 @@ function SidebarThreadProjectionHost({
         <SidebarGroupContent>
           {flowRegions.map(renderRegion)}
         </SidebarGroupContent>
-      ) : null}
-      {renderedRegions.every((region) => region.label === null) ? (
-        <ProjectionHeaderlessDisplayOptions />
       ) : null}
     </>
   );
