@@ -6,10 +6,6 @@ import { useSidebar } from "@/components/ui/sidebar.js";
 import { useRouteState } from "@/hooks/useRouteState";
 import type { ResolvedReplacement } from "@/lib/plugin-slot-resolvers";
 import type { PluginThreadListSlot } from "@/lib/plugin-slots";
-import {
-  BoundSidebarThreadProjection,
-  SidebarThreadProjectionBindingProvider,
-} from "./SidebarThreadProjectionRenderer";
 
 /** Shared by the mount and the host's crash check. */
 const THREAD_LIST_SLOT_KIND = "threadList";
@@ -20,8 +16,6 @@ interface PluginThreadListProps {
   original: ReactNode;
   /** The host search field's text; "" when closed or plugin-owned. */
   searchQuery: string;
-  /** True while the host search field is open, empty query included. */
-  isSearchFieldOpen: boolean;
   onNavigate: () => void;
 }
 
@@ -34,7 +28,6 @@ export function PluginThreadList({
   replacement,
   original,
   searchQuery,
-  isSearchFieldOpen,
   onNavigate,
 }: PluginThreadListProps) {
   const { projectId, threadId } = useRouteState();
@@ -59,27 +52,15 @@ export function PluginThreadList({
       onCrash={handleCrash}
     >
       {(slot, BoundOriginal) => (
-        <SidebarThreadProjectionBindingProvider
+        <slot.component
           activeThreadId={threadId ?? null}
-          generation={slot.generation}
-          isSearchFieldOpen={isSearchFieldOpen}
+          activeProjectId={projectId ?? null}
+          isCompactViewport={isCompactViewport}
           onNavigate={onNavigate}
+          searchQuery={searchQuery}
           Original={BoundOriginal}
-          pluginId={slot.pluginId}
-          registrationId={slot.id}
-        >
-          <slot.component
-            activeThreadId={threadId ?? null}
-            activeProjectId={projectId ?? null}
-            isCompactViewport={isCompactViewport}
-            onNavigate={onNavigate}
-            searchQuery={searchQuery}
-            Original={BoundOriginal}
-            experimental_isSearchFieldOpen={isSearchFieldOpen}
-            experimental_Original={deprecatedOriginalAlias(BoundOriginal)}
-            experimental_SidebarThreadProjection={BoundSidebarThreadProjection}
-          />
-        </SidebarThreadProjectionBindingProvider>
+          experimental_Original={deprecatedOriginalAlias(BoundOriginal)}
+        />
       )}
     </PluginReplacementSlot>
   );

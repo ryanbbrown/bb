@@ -4,7 +4,6 @@ import { cleanup, renderHook } from "@testing-library/react";
 import { PERSONAL_PROJECT_ID, type ThreadListEntry } from "@bb/domain";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeThreadListEntry } from "@/test/fixtures/thread-list-entries";
-import { validateSidebarThreadProjection } from "@/components/sidebar/sidebarThreadProjection";
 import { useSidebarThreads } from "./plugin-sidebar-hooks";
 
 const state = vi.hoisted(() => ({
@@ -88,65 +87,5 @@ describe("useSidebarThreads", () => {
     second.rerender();
     expect(first.result.current.threads[0]).toBe(before);
     expect(second.result.current.threads[0]).toBe(before);
-  });
-
-  it("omits hidden threads, so a plugin cannot be handed one", () => {
-    state.data = payload([
-      makeThreadListEntry({ id: "thr_visible" }),
-      makeThreadListEntry({ id: "thr_worker", visibility: "hidden" }),
-    ]);
-
-    const { result } = renderHook(() => useSidebarThreads());
-
-    expect(result.current.threads.map((thread) => thread.id)).toEqual([
-      "thr_visible",
-    ]);
-  });
-
-  // The seam's contract is strict coverage of eligible threads. Built-in
-  // plugins (side chat, workflows) create hidden threads in normal use, so if
-  // this hook leaked one, the obvious plugin — place everything you can see —
-  // would fail validation forever and the sidebar would never project.
-  it("hands a plugin a thread set that validates as a complete projection", () => {
-    const hiddenWorker = makeThreadListEntry({
-      id: "thr_worker",
-      visibility: "hidden",
-    });
-    const threads = [
-      makeThreadListEntry({ id: "thr_one" }),
-      hiddenWorker,
-      makeThreadListEntry({ id: "thr_two" }),
-    ];
-    state.data = payload(threads);
-    const { result } = renderHook(() => useSidebarThreads());
-
-    const projection = {
-      regions: [
-        {
-          id: "all",
-          label: "Threads",
-          placement: "sticky",
-          dividerAfter: false,
-          collapsible: false,
-          nesting: "native",
-          grouping: { kind: "none" },
-          threadOrder: result.current.threads.map((thread) => thread.id),
-        },
-      ],
-      excludedThreadIds: [],
-    };
-
-    const validation = validateSidebarThreadProjection({
-      projection,
-      threads: [...threads, ...payload([]).personalProject.threads],
-      projects: result.current.projects.map((project) => ({ id: project.id })),
-    });
-
-    expect(validation.kind).toBe("valid");
-    if (validation.kind !== "valid") return;
-    expect(validation.projection.regions[0]?.threadOrder).toEqual([
-      "thr_one",
-      "thr_two",
-    ]);
   });
 });

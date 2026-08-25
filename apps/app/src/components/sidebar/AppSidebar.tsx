@@ -411,7 +411,6 @@ export function AppSidebar({
           replacement={threadListReplacement}
           original={originalThreadList}
           searchQuery={threadSearch.query}
-          isSearchFieldOpen={threadSearch.isActive}
           onNavigate={threadSearch.onExternalThreadOpen}
         />
       </SidebarContent>

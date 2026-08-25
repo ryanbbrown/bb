@@ -28,7 +28,6 @@ function pluginReplacement(
 function renderList(
   replacement: ResolvedReplacement<PluginThreadListSlot>,
   searchQuery = "",
-  isSearchFieldOpen = false,
 ) {
   const ui = (query: string) => (
     <MemoryRouter>
@@ -37,7 +36,6 @@ function renderList(
           replacement={replacement}
           original={<div data-testid="bb-thread-list">bb thread list</div>}
           searchQuery={query}
-          isSearchFieldOpen={isSearchFieldOpen}
           onNavigate={() => {}}
         />
       </SidebarProvider>
@@ -97,52 +95,5 @@ describe("PluginThreadList experimental_Original alias", () => {
 
     expect(screen.getByTestId("bb-thread-list")).toBeDefined();
     expect(warn).not.toHaveBeenCalled();
-  });
-});
-
-describe("PluginThreadList projection props", () => {
-  it.each([
-    ["closed and empty", false, ""],
-    ["open and empty", true, ""],
-    ["open with a query", true, "alpha"],
-  ])(
-    "passes the %s search state through",
-    (_name, isSearchFieldOpen, searchQuery) => {
-      const received: PluginThreadListProps[] = [];
-      renderList(
-        pluginReplacement((props) => {
-          received.push(props);
-          return <div data-testid="plugin-list" />;
-        }),
-        searchQuery,
-        isSearchFieldOpen,
-      );
-
-      expect(screen.getByTestId("plugin-list")).toBeDefined();
-      expect(received.at(-1)?.experimental_isSearchFieldOpen).toBe(
-        isSearchFieldOpen,
-      );
-      expect(received.at(-1)?.searchQuery).toBe(searchQuery);
-    },
-  );
-
-  it("keeps bound host components stable across renders", () => {
-    const received: PluginThreadListProps[] = [];
-    const { rerenderWith } = renderList(
-      pluginReplacement((props) => {
-        received.push(props);
-        return <div data-testid="plugin-list" />;
-      }),
-    );
-
-    rerenderWith("alpha");
-
-    expect(received[0]?.Original).toBe(received.at(-1)?.Original);
-    expect(received[0]?.experimental_Original).toBe(
-      received.at(-1)?.experimental_Original,
-    );
-    expect(received[0]?.experimental_SidebarThreadProjection).toBe(
-      received.at(-1)?.experimental_SidebarThreadProjection,
-    );
   });
 });
