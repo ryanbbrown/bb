@@ -15,7 +15,6 @@ import type {
   ThreadEventItemPresentation,
   ThreadEventRow,
   ThreadEventRowOfType,
-  ThreadEventUserContent,
   SystemThreadInterruptedReason,
   ThreadEventWarningCategory,
   ThreadTimelinePendingTodos,
@@ -99,12 +98,6 @@ interface InputAcceptedArgs extends ProviderTurnEventOptions {
   clientRequestId: ClientTurnRequestId;
 }
 
-interface ProviderUserMessageArgs extends ProviderTurnEventOptions {
-  content?: ThreadEventUserContent[];
-  itemId?: string;
-  text: string;
-}
-
 interface AssistantDeltaArgs extends ProviderTurnEventOptions {
   delta: string;
   itemId?: string;
@@ -114,6 +107,11 @@ interface AssistantDeltaArgs extends ProviderTurnEventOptions {
 interface AssistantCompletedArgs extends ProviderTurnEventOptions {
   itemId?: string;
   parentToolCallId?: string;
+  text: string;
+}
+
+interface ProviderUserMessageArgs extends ProviderTurnEventOptions {
+  itemId?: string;
   text: string;
 }
 
@@ -609,7 +607,7 @@ export function createTimelineEventFactory(
           item: {
             type: "userMessage",
             id: args.itemId ?? `provider-input-${base.seq}`,
-            content: args.content ?? [{ type: "text", text: args.text }],
+            content: [{ type: "text", text: args.text }],
             ...(args.parentToolCallId
               ? { parentToolCallId: args.parentToolCallId }
               : {}),

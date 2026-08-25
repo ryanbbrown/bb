@@ -488,29 +488,19 @@ export function parseProviderUserMessage(
 ): EventProjectionUserMessage | null {
   if (
     decoded.type !== "item/completed" ||
-    decoded.item.type !== "userMessage" ||
-    decoded.item.clientRequestId !== undefined
+    decoded.item.type !== "userMessage"
   ) {
     return null;
   }
-
-  const parsedInput = parsePromptInput(
-    decoded.item.content.map(
-      (part): PromptInput =>
-        part.type === "text" ? { ...part, mentions: [] } : part,
-    ),
-  );
-  if (!parsedInput) {
+  const text = decoded.item.content
+    .flatMap((part) => (part.type === "text" ? [part.text] : []))
+    .join("");
+  if (text.length === 0) {
     return null;
   }
-
   return {
     kind: "user",
-    id: messageId(
-      decoded.threadId,
-      "provider-user",
-      `${meta.seq}:${decoded.item.id}`,
-    ),
+    id: messageId(decoded.threadId, "provider-input", decoded.item.id),
     threadId: decoded.threadId,
     sourceSeqStart: meta.seq,
     sourceSeqEnd: meta.seq,
@@ -524,9 +514,8 @@ export function parseProviderUserMessage(
     systemMessageKind: "unlabeled",
     systemMessageSubject: null,
     turnRequest: { isGrouped: false, kind: "steer", status: "accepted" },
-    text: parsedInput.text,
+    text,
     mentions: [],
-    attachments: buildAttachments(parsedInput),
   };
 }
 

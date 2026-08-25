@@ -1015,7 +1015,6 @@ describe("host-daemon command schemas", () => {
   // open so remote pages can discover helpers on non-primary machines.
   // Version 139 keeps resumed Claude task notifications from claiming newly
   // accepted human input before the SDK prompt iterator consumes it.
-  // Version 152 keeps consecutive Pi assistant output on one canonical item.
   // Version 137 removes the `claudeCodeMockCliTraffic` runtime option with
   // the Claude Code mock CLI traffic experiment.
   // Version 136 ships the narrow-grammar provider bridges: served bridge

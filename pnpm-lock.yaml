@@ -1108,8 +1108,8 @@ importers:
         specifier: ^1.6.23
         version: 1.6.23(@better-auth/core@1.6.23(@better-auth/utils@0.4.2)(@better-fetch/fetch@1.3.1)(@cloudflare/workers-types@4.20260702.1)(@opentelemetry/api@1.9.1)(better-call@1.3.7(zod@4.3.6))(jose@6.2.3)(kysely@0.29.3)(nanostores@1.2.0))(@better-auth/utils@0.4.2)(drizzle-orm@0.38.4(@cloudflare/workers-types@4.20260702.1)(@opentelemetry/api@1.9.1)(@types/better-sqlite3@7.6.13)(@types/react@19.2.13)(better-sqlite3@12.10.0)(kysely@0.29.3)(react@19.2.4))
       '@earendil-works/pi-ai':
-        specifier: 0.84.2
-        version: 0.84.2(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+        specifier: 0.84.0
+        version: 0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@get-bb/plugin-sdk':
         specifier: workspace:*
         version: link:../../packages/plugin-sdk
@@ -3430,7 +3430,7 @@ importers:
         version: typescript@7.0.2
       vitest:
         specifier: ^4.1.1
-        version: 4.1.1(@opentelemetry/api@1.9.0)(@types/node@22.19.10)(jsdom@29.0.1(@noble/hashes@2.0.1))(msw@2.12.14(@types/node@22.19.10)(@typescript/typescript6@6.0.2))(vite@8.0.12(@types/node@22.19.10)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0))
+        version: 4.1.1(@opentelemetry/api@1.9.1)(@types/node@22.19.10)(jsdom@29.0.1(@noble/hashes@2.0.1))(msw@2.12.14(@types/node@22.19.10)(@typescript/typescript6@6.0.2))(vite@8.0.12(@types/node@22.19.10)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0))
 
   plugins/provider-retry:
     dependencies:
@@ -4718,11 +4718,6 @@ packages:
     engines: {node: '>=22.19.0'}
     hasBin: true
 
-  '@earendil-works/pi-ai@0.84.2':
-    resolution: {integrity: sha512-6MzsrYIYNVlE7SfpbL2yYb67Qo58p/7Q+xWG1RZvoX1P80aRCHSod2/13aFpxkow1lPO2LEh3c495J0Gwmyjig==}
-    engines: {node: '>=22.19.0'}
-    hasBin: true
-
   '@earendil-works/pi-client@0.84.0':
     resolution: {integrity: sha512-fHXgw1FdLDh+uw42SvTkJRBfgc3nsrslghvbRFEAxdjfcOxJt7hPsTj4HHNK96wMy1f+zvQYL8Y2znvFoZ8JDA==}
     engines: {node: '>=22.19.0'}
@@ -4738,10 +4733,6 @@ packages:
 
   '@earendil-works/pi-telemetry@0.84.0':
     resolution: {integrity: sha512-g6hLxEfAUk3zJlDmFWhWHJNcYXYiNGeWuJC9YkcHpkdkj0gxD4uaMNNNU3QsAEJXW9Qcxnl21+U8GfhVsc8C5g==}
-    engines: {node: '>=22.19.0'}
-
-  '@earendil-works/pi-telemetry@0.84.2':
-    resolution: {integrity: sha512-wg5caea7uIv1BHRBm2Y116RvFG4oSAiP5qk9tA2463PDGIr4K8M1Ceyyg5DOpF/shUUl0gk826yQJAeAcHYB9g==}
     engines: {node: '>=22.19.0'}
 
   '@earendil-works/pi-tui@0.84.0':
@@ -13060,17 +13051,6 @@ packages:
       zod:
         optional: true
 
-  openai@6.40.0:
-    resolution: {integrity: sha512-MWtTjd/gQt4jpbji61NTgFWJLoY/PdRJ6wG9/ZDRMYNMlBKrCrSlkLI+KgHP1vR1qT6LKSAyAqIxno6lcK9JiA==}
-    peerDependencies:
-      ws: ^8.18.0
-      zod: 4.3.6
-    peerDependenciesMeta:
-      ws:
-        optional: true
-      zod:
-        optional: true
-
   ora@3.4.0:
     resolution: {integrity: sha512-eNwHudNbO1folBP3JsZ19v9azXWtQZjICdr3Q0TDPIaeBQ3mXLrh54wM+er0+hSp+dWKf+Z8KM58CYzEyIYxYg==}
     engines: {node: '>=6'}
@@ -16548,7 +16528,7 @@ snapshots:
 
   '@earendil-works/pi-agent-core@0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
     dependencies:
-      '@earendil-works/pi-ai': 0.84.2(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+      '@earendil-works/pi-ai': 0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@earendil-works/pi-telemetry': 0.84.0
       diff: 8.0.4
       ignore: 7.0.5
@@ -16584,27 +16564,6 @@ snapshots:
       - ws
       - zod
 
-  '@earendil-works/pi-ai@0.84.2(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
-    dependencies:
-      '@anthropic-ai/sdk': 0.91.1(zod@4.3.6)
-      '@aws-sdk/client-bedrock-runtime': 3.1048.0
-      '@earendil-works/pi-telemetry': 0.84.2
-      '@google/genai': 1.52.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))
-      '@opentelemetry/api': 1.9.0
-      '@smithy/node-http-handler': 4.7.3
-      http-proxy-agent: 7.0.2
-      https-proxy-agent: 7.0.6
-      openai: 6.40.0(ws@8.21.0)(zod@4.3.6)
-      partial-json: 0.1.7
-      typebox: 1.3.7
-    transitivePeerDependencies:
-      - '@modelcontextprotocol/sdk'
-      - bufferutil
-      - supports-color
-      - utf-8-validate
-      - ws
-      - zod
-
   '@earendil-works/pi-client@0.84.0':
     dependencies:
       '@earendil-works/pi-protocol': 0.84.0
@@ -16612,7 +16571,7 @@ snapshots:
   '@earendil-works/pi-coding-agent@0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)':
     dependencies:
       '@earendil-works/pi-agent-core': 0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
-      '@earendil-works/pi-ai': 0.84.2(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
+      '@earendil-works/pi-ai': 0.84.0(@modelcontextprotocol/sdk@1.29.0(zod@4.3.6))(ws@8.21.0)(zod@4.3.6)
       '@earendil-works/pi-client': 0.84.0
       '@earendil-works/pi-protocol': 0.84.0
       '@earendil-works/pi-tui': 0.84.0
@@ -16647,8 +16606,6 @@ snapshots:
       typebox: 1.3.7
 
   '@earendil-works/pi-telemetry@0.84.0': {}
-
-  '@earendil-works/pi-telemetry@0.84.2': {}
 
   '@earendil-works/pi-tui@0.84.0':
     dependencies:
@@ -26198,11 +26155,6 @@ snapshots:
       ws: 8.21.0
       zod: 4.3.6
 
-  openai@6.40.0(ws@8.21.0)(zod@4.3.6):
-    optionalDependencies:
-      ws: 8.21.0
-      zod: 4.3.6
-
   ora@3.4.0:
     dependencies:
       chalk: 2.4.2
@@ -28695,35 +28647,6 @@ snapshots:
       - terser
       - tsx
       - yaml
-
-  vitest@4.1.1(@opentelemetry/api@1.9.0)(@types/node@22.19.10)(jsdom@29.0.1(@noble/hashes@2.0.1))(msw@2.12.14(@types/node@22.19.10)(@typescript/typescript6@6.0.2))(vite@8.0.12(@types/node@22.19.10)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0)):
-    dependencies:
-      '@vitest/expect': 4.1.1
-      '@vitest/mocker': 4.1.1(msw@2.12.14(@types/node@22.19.10)(@typescript/typescript6@6.0.2))(vite@8.0.12(@types/node@22.19.10)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0))
-      '@vitest/pretty-format': 4.1.1
-      '@vitest/runner': 4.1.1
-      '@vitest/snapshot': 4.1.1
-      '@vitest/spy': 4.1.1
-      '@vitest/utils': 4.1.1
-      es-module-lexer: 2.0.0
-      expect-type: 1.3.0
-      magic-string: 0.30.21
-      obug: 2.1.1
-      pathe: 2.0.3
-      picomatch: 4.0.5
-      std-env: 4.0.0
-      tinybench: 2.9.0
-      tinyexec: 1.0.2
-      tinyglobby: 0.2.17
-      tinyrainbow: 3.1.1
-      vite: 8.0.12(@types/node@22.19.10)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0)
-      why-is-node-running: 2.3.0
-    optionalDependencies:
-      '@opentelemetry/api': 1.9.0
-      '@types/node': 22.19.10
-      jsdom: 29.0.1(@noble/hashes@2.0.1)
-    transitivePeerDependencies:
-      - msw
 
   vitest@4.1.1(@opentelemetry/api@1.9.1)(@types/node@22.19.10)(jsdom@29.0.1(@noble/hashes@2.0.1))(msw@2.12.14(@types/node@22.19.10)(@typescript/typescript6@6.0.2))(vite@8.0.12(@types/node@22.19.10)(esbuild@0.19.12)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.1)(yaml@2.9.0)):
     dependencies:

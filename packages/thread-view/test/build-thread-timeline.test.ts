@@ -3005,33 +3005,6 @@ describe("buildThreadTimelineFromEvents", () => {
     });
   });
 
-  it("renders provider-origin user input in the conversation timeline", () => {
-    const event = createTimelineEventFactory({ threadId: "thread-1" });
-    const rows = buildTimelineRows(
-      fromRows([
-        event.turnStarted({ turnId: "turn-process" }),
-        event.providerUserMessage({
-          turnId: "turn-process",
-          text: "Process build-assets completed successfully",
-        }),
-      ]),
-    );
-
-    expect(rows).toContainEqual(
-      expect.objectContaining({
-        kind: "conversation",
-        role: "user",
-        initiator: "system",
-        text: "Process build-assets completed successfully",
-        turnRequest: {
-          isGrouped: false,
-          kind: "steer",
-          status: "accepted",
-        },
-      }),
-    );
-  });
-
   it("leaves file-change paths outside the workspace root untouched", () => {
     const rows = collectFileChangeRows(
       buildTimelineRows(

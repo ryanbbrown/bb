@@ -131,6 +131,8 @@ export interface PluginThreadListProps {
   /**
    * BB's thread list, bound to this sidebar instance. Render it to delegate
    * conditionally without re-entering plugin replacement resolution.
+   *
+   * @experimental Audit before relying on this as a stable contract.
    */
   Original: ComponentType;
   /** @deprecated Renamed to `Original` in SDK 0.4.16; removed in bb 0.42. */
@@ -416,15 +418,16 @@ export type ExperimentalPluginFixedTabReference<
     });
 
 /** A fixed tab declared by a plugin nav panel. */
-export type PluginFixedTabRegistration<Target extends JsonValue = never> =
-  ExperimentalPluginFixedTabReference<Target> & {
-    title: string;
-    /** Icon hint (BB icon name); unknown names fall back to a generic icon. */
-    icon: string;
-    component: ComponentType<PluginNavPanelProps>;
-    /** `flush` lets the component own padding and scrolling. */
-    layout?: "padded" | "flush";
-  };
+export type PluginFixedTabRegistration<
+  Target extends JsonValue = never,
+> = ExperimentalPluginFixedTabReference<Target> & {
+  title: string;
+  /** Icon hint (BB icon name); unknown names fall back to a generic icon. */
+  icon: string;
+  component: ComponentType<PluginNavPanelProps>;
+  /** `flush` lets the component own padding and scrolling. */
+  layout?: "padded" | "flush";
+};
 
 /** A fixed tab with either no target or an owner-validated JSON target. */
 export type PluginFixedTabDeclaration =

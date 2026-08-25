@@ -2991,6 +2991,9 @@ describe("PromptBoxInternal selection reveal", () => {
     const lines = Array.from({ length: 40 }, (_, index) => `line ${index}`);
     const { promptBoxRef } = renderPromptBox(lines.join("\n"));
 
+    await focusPromptEnd(promptBoxRef);
+    await nextAnimationFrame();
+
     const scrollContainer = document.querySelector(
       "[data-promptbox-editor-scroll]",
     );
@@ -3026,8 +3029,6 @@ describe("PromptBoxInternal selection reveal", () => {
       });
 
     try {
-      await focusPromptEnd(promptBoxRef);
-      await nextAnimationFrame();
       await waitFor(() => expect(view).not.toBeNull());
       const liveView = view as unknown as EditorView;
       const { doc } = liveView.state;

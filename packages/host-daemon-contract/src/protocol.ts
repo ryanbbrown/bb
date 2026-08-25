@@ -126,10 +126,9 @@
 //
 // Version 152 records a displayed Pi extension message (`pi.sendMessage` with
 // `triggerTurn`, e.g. a process-completion notification) as the `userMessage`
-// item of the turn it woke, stops surfacing its `message_start`/`message_end`
-// boundaries as `provider/unhandled`, and keeps consecutive assistant output
-// without a tool boundary on one canonical item. Older daemons emit unhandled
-// rows, omit extension-triggered input, or split the assistant output.
+// item of the turn it woke, and stops surfacing its `message_start`/
+// `message_end` boundaries as `provider/unhandled`. Older daemons emit the
+// unhandled rows and no input for extension-triggered turns.
 //
 // Version 151 lets the daemon re-resolve an auto/steer turn target from its
 // live runtime after the server observed an active thread but before it had a
