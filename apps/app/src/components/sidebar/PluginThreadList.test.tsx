@@ -1,99 +1,148 @@
 // @vitest-environment jsdom
-
 import { cleanup, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PluginThreadListProps } from "@get-bb/plugin-sdk";
+import { resetAllCrashedPluginSlotsForTest } from "@/components/plugin/PluginSlotMount";
 import { SidebarProvider } from "@/components/ui/sidebar.js";
+import { resetDeprecatedAliasWarningsForTests } from "@/lib/plugin-sdk-deprecated-aliases";
+import type { ResolvedReplacement } from "@/lib/plugin-slot-resolvers";
 import type { PluginThreadListSlot } from "@/lib/plugin-slots";
 import { PluginThreadList } from "./PluginThreadList";
 
-vi.mock("@/lib/plugin-css", () => ({ usePluginCss: () => {} }));
-
-const receivedProps: PluginThreadListProps[] = [];
-
-function ProbeThreadList(props: PluginThreadListProps) {
-  receivedProps.push(props);
-  return <div data-testid="plugin-list" />;
+function pluginReplacement(
+  component: (props: PluginThreadListProps) => React.ReactNode,
+): ResolvedReplacement<PluginThreadListSlot> {
+  return {
+    kind: "plugin",
+    registration: {
+      pluginId: "demo",
+      generation: 1,
+      id: "list",
+      title: "Demo list",
+      component,
+    },
+  };
 }
 
-const registration: PluginThreadListSlot = {
-  id: "sidebar",
-  title: "Firstmate",
-  component: ProbeThreadList,
-  pluginId: "firstmate",
-  generation: 1,
-};
-
-function renderList({
-  isSearchFieldOpen,
-  searchQuery,
-}: {
-  isSearchFieldOpen: boolean;
-  searchQuery: string;
-}) {
-  return render(
+function renderList(
+  replacement: ResolvedReplacement<PluginThreadListSlot>,
+  searchQuery = "",
+  isSearchFieldOpen = false,
+) {
+  const ui = (query: string) => (
     <MemoryRouter>
       <SidebarProvider>
         <PluginThreadList
-          replacement={{ kind: "plugin", registration }}
-          original={<div data-testid="original-list" />}
-          searchQuery={searchQuery}
+          replacement={replacement}
+          original={<div data-testid="bb-thread-list">bb thread list</div>}
+          searchQuery={query}
           isSearchFieldOpen={isSearchFieldOpen}
           onNavigate={() => {}}
         />
       </SidebarProvider>
-    </MemoryRouter>,
+    </MemoryRouter>
   );
+  const result = render(ui(searchQuery));
+  return {
+    ...result,
+    rerenderWith: (query: string) => result.rerender(ui(query)),
+  };
 }
 
-describe("PluginThreadList", () => {
-  afterEach(() => {
-    cleanup();
-    receivedProps.length = 0;
+beforeEach(() => {
+  resetDeprecatedAliasWarningsForTests();
+});
+
+afterEach(() => {
+  cleanup();
+  resetAllCrashedPluginSlotsForTest();
+  vi.restoreAllMocks();
+});
+
+/**
+ * A bundle built against an SDK before 0.4.16 reads `experimental_Original`
+ * (renamed `Original` in 0.4.16). The host passes both for one release.
+ */
+describe("PluginThreadList experimental_Original alias", () => {
+  it("delegates to BB's list through the alias and warns once across renders", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const seen: string[] = [];
+    const { rerenderWith } = renderList(
+      pluginReplacement(
+        ({ experimental_Original: LegacyOriginal, searchQuery }) => {
+          seen.push(searchQuery);
+          return LegacyOriginal === undefined ? (
+            <div>alias missing</div>
+          ) : (
+            <LegacyOriginal />
+          );
+        },
+      ),
+    );
+
+    expect(screen.getByTestId("bb-thread-list")).toBeDefined();
+    rerenderWith("needle");
+    expect(screen.getByTestId("bb-thread-list")).toBeDefined();
+    expect(seen).toEqual(["", "needle"]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn).toHaveBeenCalledWith(
+      "experimental_Original is deprecated; use Original. Removed in bb 0.42",
+    );
   });
 
-  // `searchQuery === ""` cannot distinguish a closed field from an open, empty
-  // one, so the open flag has to travel separately.
+  it("never warns for a list that reads Original", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    renderList(pluginReplacement(({ Original }) => <Original />));
+
+    expect(screen.getByTestId("bb-thread-list")).toBeDefined();
+    expect(warn).not.toHaveBeenCalled();
+  });
+});
+
+describe("PluginThreadList projection props", () => {
   it.each([
     ["closed and empty", false, ""],
     ["open and empty", true, ""],
     ["open with a query", true, "alpha"],
   ])(
     "passes the %s search state through",
-    (_name, isSearchFieldOpen, query) => {
-      renderList({ isSearchFieldOpen, searchQuery: query });
+    (_name, isSearchFieldOpen, searchQuery) => {
+      const received: PluginThreadListProps[] = [];
+      renderList(
+        pluginReplacement((props) => {
+          received.push(props);
+          return <div data-testid="plugin-list" />;
+        }),
+        searchQuery,
+        isSearchFieldOpen,
+      );
 
-      expect(screen.getByTestId("plugin-list")).not.toBeNull();
-      const props = receivedProps.at(-1);
-      expect(props?.experimental_isSearchFieldOpen).toBe(isSearchFieldOpen);
-      expect(props?.searchQuery).toBe(query);
+      expect(screen.getByTestId("plugin-list")).toBeDefined();
+      expect(received.at(-1)?.experimental_isSearchFieldOpen).toBe(
+        isSearchFieldOpen,
+      );
+      expect(received.at(-1)?.searchQuery).toBe(searchQuery);
     },
   );
 
-  it("supplies a stable projection renderer across re-renders", () => {
-    const { rerender } = renderList({
-      isSearchFieldOpen: false,
-      searchQuery: "",
-    });
-    rerender(
-      <MemoryRouter>
-        <SidebarProvider>
-          <PluginThreadList
-            replacement={{ kind: "plugin", registration }}
-            original={<div data-testid="original-list" />}
-            searchQuery="alpha"
-            isSearchFieldOpen
-            onNavigate={() => {}}
-          />
-        </SidebarProvider>
-      </MemoryRouter>,
+  it("keeps bound host components stable across renders", () => {
+    const received: PluginThreadListProps[] = [];
+    const { rerenderWith } = renderList(
+      pluginReplacement((props) => {
+        received.push(props);
+        return <div data-testid="plugin-list" />;
+      }),
     );
 
-    const [first, last] = [receivedProps[0], receivedProps.at(-1)];
-    expect(first?.experimental_SidebarThreadProjection).toBe(
-      last?.experimental_SidebarThreadProjection,
+    rerenderWith("alpha");
+
+    expect(received[0]?.Original).toBe(received.at(-1)?.Original);
+    expect(received[0]?.experimental_Original).toBe(
+      received.at(-1)?.experimental_Original,
     );
-    expect(first?.experimental_Original).toBe(last?.experimental_Original);
+    expect(received[0]?.experimental_SidebarThreadProjection).toBe(
+      received.at(-1)?.experimental_SidebarThreadProjection,
+    );
   });
 });

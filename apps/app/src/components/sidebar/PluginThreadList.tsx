@@ -1,6 +1,7 @@
 import { useCallback, type ReactNode } from "react";
 import { toast } from "sonner";
 import { PluginReplacementSlot } from "@/components/plugin/PluginReplacementSlot";
+import { deprecatedOriginalAlias } from "@/lib/plugin-sdk-deprecated-aliases";
 import { useSidebar } from "@/components/ui/sidebar.js";
 import { useRouteState } from "@/hooks/useRouteState";
 import type { ResolvedReplacement } from "@/lib/plugin-slot-resolvers";
@@ -73,8 +74,9 @@ export function PluginThreadList({
             isCompactViewport={isCompactViewport}
             onNavigate={onNavigate}
             searchQuery={searchQuery}
+            Original={BoundOriginal}
             experimental_isSearchFieldOpen={isSearchFieldOpen}
-            experimental_Original={BoundOriginal}
+            experimental_Original={deprecatedOriginalAlias(BoundOriginal)}
             experimental_SidebarThreadProjection={BoundSidebarThreadProjection}
           />
         </SidebarThreadProjectionBindingProvider>

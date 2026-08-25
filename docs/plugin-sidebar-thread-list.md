@@ -79,7 +79,7 @@ interface PluginThreadListProps {
    * BB's thread list bound to this sidebar instance. Render it to delegate
    * conditionally without re-entering plugin replacement resolution.
    */
-  experimental_Original: ComponentType;
+  Original: ComponentType;
   /**
    * True while the host search field is open, empty query included.
    * `searchQuery === ""` cannot tell an open, empty field from a closed one,
@@ -333,9 +333,9 @@ over eligible threads only.
 **Everything else is atomic.** bb validates the whole request against its
 current snapshot. Any duplicate, ID it has never heard of, uncovered thread,
 malformed value, or exceeded limit rejects the entire projection: bb renders
-`experimental_Original` and shows one bounded diagnostic toast, deduplicated
+`Original` and shows one bounded diagnostic toast, deduplicated
 per plugin, registration, generation, and failure reason. It also renders
-`experimental_Original` whenever `experimental_isSearchFieldOpen` is true, so a
+`Original` whenever `experimental_isSearchFieldOpen` is true, so a
 plugin can render the projection unconditionally.
 
 **Region semantics.**

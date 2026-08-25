@@ -15,9 +15,8 @@ import type {
   PluginCatalogSearchResult,
   PluginUpdateCheckEntry as PluginUpdateResult,
 } from "@bb/server-contract";
-import { installedPluginSchema } from "@bb/server-contract";
 import { PLUGIN_SDK_VERSION } from "@bb/domain";
-import { BbHttpError } from "@bb/sdk";
+import { BbHttpError, pluginMutationResponseSchema } from "@bb/sdk";
 import { parseDataDirEnvValue, resolveProdDataDir } from "@bb/config/runtime";
 import {
   migratePluginToPackageLayout,
@@ -101,12 +100,6 @@ async function cliBuildToolchain(): Promise<PluginBuildToolchain> {
   });
 }
 
-const pluginMutationResultSchema = z.object({
-  ok: z.boolean(),
-  error: z.string().optional(),
-  plugin: installedPluginSchema.optional(),
-  plugins: z.array(installedPluginSchema).optional(),
-});
 async function searchCatalog(
   baseUrl: string,
   query: string,
@@ -478,9 +471,9 @@ async function probeSdkVersionPublished(): Promise<
 /**
  * Install a fresh scaffold's npm tree, reporting whether it is usable.
  *
- * Generated source imports packages `bb plugin build` inlines into dist/ (zod;
- * with --app, the vendored components' deps), and path: installs run server.ts
- * from source, so the tree must exist before the plugin can build or load.
+ * Generated source imports packages `bb plugin build` inlines into dist/ (zod
+ * and the vendored components' deps), and path: installs run server.ts from
+ * source, so the tree must exist before the plugin can build or load.
  *
  * `--include=dev` rather than a bare `npm install`: the packaged CLI runs with
  * NODE_ENV=production — bb-app's launcher sets it for every `bb` invocation —
@@ -1295,12 +1288,8 @@ export function registerPluginCommands(
     .description(
       "Scaffold a plugin in ./bb-plugin-<name>; accepts @scope/bb-plugin-<name>",
     )
-    .option(
-      "--app",
-      "Also scaffold a frontend entry (app.tsx, built by `bb plugin build`)",
-    )
     .action(
-      action(async (name: string, opts: { app?: boolean }) => {
+      action(async (name: string) => {
         const target = resolveNewPluginTarget(name);
         if (target === null) {
           console.error(
@@ -1314,7 +1303,6 @@ export function registerPluginCommands(
           targetDir,
           packageName,
           bbVersion: resolveBbCliVersion(),
-          app: opts.app ?? false,
         });
         console.log(`Created ${directoryName}/ (${packageName}).`);
         // Before the install, so a resolution failure below reads as expected
@@ -1595,7 +1583,7 @@ export function registerPluginCommands(
             );
           },
           reloadPlugin: async () => {
-            const result = pluginMutationResultSchema.parse(
+            const result = pluginMutationResponseSchema.parse(
               await callPlugins(
                 getUrl(),
                 `/reload?id=${encodeURIComponent(entry.id)}`,
@@ -1639,7 +1627,7 @@ export function registerPluginCommands(
     .action(
       action(async (id: string | undefined, opts: JsonOutputOptions) => {
         const query = id ? `?id=${encodeURIComponent(id)}` : "";
-        const response = pluginMutationResultSchema.parse(
+        const response = pluginMutationResponseSchema.parse(
           await callPlugins(getUrl(), `/reload${query}`, "POST"),
         );
         const result =
@@ -1676,7 +1664,7 @@ export function registerPluginCommands(
       .option("--json", "Output JSON")
       .action(
         action(async (id: string, opts: JsonOutputOptions) => {
-          const result = pluginMutationResultSchema.parse(
+          const result = pluginMutationResponseSchema.parse(
             await callPlugins(
               getUrl(),
               `/${encodeURIComponent(id)}/${name}`,
@@ -1869,7 +1857,7 @@ export function registerPluginCommands(
     .option("--json", "Output JSON")
     .action(
       action(async (id: string, opts: JsonOutputOptions) => {
-        const result = pluginMutationResultSchema.parse(
+        const result = pluginMutationResponseSchema.parse(
           await callPlugins(getUrl(), `/${encodeURIComponent(id)}`, "DELETE"),
         );
         if (opts.json) {

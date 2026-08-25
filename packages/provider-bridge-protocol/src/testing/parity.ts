@@ -11,19 +11,23 @@
  * replay the same recording, and `compareParity` diffs the two runs against an
  * explicit allowlist whose entries name their PR and reason.
  *
+ * Provider-agnostic on purpose: the caller names the recording, the bridge
+ * process to launch (`resolveProviderBridgeLaunch` builds one from a bridge
+ * module path), and — when the bridge spawns a provider child — a
+ * `ReplayProviderProfile` that points that child at the replay script. Nothing
+ * here knows which providers bb ships; `first-party-replay.ts` holds the
+ * first-party profiles and module paths, and `@bb/provider-parity` wires the
+ * real assembler and projector for the CLI. Published to plugins through
+ * `@get-bb/plugin-sdk/provider-bridge/testing`, so a third-party bridge can
+ * record in bb (docs/provider-bridge-protocol.md, "Record mode") and replay
+ * its own recordings with the same oracle the first-party bridges use.
+ *
  * This module is deliberately free of `@bb/agent-runtime` and `@bb/thread-view`
  * (both depend on this package): the delta assembler and the row projector are
- * injected. `@bb/provider-parity` wires the real ones and owns the CLI.
+ * injected.
  */
 import { spawn, type ChildProcess } from "node:child_process";
-import { randomUUID } from "node:crypto";
-import {
-  mkdirSync,
-  mkdtempSync,
-  realpathSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -39,7 +43,6 @@ import {
 } from "./calibration-diff.js";
 import type { RecordedCellReplay } from "../conformance/recorded.js";
 import {
-  COMMITTED_RECORDINGS_ROOT,
   listRecordedCells,
   readBridgeRecording,
   withCurrentBridgeLane,
@@ -53,10 +56,7 @@ import {
 
 /** One stateful assembler: `thread/delta` notifications in, events out. */
 export interface ParityAssembler {
-  assembleMessage(message: {
-    method?: string;
-    params?: unknown;
-  }): ThreadEvent[];
+  assembleMessage(message: { method?: string; params?: unknown }): ThreadEvent[];
 }
 
 export type CreateParityAssembler = (providerId: string) => ParityAssembler;
@@ -71,55 +71,128 @@ export type ParityRowProjector = (args: {
 // Bridge launch
 // ---------------------------------------------------------------------------
 
-/** Where each first-party bridge lives inside a checkout. */
-export const FIRST_PARTY_BRIDGE_MODULES: Readonly<
-  Record<string, { modulePath: string; pluginId: string }>
-> = {
-  codex: {
-    modulePath: "plugins/provider-codex/src/bridge/bridge.ts",
-    pluginId: "provider-codex",
-  },
-  "claude-code": {
-    modulePath: "plugins/provider-claude-code/src/bridge/bridge.ts",
-    pluginId: "provider-claude-code",
-  },
-  acp: {
-    modulePath: "plugins/provider-acp/src/bridge/bridge.ts",
-    pluginId: "provider-acp",
-  },
-  pi: {
-    modulePath: "packages/agent-runtime/src/pi/bridge/bridge.ts",
-    pluginId: "pi",
-  },
-};
-
-const BRIDGE_WORKER_ENTRY =
-  "packages/provider-bridge-protocol/src/bridge-worker-entry.ts";
-
-export interface ParityBridgeSpec {
-  /** A bb checkout root (the pre-migration worktree, or `.`). */
-  checkoutRoot: string;
-  providerId: string;
-  /** Override the bridge module; defaults to the provider's first-party path. */
-  modulePath?: string;
-  pluginId?: string;
+/** A bridge process, ready to spawn: the bootstrap, the module, its scope. */
+export interface ProviderBridgeLaunch {
+  command: string;
+  args: string[];
+  cwd: string;
+  /** Added to the harness's own environment for the bridge process. */
+  env: Record<string, string>;
 }
 
-export type ReplayDialect = "json-rpc" | "claude-cli";
+export interface ResolveProviderBridgeLaunchOptions {
+  /**
+   * The bridge module: the file whose `experimental_providerBridge` export the
+   * bootstrap runs. Absolute; a built artifact (`host.mjs`) or, with a
+   * TypeScript loader among `nodeArgs`, the source file.
+   */
+  modulePath: string;
+  /** The plugin the bridge belongs to (its data and temp directories). */
+  pluginId: string;
+  /** Working directory of the bridge process; defaults to the caller's. */
+  cwd?: string;
+  /**
+   * The plugin data directory the bootstrap hands the bridge; defaults to a
+   * fresh temp directory per launch.
+   */
+  dataDir?: string;
+  /**
+   * The provider-bridge bootstrap (`bridge-worker-entry`) that runs the
+   * module; defaults to the kit's own — the source entry in a bb checkout,
+   * the bundled one in the published SDK.
+   */
+  bootstrapPath?: string;
+  /**
+   * Node flags before the bootstrap. Defaults: in a bb checkout (source
+   * bootstrap) `--conditions=source` plus the tsx loader; otherwise the tsx
+   * loader for a TypeScript module and nothing for a built one.
+   */
+  nodeArgs?: string[];
+}
+
+const SOURCE_BOOTSTRAP = fileURLToPath(new URL("../bridge-worker-entry.ts", import.meta.url));
+const BUNDLED_BOOTSTRAP = fileURLToPath(new URL("./provider-bridge-worker-entry.mjs", import.meta.url));
+
+/**
+ * The bootstrap this kit ships. From a checkout the protocol package's own
+ * TypeScript entry; from the published SDK the bundle built beside this
+ * module (`packages/plugin-sdk/scripts/build-runtime.mjs`).
+ */
+export function resolveProviderBridgeBootstrapPath(): string {
+  if (existsSync(SOURCE_BOOTSTRAP)) return SOURCE_BOOTSTRAP;
+  if (existsSync(BUNDLED_BOOTSTRAP)) return BUNDLED_BOOTSTRAP;
+  throw new Error(
+    `provider-bridge bootstrap not found at ${SOURCE_BOOTSTRAP} or ${BUNDLED_BOOTSTRAP}`,
+  );
+}
+
+function isTypeScriptPath(path: string): boolean {
+  return /\.[cm]?tsx?$/u.test(path);
+}
+
+function tsxSpecifier(): string {
+  return import.meta.resolve("tsx");
+}
+
+function defaultNodeArgs(bootstrapPath: string, modulePath: string): string[] {
+  if (isTypeScriptPath(bootstrapPath)) {
+    // A checkout: workspace packages resolve to their sources.
+    return ["--conditions=source", "--import", tsxSpecifier()];
+  }
+  return isTypeScriptPath(modulePath) ? ["--import", tsxSpecifier()] : [];
+}
+
+/**
+ * The process that runs one bridge module through the bootstrap — exactly the
+ * shape the runtime spawns, so a replayed bridge sees the argv, stdin framing
+ * and signal handling it gets in production.
+ */
+export function resolveProviderBridgeLaunch(
+  options: ResolveProviderBridgeLaunchOptions,
+): ProviderBridgeLaunch {
+  if (!isAbsolute(options.modulePath)) {
+    throw new Error(`bridge module path must be absolute: ${options.modulePath}`);
+  }
+  const bootstrapPath = options.bootstrapPath ?? resolveProviderBridgeBootstrapPath();
+  const dataDir = options.dataDir ?? mkdtempSync(join(tmpdir(), "bb-parity-data-"));
+  return {
+    command: process.execPath,
+    args: [
+      ...(options.nodeArgs ?? defaultNodeArgs(bootstrapPath, options.modulePath)),
+      bootstrapPath,
+      options.modulePath,
+      options.pluginId,
+      dataDir,
+    ],
+    cwd: options.cwd ?? process.cwd(),
+    env: {},
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Replay profile: how a bridge reaches the replay child
+// ---------------------------------------------------------------------------
+
+export type ReplayDialect = "json-rpc" | "claude-cli" | "pi-rpc";
 
 /**
  * How a provider's bridge is pointed at the replay child. Codex reads its
- * app-server command from env, Claude its CLI path from env, and an ACP
- * bridge its agent command from the launch spec inside `thread/start`.
+ * app-server command from env, Claude its CLI path from env, pi its RPC
+ * command from env (`pi-rpc`: JSON lines plus the extension channel on fds
+ * 3/4), and an ACP bridge its agent command from the launch spec inside
+ * `thread/start`. A bridge with no provider child (the echo example) needs no
+ * profile at all.
  */
 export interface ReplayProviderProfile {
+  /** The protocol the replay child speaks on its pipe. */
   dialect: ReplayDialect;
-  bridgeFamily: keyof typeof FIRST_PARTY_BRIDGE_MODULES;
+  /** Environment the bridge reads the child's command from. */
   env(args: {
     replayCommand: string[];
     wrapperPath: string;
     stateDir: string;
   }): Record<string, string>;
+  /** Rewrite a recorded runtime request that carries the child's command. */
   rewriteRuntimeLine?(line: string, args: { replayCommand: string[] }): string;
   /**
    * Provider state a bridge reads outside its provider pipe, seeded before
@@ -133,172 +206,11 @@ export interface ReplayProviderProfile {
   }): void;
 }
 
-export class UnreplayableProviderError extends Error {
-  constructor(providerId: string, reason: string) {
-    super(`provider "${providerId}" cannot be replayed: ${reason}`);
-    this.name = "UnreplayableProviderError";
-  }
-}
-
-export function resolveReplayProfile(
-  providerId: string,
-): ReplayProviderProfile {
-  if (providerId === "codex") {
-    return {
-      dialect: "json-rpc",
-      bridgeFamily: "codex",
-      env: ({ replayCommand }) => ({
-        BB_CODEX_BRIDGE_APP_SERVER_COMMAND: replayCommand[0],
-        BB_CODEX_BRIDGE_APP_SERVER_ARGS: JSON.stringify(replayCommand.slice(1)),
-      }),
-    };
-  }
-  if (providerId === "claude-code") {
-    return {
-      dialect: "claude-cli",
-      bridgeFamily: "claude-code",
-      // The Agent SDK runs a `.mjs` executable through node itself, so the
-      // wrapper module (which bakes the replay arguments in) is the "CLI".
-      // The config dir is the replay's own: the SDK reads and writes session
-      // transcripts under it, and a replay must not touch the user's.
-      env: ({ wrapperPath, stateDir }) => ({
-        BB_CLAUDE_CODE_EXECUTABLE: wrapperPath,
-        CLAUDE_CONFIG_DIR: claudeConfigDir(stateDir),
-      }),
-      prepareState: seedClaudeForkTranscripts,
-    };
-  }
-  if (providerId.startsWith("acp-")) {
-    return {
-      dialect: "json-rpc",
-      bridgeFamily: "acp",
-      env: () => ({}),
-      rewriteRuntimeLine: (line, { replayCommand }) =>
-        rewriteAcpLaunchSpec(line, replayCommand),
-    };
-  }
-  if (providerId === "pi") {
-    throw new UnreplayableProviderError(
-      providerId,
-      "pi runs its SDK in-process; its recordings capture the SDK boundary and have no provider child to replay",
-    );
-  }
-  throw new UnreplayableProviderError(providerId, "no replay profile");
-}
-
-function claudeConfigDir(stateDir: string): string {
-  return join(stateDir, "claude-config");
-}
-
-/** The Agent SDK's project directory name for a workspace path. */
-function claudeProjectDirName(workspaceDir: string): string {
-  return workspaceDir.replace(/[^a-zA-Z0-9]/g, "-");
-}
-
-/**
- * `forkSession` in the Agent SDK is a local file operation: it reads the
- * source session's transcript from the config dir's project directory and
- * writes the forked copy beside it. The transcript of the recorded source
- * session lives on the machine that recorded it, and its content does not
- * reach the replay (the forked "CLI" is the replay child), so every recorded
- * `thread/fork` gets a minimal transcript for its source session: one user
- * and one assistant entry, the assistant carrying the checkpoint id the fork
- * names, if any.
- */
-function seedClaudeForkTranscripts(args: {
-  recording: BridgeRecording;
-  stateDir: string;
-  workspaceDir: string;
-}): void {
-  const workspaceDir = realpathSync(args.workspaceDir);
-  const projectDir = join(
-    claudeConfigDir(args.stateDir),
-    "projects",
-    claudeProjectDirName(workspaceDir),
-  );
-  for (const entry of args.recording.entries) {
-    if (entry.dir !== "runtime→bridge") continue;
-    const message = parseWire(entry.line);
-    if (message === null || message.method !== "thread/fork") continue;
-    const params = message.params as
-      | {
-          sourceProviderThreadId?: unknown;
-          sourceProviderCheckpointId?: unknown;
-        }
-      | undefined;
-    const sessionId = params?.sourceProviderThreadId;
-    if (typeof sessionId !== "string") continue;
-    const checkpointId =
-      typeof params?.sourceProviderCheckpointId === "string"
-        ? params.sourceProviderCheckpointId
-        : randomUUID();
-    const userUuid = randomUUID();
-    const timestamp = "2026-01-01T00:00:00.000Z";
-    const transcript = [
-      {
-        type: "user",
-        uuid: userUuid,
-        parentUuid: null,
-        sessionId,
-        timestamp,
-        cwd: workspaceDir,
-        message: { role: "user", content: "recorded source session" },
-      },
-      {
-        type: "assistant",
-        uuid: checkpointId,
-        parentUuid: userUuid,
-        sessionId,
-        timestamp,
-        cwd: workspaceDir,
-        message: {
-          role: "assistant",
-          content: [{ type: "text", text: "ready" }],
-        },
-      },
-    ];
-    mkdirSync(projectDir, { recursive: true });
-    writeFileSync(
-      join(projectDir, `${sessionId}.jsonl`),
-      `${transcript.map((line) => JSON.stringify(line)).join("\n")}\n`,
-    );
-  }
-}
-
-function rewriteAcpLaunchSpec(line: string, replayCommand: string[]): string {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(line);
-  } catch {
-    return line;
-  }
-  if (typeof parsed !== "object" || parsed === null) {
-    return line;
-  }
-  const message = parsed as {
-    params?: { options?: { providerOptions?: Record<string, unknown> } };
-  };
-  const providerOptions = message.params?.options?.providerOptions;
-  const spec = providerOptions?.acpLaunchSpec;
-  if (
-    providerOptions === undefined ||
-    typeof spec !== "object" ||
-    spec === null
-  ) {
-    return line;
-  }
-  // The replay child is the whole agent: no model CLI to probe, no model flag
-  // to splice into its argv (`modelCli` would have the bridge run
-  // `node --list-models` and insert `--model` before the script path).
-  const { modelCli: _modelCli, ...rest } = spec as Record<string, unknown>;
-  providerOptions.acpLaunchSpec = {
-    ...rest,
-    command: replayCommand[0],
-    args: replayCommand.slice(1),
-    env: {},
-  };
-  return JSON.stringify(parsed);
-}
+/** A bridge that spawns no provider, or one whose child command is fixed. */
+export const DEFAULT_REPLAY_PROFILE: ReplayProviderProfile = {
+  dialect: "json-rpc",
+  env: () => ({}),
+};
 
 /**
  * A recorded request carries the recording machine's facts a replay must not
@@ -308,10 +220,7 @@ function rewriteAcpLaunchSpec(line: string, replayCommand: string[]): string {
  * provider inside it; it does not exist on another machine). Point both at
  * this replay's.
  */
-function rewriteRecordedMachineFacts(
-  line: string,
-  workspaceDir: string,
-): string {
+function rewriteRecordedMachineFacts(line: string, workspaceDir: string): string {
   if (!line.includes('"PATH"') && !line.includes('"cwd"')) {
     return line;
   }
@@ -321,14 +230,8 @@ function rewriteRecordedMachineFacts(
   } catch {
     return line;
   }
-  const params = (
-    parsed as {
-      params?: {
-        cwd?: unknown;
-        options?: { envVars?: Record<string, unknown> };
-      };
-    }
-  ).params;
+  const params = (parsed as { params?: { cwd?: unknown; options?: { envVars?: Record<string, unknown> } } })
+    .params;
   if (params === undefined) {
     return line;
   }
@@ -345,34 +248,15 @@ function rewriteRecordedMachineFacts(
   return changed ? JSON.stringify(parsed) : line;
 }
 
-function tsxSpecifier(): string {
-  return import.meta.resolve("tsx");
-}
-
-export function resolveBridgeLaunch(spec: ParityBridgeSpec): {
-  command: string;
-  args: string[];
-  cwd: string;
-} {
-  const checkoutRoot = resolve(spec.checkoutRoot);
-  const profile = resolveReplayProfile(spec.providerId);
-  const defaults = FIRST_PARTY_BRIDGE_MODULES[profile.bridgeFamily];
-  const modulePath = spec.modulePath ?? defaults.modulePath;
-  const pluginId = spec.pluginId ?? defaults.pluginId;
-  const dataDir = mkdtempSync(join(tmpdir(), "bb-parity-data-"));
-  return {
-    command: process.execPath,
-    args: [
-      "--conditions=source",
-      "--import",
-      tsxSpecifier(),
-      join(checkoutRoot, BRIDGE_WORKER_ENTRY),
-      isAbsolute(modulePath) ? modulePath : join(checkoutRoot, modulePath),
-      pluginId,
-      dataDir,
-    ],
-    cwd: checkoutRoot,
-  };
+/** The workspace the recording's session ran in: the first recorded `cwd`. */
+function recordedWorkspaceDir(recording: BridgeRecording): string | null {
+  for (const entry of recording.entries) {
+    if (entry.dir !== "runtime→bridge") continue;
+    const message = parseWire(entry.line);
+    const cwd = (message?.params as { cwd?: unknown } | undefined)?.cwd;
+    if (typeof cwd === "string" && cwd.length > 0) return cwd;
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -381,7 +265,12 @@ export function resolveBridgeLaunch(spec: ParityBridgeSpec): {
 
 export interface ReplayRecordingOptions {
   recordingDir: string;
-  bridge: ParityBridgeSpec;
+  /** The provider the recording belongs to; keys the assembler's ids. */
+  providerId: string;
+  /** The bridge process to replay through (see `resolveProviderBridgeLaunch`). */
+  bridge: ProviderBridgeLaunch;
+  /** How the bridge reaches the replay child; `DEFAULT_REPLAY_PROFILE` when omitted. */
+  profile?: ReplayProviderProfile;
   createAssembler: CreateParityAssembler;
   /**
    * The assembler that plans the replay's gates from the recorded
@@ -402,7 +291,13 @@ export interface ReplayRecordingOptions {
   /**
    * The quiet period after which a request is sent even though the bridge
    * has emitted fewer lines than the recording had before it — a divergent
-   * bridge pays this once per request instead of stalling.
+   * bridge pays this once per request instead of stalling. Only a plan from
+   * the recorded lane can be short for that reason: a plan from the current
+   * lane (`planFromCurrentLane`) was written by this very bridge, so a
+   * shortfall there is latency, never divergence, and the request waits for
+   * its events up to `timeoutMs` instead — a starved bridge (a loaded CI
+   * runner) still has provider lines to read, and a request sent on quiet
+   * alone lands before them, at a point the recording never had.
    */
   orderTimeoutMs?: number;
   /** Quiet period after the last request before the bridge is closed. */
@@ -458,9 +353,7 @@ interface ParsedWireMessage {
 function parseWire(line: string): ParsedWireMessage | null {
   try {
     const parsed: unknown = JSON.parse(line);
-    return typeof parsed === "object" && parsed !== null
-      ? (parsed as ParsedWireMessage)
-      : null;
+    return typeof parsed === "object" && parsed !== null ? (parsed as ParsedWireMessage) : null;
   } catch {
     return null;
   }
@@ -474,10 +367,7 @@ function isResponse(message: ParsedWireMessage): boolean {
   return message.id !== undefined && message.method === undefined;
 }
 
-function countTurnBoundaries(events: readonly ThreadEvent[]): {
-  started: number;
-  completed: number;
-} {
+function countTurnBoundaries(events: readonly ThreadEvent[]): { started: number; completed: number } {
   let started = 0;
   let completed = 0;
   for (const event of events) {
@@ -511,10 +401,7 @@ function planRuntimeSteps(
   for (const entry of recording.entries) {
     if (entry.dir === "bridge→runtime") {
       const message = parseWire(entry.line);
-      if (
-        message !== null &&
-        message.method === THREAD_DELTA_NOTIFICATION_METHOD
-      ) {
+      if (message !== null && message.method === THREAD_DELTA_NOTIFICATION_METHOD) {
         try {
           assembled.push(...assembler.assembleMessage(message));
         } catch {
@@ -550,20 +437,14 @@ function methodOfRecordedBridgeRequest(
   for (const entry of recording.entries) {
     if (entry.dir !== "bridge→runtime" || entry.run !== response.run) continue;
     const message = parseWire(entry.line);
-    if (
-      message !== null &&
-      isRequest(message) &&
-      String(message.id) === String(id)
-    ) {
+    if (message !== null && isRequest(message) && String(message.id) === String(id)) {
       return message.method;
     }
   }
   return undefined;
 }
 
-const REPLAY_CHILD_PATH = fileURLToPath(
-  new URL("./replay-provider-child.mjs", import.meta.url),
-);
+const REPLAY_CHILD_PATH = fileURLToPath(new URL("./replay-provider-child.mjs", import.meta.url));
 
 /** The id of the harness's own `initialize` request; never part of a recording. */
 export const PARITY_INITIALIZE_ID = "parity-initialize";
@@ -576,17 +457,15 @@ function sleep(ms: number): Promise<void> {
  * Replay one recording through one bridge. Resolves when the bridge exits
  * after the last recorded runtime line has been sent and answered.
  */
-export async function replayRecording(
-  options: ReplayRecordingOptions,
-): Promise<ParityRun> {
+export async function replayRecording(options: ReplayRecordingOptions): Promise<ParityRun> {
   const timeoutMs = options.timeoutMs ?? 15_000;
   // Generous on purpose: only a bridge that diverges from the recording ever
   // waits this long, while a slow CI runner must never trip it for a healthy one.
   const orderTimeoutMs = options.orderTimeoutMs ?? 5_000;
   const settleMs = options.settleMs ?? 750;
   const drainMs = options.drainMs ?? 300;
-  const providerId = options.bridge.providerId;
-  const profile = resolveReplayProfile(providerId);
+  const providerId = options.providerId;
+  const profile = options.profile ?? DEFAULT_REPLAY_PROFILE;
   const recording = readBridgeRecording(options.recordingDir);
 
   const stateDir = mkdtempSync(join(tmpdir(), "bb-parity-replay-"));
@@ -626,36 +505,45 @@ export async function replayRecording(
   );
 
   profile.prepareState?.({ recording, stateDir, workspaceDir });
-  const launch = resolveBridgeLaunch(options.bridge);
+  const launch = options.bridge;
   const child: ChildProcess = spawn(launch.command, launch.args, {
     cwd: launch.cwd,
     env: {
       ...process.env,
+      ...launch.env,
       ...profile.env({ replayCommand, wrapperPath, stateDir }),
     },
     stdio: ["pipe", "pipe", "pipe"],
   });
+
+  // A bridge that derives paths from the runtime's `cwd` (a command's cwd,
+  // a file it reads) names this replay's workspace where the recording
+  // names the recorded one. Restore the recorded path in its output, so the
+  // replay compares with the recording and a re-recorded lane keeps the
+  // recording's paths. The replay workspace is a unique temp path, so the
+  // substitution cannot touch anything else.
+  const recordedCwd = recordedWorkspaceDir(recording);
+  const restoreRecordedWorkspace = (line: string): string =>
+    recordedCwd === null || recordedCwd === workspaceDir
+      ? line
+      : line.split(workspaceDir).join(recordedCwd);
 
   const initializeId = PARITY_INITIALIZE_ID;
   const startedAt = Date.now();
   const lines: string[] = [];
   const lineTimes: number[] = [];
   const lineAfter: ParityRun["lineAfter"] = [];
-  let lastSentRuntimeEntry: { run: number; seq: number; ts: number } | null =
-    null;
+  let lastSentRuntimeEntry: { run: number; seq: number; ts: number } | null = null;
   const events: ThreadEvent[] = [];
   const grammarViolations: ParityGrammarViolation[] = [];
   const stalls: string[] = [];
   let stderr = "";
   const grammar = new ThreadEventGrammar();
   const liveAssembler = options.createAssembler(providerId);
-  const planAssembler = (
-    options.createPlanAssembler ?? options.createAssembler
-  )(providerId);
+  const planAssembler = (options.createPlanAssembler ?? options.createAssembler)(providerId);
+  const exactPlan = options.planFromCurrentLane === true;
   const steps = planRuntimeSteps(
-    options.planFromCurrentLane === true
-      ? withCurrentBridgeLane(recording)
-      : recording,
+    exactPlan ? withCurrentBridgeLane(recording) : recording,
     planAssembler,
   );
 
@@ -666,11 +554,7 @@ export async function replayRecording(
   for (const step of steps) {
     if (step.message !== null && isResponse(step.message)) {
       const method =
-        methodOfRecordedBridgeRequest(
-          recording,
-          step.entry,
-          step.message.id as string | number,
-        ) ?? "?";
+        methodOfRecordedBridgeRequest(recording, step.entry, step.message.id as string | number) ?? "?";
       const queue = recordedAnswers.get(method) ?? [];
       queue.push(step.message);
       recordedAnswers.set(method, queue);
@@ -697,9 +581,7 @@ export async function replayRecording(
     const queue = recordedAnswers.get(method);
     const recorded = queue?.shift();
     if (recorded === undefined) {
-      stalls.push(
-        `no recorded answer for bridge request ${method} (${String(message.id)})`,
-      );
+      stalls.push(`no recorded answer for bridge request ${method} (${String(message.id)})`);
       write(
         JSON.stringify({
           jsonrpc: "2.0",
@@ -714,7 +596,8 @@ export async function replayRecording(
 
   readBoundedLines({
     input: child.stdout!,
-    onLine: (line) => {
+    onLine: (rawLine) => {
+      const line = restoreRecordedWorkspace(rawLine);
       lastOutputAt = Date.now();
       lines.push(line);
       lineTimes.push(lastOutputAt - startedAt);
@@ -726,10 +609,7 @@ export async function replayRecording(
         return;
       }
       if (isRequest(message)) {
-        pendingBridgeRequests.push({
-          id: message.id as string | number,
-          method: message.method!,
-        });
+        pendingBridgeRequests.push({ id: message.id as string | number, method: message.method! });
         answerBridgeRequest(message);
         return;
       }
@@ -738,9 +618,7 @@ export async function replayRecording(
         try {
           assembled = liveAssembler.assembleMessage(message);
         } catch (error) {
-          stalls.push(
-            `invalid thread/delta: ${error instanceof Error ? error.message : String(error)}`,
-          );
+          stalls.push(`invalid thread/delta: ${error instanceof Error ? error.message : String(error)}`);
           return;
         }
         for (const event of assembled) {
@@ -748,11 +626,7 @@ export async function replayRecording(
           if (result.kind === "violation") {
             // The runtime drops a violating event at intake; so does parity,
             // so rows match what production projects.
-            grammarViolations.push({
-              rule: result.rule,
-              reason: result.reason,
-              eventType: event.type,
-            });
+            grammarViolations.push({ rule: result.rule, reason: result.reason, eventType: event.type });
             continue;
           }
           events.push(event);
@@ -786,14 +660,8 @@ export async function replayRecording(
 
   // Pace the replay child: nothing recorded after the first runtime request
   // plays before that request is sent.
-  const firstStep = steps.find(
-    (step) => step.message !== null && isRequest(step.message),
-  );
-  setCursor(
-    firstStep === undefined
-      ? "end"
-      : { run: firstStep.entry.run, seq: firstStep.entry.seq },
-  );
+  const firstStep = steps.find((step) => step.message !== null && isRequest(step.message));
+  setCursor(firstStep === undefined ? "end" : { run: firstStep.entry.run, seq: firstStep.entry.seq });
   write(
     JSON.stringify({
       jsonrpc: "2.0",
@@ -813,28 +681,22 @@ export async function replayRecording(
       // Responses are replayed on demand when the bridge asks; notifications
       // go straight through.
       if (step.message !== null && !isResponse(step.message)) {
-        lastSentRuntimeEntry = {
-          run: step.entry.run,
-          seq: step.entry.seq,
-          ts: step.entry.ts,
-        };
+        lastSentRuntimeEntry = { run: step.entry.run, seq: step.entry.seq, ts: step.entry.ts };
         write(step.entry.line);
       }
       continue;
     }
     const request = step.message;
     const method = request.method!;
-    await waitFor(`earlier requests before ${method}`, () =>
-      sentRequestIds.every((id) => answeredIds.has(id)),
+    await waitFor(
+      `earlier requests before ${method}`,
+      () => sentRequestIds.every((id) => answeredIds.has(id)),
     );
     await waitFor(
       `${step.gate.started} turn/started and ${step.gate.completed} turn/completed before ${method}`,
       () => {
         const live = countTurnBoundaries(events);
-        return (
-          live.started >= step.gate.started &&
-          live.completed >= step.gate.completed
-        );
+        return live.started >= step.gate.started && live.completed >= step.gate.completed;
       },
     );
     // Land the request at the recorded point of the stream: the replay child
@@ -842,15 +704,17 @@ export async function replayRecording(
     // (the cursor set after the previous send), and the bridge must have
     // assembled as many events as the recording had before it. Events rather
     // than lines, so identity or metadata chatter cannot shift the point.
-    // Best effort for a divergent bridge — the wait ends once the bridge has
-    // been quiet for orderTimeoutMs — and never a stall.
+    // A plan from the current lane is exact for this bridge, so the wait is
+    // strict and a timeout is a stall. A plan from the recorded lane is best
+    // effort for a divergent bridge — the wait ends once the bridge has been
+    // quiet for orderTimeoutMs — and never a stall.
     await waitFor(
       `${step.eventsBefore} events before ${method}`,
       () =>
         events.length >= step.eventsBefore ||
-        Date.now() - lastOutputAt >= orderTimeoutMs,
+        (!exactPlan && Date.now() - lastOutputAt >= orderTimeoutMs),
       timeoutMs,
-      false,
+      exactPlan,
     );
     await waitFor(
       `the stream to drain before ${method}`,
@@ -869,43 +733,24 @@ export async function replayRecording(
       const threadId = (request.params as { threadId?: unknown }).threadId;
       if (typeof threadId === "string") grammar.clearThread(threadId);
     }
-    const rewritten = rewriteRecordedMachineFacts(
-      step.entry.line,
-      workspaceDir,
-    );
+    const rewritten = rewriteRecordedMachineFacts(step.entry.line, workspaceDir);
     const line =
       profile.rewriteRuntimeLine === undefined
         ? rewritten
         : profile.rewriteRuntimeLine(rewritten, { replayCommand });
-    lastSentRuntimeEntry = {
-      run: step.entry.run,
-      seq: step.entry.seq,
-      ts: step.entry.ts,
-    };
+    lastSentRuntimeEntry = { run: step.entry.run, seq: step.entry.seq, ts: step.entry.ts };
     write(line);
     sentRequestIds.push(String(request.id));
     // Release the provider lines up to the next runtime request.
     const nextStep = steps
       .slice(steps.indexOf(step) + 1)
-      .find(
-        (candidate) =>
-          candidate.message !== null && isRequest(candidate.message),
-      );
-    setCursor(
-      nextStep === undefined
-        ? "end"
-        : { run: nextStep.entry.run, seq: nextStep.entry.seq },
-    );
+      .find((candidate) => candidate.message !== null && isRequest(candidate.message));
+    setCursor(nextStep === undefined ? "end" : { run: nextStep.entry.run, seq: nextStep.entry.seq });
   }
   setCursor("end");
-  await waitFor("the last responses", () =>
-    sentRequestIds.every((id) => answeredIds.has(id)),
-  );
+  await waitFor("the last responses", () => sentRequestIds.every((id) => answeredIds.has(id)));
   // Let trailing notifications drain, then close the wire like the runtime.
-  await waitFor(
-    "the stream to settle",
-    () => Date.now() - lastOutputAt >= settleMs,
-  );
+  await waitFor("the stream to settle", () => Date.now() - lastOutputAt >= settleMs);
   child.stdin?.end();
   const exitCode = await Promise.race([
     exited,
@@ -940,11 +785,7 @@ export function assembleRecordedEvents(
   recording: BridgeRecording,
   createAssembler: CreateParityAssembler,
   providerId: string,
-): {
-  events: ThreadEvent[];
-  grammarViolations: ParityGrammarViolation[];
-  invalidDeltas: string[];
-} {
+): { events: ThreadEvent[]; grammarViolations: ParityGrammarViolation[]; invalidDeltas: string[] } {
   const assembler = createAssembler(providerId);
   const grammar = new ThreadEventGrammar();
   const events: ThreadEvent[] = [];
@@ -967,25 +808,18 @@ export function assembleRecordedEvents(
     }
     if (entry.dir !== "bridge→runtime") continue;
     const message = parseWire(entry.line);
-    if (message === null || message.method !== THREAD_DELTA_NOTIFICATION_METHOD)
-      continue;
+    if (message === null || message.method !== THREAD_DELTA_NOTIFICATION_METHOD) continue;
     let assembled: ThreadEvent[];
     try {
       assembled = assembler.assembleMessage(message);
     } catch (error) {
-      invalidDeltas.push(
-        error instanceof Error ? error.message : String(error),
-      );
+      invalidDeltas.push(error instanceof Error ? error.message : String(error));
       continue;
     }
     for (const event of assembled) {
       const result = grammar.observe(event);
       if (result.kind === "violation") {
-        grammarViolations.push({
-          rule: result.rule,
-          reason: result.reason,
-          eventType: event.type,
-        });
+        grammarViolations.push({ rule: result.rule, reason: result.reason, eventType: event.type });
         continue;
       }
       events.push(event);
@@ -1054,11 +888,9 @@ function blankTimeFields(value: unknown): unknown {
   if (value !== null && typeof value === "object") {
     const out: Record<string, unknown> = {};
     for (const [key, entry] of Object.entries(value)) {
-      out[key] =
-        TIME_FIELDS.has(key) &&
-        (typeof entry === "number" || typeof entry === "string")
-          ? 0
-          : blankTimeFields(entry);
+      out[key] = TIME_FIELDS.has(key) && (typeof entry === "number" || typeof entry === "string")
+        ? 0
+        : blankTimeFields(entry);
     }
     return out;
   }
@@ -1082,9 +914,7 @@ const ROW_ID_FIELDS = [
   "interactionId",
 ] as const;
 
-export function normalizeParityEvents(
-  events: readonly ThreadEvent[],
-): unknown[] {
+export function normalizeParityEvents(events: readonly ThreadEvent[]): unknown[] {
   return blankTimeFields(normalizeCalibrationEvents(events)) as unknown[];
 }
 
@@ -1106,9 +936,20 @@ function pointerSegments(path: string): string[] {
  * Delete every value under a wildcard JSON pointer. Returns how many values
  * the mask removed, so an allowlist entry that touches nothing is reported
  * stale.
+ *
+ * The root pointer (`/`) empties the whole layer. A pointer cannot describe
+ * a change that inserts or removes a list entry (every later index shifts),
+ * so an entry that needs this must say in its reason why the layer is not
+ * comparable for that cell and what re-records it out of the allowlist.
  */
 export function maskPath(value: unknown, path: string): number {
   const segments = pointerSegments(path);
+  if (segments.length === 0) {
+    if (!Array.isArray(value)) return 0;
+    const removed = value.length;
+    value.length = 0;
+    return removed;
+  }
   let removed = 0;
   const visit = (node: unknown, index: number): void => {
     if (index >= segments.length || node === null || typeof node !== "object") {
@@ -1148,11 +989,7 @@ export function maskPath(value: unknown, path: string): number {
   return removed;
 }
 
-function entryApplies(
-  entry: ParityAllowlistEntry,
-  provider: string,
-  cell: string,
-): boolean {
+function entryApplies(entry: ParityAllowlistEntry, provider: string, cell: string): boolean {
   return (
     (entry.provider === "*" || entry.provider === provider) &&
     (entry.cell === "*" || entry.cell === cell)
@@ -1166,18 +1003,14 @@ export function compareParity(
   scope: { provider: string; cell: string },
 ): ParityComparison {
   const layers = {
-    events: [
-      normalizeParityEvents(oldRun.events),
-      normalizeParityEvents(newRun.events),
-    ],
+    events: [normalizeParityEvents(oldRun.events), normalizeParityEvents(newRun.events)],
     rows: [normalizeParityRows(oldRun.rows), normalizeParityRows(newRun.rows)],
   } as const;
   const staleAllowlist: ParityAllowlistEntry[] = [];
   for (const entry of allowlist) {
     if (!entryApplies(entry, scope.provider, scope.cell)) continue;
     const [oldSide, newSide] = layers[entry.layer];
-    const removed =
-      maskPath(oldSide, entry.path) + maskPath(newSide, entry.path);
+    const removed = maskPath(oldSide, entry.path) + maskPath(newSide, entry.path);
     if (removed === 0) {
       staleAllowlist.push(entry);
     }
@@ -1185,12 +1018,8 @@ export function compareParity(
   const events = diffLayer(layers.events[0], layers.events[1]);
   const rows = diffLayer(layers.rows[0], layers.rows[1]);
   const grammar = diffLayer(
-    (oldRun.grammarViolations ?? []).map(
-      (violation) => `${violation.rule}:${violation.eventType}`,
-    ),
-    (newRun.grammarViolations ?? []).map(
-      (violation) => `${violation.rule}:${violation.eventType}`,
-    ),
+    (oldRun.grammarViolations ?? []).map((violation) => `${violation.rule}:${violation.eventType}`),
+    (newRun.grammarViolations ?? []).map((violation) => `${violation.rule}:${violation.eventType}`),
   );
   const clean = (diff: ParityLayerDiff): boolean =>
     diff.onlyInOld.length === 0 && diff.onlyInNew.length === 0;
@@ -1201,18 +1030,11 @@ export function compareParity(
     rows,
     grammar,
     staleAllowlist,
-    passed:
-      clean(events) &&
-      clean(rows) &&
-      clean(grammar) &&
-      staleAllowlist.length === 0,
+    passed: clean(events) && clean(rows) && clean(grammar) && staleAllowlist.length === 0,
   };
 }
 
-function diffLayer(
-  oldSide: readonly unknown[],
-  newSide: readonly unknown[],
-): ParityLayerDiff {
+function diffLayer(oldSide: readonly unknown[], newSide: readonly unknown[]): ParityLayerDiff {
   const diff = diffCalibrationStreams(oldSide, newSide);
   return { onlyInOld: diff.onlyInLegacy, onlyInNew: diff.onlyInBridge };
 }
@@ -1223,12 +1045,7 @@ export function describeParityValue(value: unknown): string {
     return String(value);
   }
   const record = value as Record<string, unknown>;
-  const type =
-    typeof record.type === "string"
-      ? record.type
-      : typeof record.kind === "string"
-        ? record.kind
-        : "?";
+  const type = typeof record.type === "string" ? record.type : typeof record.kind === "string" ? record.kind : "?";
   const item = record.item;
   const suffix =
     item !== null && typeof item === "object" && "type" in item
@@ -1242,31 +1059,29 @@ export function describeParityValue(value: unknown): string {
 // ---------------------------------------------------------------------------
 
 export interface ReplayRecordedCellsOptions {
+  /** The `<provider>/<cell>` tree to read (see `listRecordedCells`). */
+  recordingsRoot: string;
   /** Which recorded providers this bridge serves (`acp` serves `acp-*`). */
   servesProvider: (providerId: string) => boolean;
-  /** Cell names to replay; defaults to every committed cell of those providers. */
+  /** Cell names to replay; defaults to every cell of those providers. */
   cells?: readonly string[];
-  /** The checkout whose bridge replays; defaults to the recordings' own. */
-  checkoutRoot?: string;
-  recordingsRoot?: string;
+  /** The bridge process and replay profile for one cell's provider. */
+  bridge: (cell: RecordedCell) => { launch: ProviderBridgeLaunch; profile?: ReplayProviderProfile };
   createAssembler: CreateParityAssembler;
   timeoutMs?: number;
   onStderr?: (text: string) => void;
 }
 
 /**
- * Replay this bridge's recorded cells for `checkRecordedCellReplay`: each
- * cell through the bridge of the checkout, with the recording's own assembled
+ * Replay a bridge's recorded cells for `checkRecordedCellReplay`: each cell
+ * through the bridge the caller launches, with the recording's own assembled
  * events beside the replay's. Cells run concurrently — each is its own bridge
  * process with its own replay state.
  */
 export async function replayRecordedCells(
   options: ReplayRecordedCellsOptions,
 ): Promise<RecordedCellReplay[]> {
-  const recordingsRoot = options.recordingsRoot ?? COMMITTED_RECORDINGS_ROOT;
-  const checkoutRoot =
-    options.checkoutRoot ?? resolve(recordingsRoot, "../../..");
-  const cells = listRecordedCells(recordingsRoot).filter(
+  const cells = listRecordedCells(options.recordingsRoot).filter(
     (cell: RecordedCell) =>
       options.servesProvider(cell.provider) &&
       (options.cells === undefined || options.cells.includes(cell.cell)) &&
@@ -1282,17 +1097,16 @@ export async function replayRecordedCells(
         options.createAssembler,
         cell.provider,
       );
+      const bridge = options.bridge(cell);
       const run = await replayRecording({
         recordingDir: cell.dir,
-        bridge: { checkoutRoot, providerId: cell.provider },
+        providerId: cell.provider,
+        bridge: bridge.launch,
+        ...(bridge.profile === undefined ? {} : { profile: bridge.profile }),
         createAssembler: options.createAssembler,
         planFromCurrentLane: true,
-        ...(options.timeoutMs !== undefined
-          ? { timeoutMs: options.timeoutMs }
-          : {}),
-        ...(options.onStderr !== undefined
-          ? { onStderr: options.onStderr }
-          : {}),
+        ...(options.timeoutMs !== undefined ? { timeoutMs: options.timeoutMs } : {}),
+        ...(options.onStderr !== undefined ? { onStderr: options.onStderr } : {}),
       });
       return {
         provider: cell.provider,

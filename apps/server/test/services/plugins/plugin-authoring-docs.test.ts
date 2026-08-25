@@ -22,6 +22,7 @@ import {
   type PluginNewThreadPanelProps,
   type PluginPendingInteractionProps,
   type PluginProviderIconRegistration,
+  type PluginTimelineRendererProps,
   type PluginSettingDescriptor,
   type PluginSettingsSectionProps,
   type PluginSidebarFooterActionProps,
@@ -72,6 +73,7 @@ const BB_PLUGIN_API_KEYS = [
   "status",
   "server",
   "hosts",
+  "experimental_aiServices",
   "sdk",
   "onDispose",
 ] as const satisfies readonly (keyof BbPluginApi)[];
@@ -177,6 +179,7 @@ type SlotPropsByName = {
   // Registration-object slot: the component receives only className, so the
   // registration type is the documented surface.
   experimental_providerIcon: PluginProviderIconRegistration;
+  experimental_timelineRenderer: PluginTimelineRendererProps;
 };
 
 type MissingSlot = Exclude<keyof PluginAppSlots, keyof SlotPropsByName>;
@@ -242,6 +245,7 @@ const FRONTEND_SLOT_PROP_FIELDS = {
     "isCompactViewport",
     "onNavigate",
     "searchQuery",
+    "Original",
     "experimental_Original",
     "experimental_isSearchFieldOpen",
     "experimental_SidebarThreadProjection",
@@ -251,12 +255,13 @@ const FRONTEND_SLOT_PROP_FIELDS = {
     "projectId",
     "isCompactViewport",
   ],
-  fileOpener: ["path", "source", "experimental_Original"],
+  fileOpener: ["path", "source", "Original", "experimental_Original"],
   experimental_sourceCodeRenderer: [
     "content",
     "path",
     "overflow",
     "highlightedLines",
+    "Original",
     "experimental_Original",
   ],
   experimental_diffRenderer: [
@@ -266,12 +271,20 @@ const FRONTEND_SLOT_PROP_FIELDS = {
     "overflow",
     "showLineNumbers",
     "experimental_fullFileContents",
+    "Original",
     "experimental_Original",
   ],
   messageDirective: ["attributes", "source", "message", "openWorkspaceFile"],
   messageAction: ["threadId", "message", "selectedText", "openPanel"],
   commandPaletteAction: ["threadId", "projectId", "openPanel"],
   experimental_providerIcon: ["providerId", "icon"],
+  experimental_timelineRenderer: [
+    "row",
+    "payload",
+    "presentation",
+    "thread",
+    "Original",
+  ],
 } as const satisfies {
   [S in keyof SlotPropsByName]: readonly (keyof SlotPropsByName[S])[];
 };
@@ -298,7 +311,7 @@ const NAV_PANEL_REGISTRATION_FIELDS = [
   "icon",
   "path",
   "component",
-  "experimental_fixedTabs",
+  "fixedTabs",
   "experimental_sidebarAccessory",
   "headerContent",
 ] as const satisfies readonly (keyof PluginNavPanelRegistration)[];
