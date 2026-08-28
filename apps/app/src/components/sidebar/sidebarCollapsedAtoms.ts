@@ -33,13 +33,7 @@ export type {
   SidebarSectionId,
 } from "@bb/client-core";
 
-// "project" keeps the per-project grouping; "chronological" is the persisted
-// value for the cross-project Sections view that replaced the old None view;
-// "machine" groups threads by the host their environment runs on.
 export type SidebarOrganizationMode = "project" | "chronological" | "machine";
-// Controls thread ordering in both grouped and ungrouped sidebar views. Time
-// sorts show newest first and alphabetical sorts A→Z. "none" is a legacy value
-// that the runtime normalizes back to "updated".
 export type SidebarChronologicalSort = "updated" | "created" | "alpha" | "none";
 export type SidebarProjectOrder = "recent" | "manual";
 
@@ -196,8 +190,6 @@ export const sidebarShowThreadNumbersAtom = atomWithStorage<boolean>(
   { getOnInit: true },
 );
 
-// Collapsed section keys (see buildSectionKey in sectionKeys.ts). A plain string[],
-// matching collapsedThreadIds / collapsedProjectIds.
 export const sidebarCollapsedThreadSectionsAtom = atomWithStorage<string[]>(
   COLLAPSED_THREAD_SECTIONS_STORAGE_KEY,
   [],
@@ -205,8 +197,6 @@ export const sidebarCollapsedThreadSectionsAtom = atomWithStorage<string[]>(
   { getOnInit: true },
 );
 
-// Collapsed machine-mode group keys (host ids plus the no-machine sentinel;
-// see machineThreadGroups.ts).
 export const sidebarCollapsedMachinesAtom = atomWithStorage<string[]>(
   COLLAPSED_MACHINES_STORAGE_KEY,
   [],

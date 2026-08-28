@@ -106,8 +106,6 @@ function insertAppliedMigration(
     .run(migration.hash, migration.when);
 }
 
-// A renumbered personal migration keeps its SQL hash, so move its rows to the
-// new timestamp instead of leaving stale copies that later read as ambiguous.
 function relocateAppliedMigration(
   database: Database.Database,
   migration: ExpectedMigration,

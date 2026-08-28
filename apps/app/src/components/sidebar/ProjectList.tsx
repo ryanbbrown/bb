@@ -208,7 +208,6 @@ interface LocalSourcePathTarget {
   projectId: string;
 }
 
-// Exported for plugin nav entries that render as sibling primary action rows.
 export const PROJECT_LIST_ACTION_BUTTON_CLASS = cn(
   SIDEBAR_ROW_BASE_CLASS,
   LIST_HOVER_TRANSITION,
@@ -245,8 +244,6 @@ interface SelectedThreadSidebarExpansionArgs {
   organizationMode: SidebarOrganizationMode;
   isPinned: boolean;
   selectedThread: ThreadListEntry;
-  // Project group that renders the thread in "By project" mode. A cross-project
-  // child renders under its root ancestor's project, not its own.
   sidebarProjectId: string;
 }
 
@@ -467,8 +464,6 @@ export function getSidebarThreadComparator(
     : compareStandardThreads;
 }
 
-// Keep the section name-conflict response concise and consistent with the
-// sidebar's other mutation errors.
 function getSectionMutationErrorMessage(
   error: unknown,
   fallbackMessage: string,
@@ -489,11 +484,6 @@ export function ProjectListSectionIconButton({
   const handleClick = useCallback<MouseEventHandler<HTMLButtonElement>>(
     (event) => {
       event.stopPropagation();
-      // A native or in-app picker can return focus to the element that opened
-      // it. Radix then reads that restored focus as keyboard navigation and
-      // reopens the tooltip after a pointer-triggered picker is dismissed.
-      // Drop pointer focus before opening the picker; keyboard/assistive clicks
-      // have detail=0 and retain focus for navigation.
       if (event.detail > 0) {
         event.currentTarget.blur();
       }
@@ -582,8 +572,6 @@ function ProjectListThreadsSectionActions({
   );
 }
 
-// "Manually" is the user-facing name for chronological/drag-ordered mode;
-// the stored atom value stays "chronological".
 const SIDEBAR_ORGANIZE_OPTIONS = [
   { label: "By project", mode: "project" },
   { label: "By machine", mode: "machine" },
@@ -649,8 +637,6 @@ function SidebarDisplayMenuTrigger({
   );
 }
 
-// This global menu is available from every section header. Project mode also
-// includes its browser-local top-level section order.
 export function SidebarDisplayOptionsMenu({
   open,
   onOpenChange,
@@ -685,8 +671,6 @@ export function SidebarDisplayOptionsMenu({
               key={option.mode}
               checked={organizationMode === option.mode}
               onCheckedChange={() => {
-                // Close before swapping the sidebar section tree so the newly
-                // mounted header cannot inherit an open menu.
                 onOpenChange?.(false);
                 setOrganizationMode(option.mode);
               }}
@@ -756,9 +740,6 @@ interface SidebarThreadsSectionActionsProps {
   onNewThread: () => void;
 }
 
-// The complete Threads-section header cluster. Every organization mode and
-// every section state renders this same component so the label-adjacent actions
-// cannot drift apart.
 function SidebarThreadsSectionActions({
   displayOptionsOpen,
   onDisplayOptionsOpenChange,
@@ -1024,7 +1005,6 @@ export function ProjectModeSections({
       new Map(threads.map((thread) => [thread.id, thread])),
     );
     for (const thread of threads) {
-      // Cross-project children render and rank with their parent's project.
       const sidebarProjectId = resolveSidebarProjectId(thread);
       const activityGroup = activityGroups.get(sidebarProjectId);
       if (activityGroup) activityGroup.push(thread);
@@ -1507,9 +1487,6 @@ function ProjectListComponent({
     return sidebarThreads;
   }, [sidebarNavigation]);
   const draftThreadIds = usePromptDraftInputThreadIds(threads);
-  // Provided once by AppLayout from the same sidebar payload (with value
-  // retention across refetches); building a second copy here re-rendered every
-  // row twice per sidebar update.
   const titleMentionResources = useThreadTitleMentionResources();
   const threadById = useMemo(() => {
     const map = new Map<string, ThreadListEntry>();
@@ -1789,8 +1766,6 @@ function ProjectListComponent({
     if (!selectedThread) {
       return;
     }
-    // A hidden thread (a side chat, say) has no row to reveal, so there is no
-    // ancestor chain worth expanding.
     if (selectedThread.visibility === "hidden") {
       return;
     }
@@ -1915,7 +1890,6 @@ function ProjectListComponent({
       pinnedSidebarState.effectivePinnedThreadIds.has(thread.id) &&
       isSidebarProjectThread(thread),
   );
-  // One Threads-header cluster shared by every organization and section state.
   const threadsSectionActions = (
     <SidebarThreadsSectionActions
       displayOptionsOpen={threadsDisplayOptionsMenuOpen}
