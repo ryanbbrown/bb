@@ -744,7 +744,7 @@ function ThreadRowComponent({
           </span>
         ) : (
           <span
-            className="min-w-0 truncate"
+            className="bb-sidebar-thread-title min-w-0 truncate"
             title={labelTitle}
             onDoubleClick={startTitleEditing}
           >

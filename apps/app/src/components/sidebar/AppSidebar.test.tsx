@@ -78,23 +78,6 @@ vi.mock("./usePaneContentSplitDrag", () => ({
   usePaneContentSplitDrag: () => undefined,
 }));
 
-vi.mock("./useSidebarThreadSearch", () => ({
-  useSidebarThreadSearch: () => ({
-    activeDescendantId: undefined,
-    activeIndex: -1,
-    inputRef: { current: null },
-    isActive: false,
-    onActivate: vi.fn(),
-    onClose: vi.fn(),
-    onExternalThreadOpen: vi.fn(),
-    onKeyDown: vi.fn(),
-    onNavigationItemsChange: vi.fn(),
-    onQueryChange: vi.fn(),
-    onSelectItem: vi.fn(),
-    query: "",
-  }),
-}));
-
 vi.mock("@/components/commands/AppCommandProvider", () => ({
   useAppCommandHandler: vi.fn(),
   useAppCommandShortcut: () => null,
@@ -109,10 +92,6 @@ vi.mock("@/hooks/useRouteState", () => ({
 
 vi.mock("@/lib/root-compose-selection", () => ({
   useSetRootComposeProjectId: () => setRootComposeProjectId,
-}));
-
-vi.mock("@bb/shared-ui/hooks/use-pointer-coarse", () => ({
-  usePointerCoarse: () => false,
 }));
 
 class RecordingMutationObserver implements MutationObserver {
