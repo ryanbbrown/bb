@@ -87,6 +87,12 @@ require_command pnpm
   die "Run this command from the personal branch."
 [[ -f "${live_database}" ]] || die "Live database not found: ${live_database}"
 
+printf 'Reconciling workspace dependencies\n'
+(
+  cd -- "${repo_root}"
+  pnpm install --frozen-lockfile --prefer-offline
+)
+
 printf 'Building personal bb from %s\n' "${repo_root}"
 (
   cd -- "${repo_root}"
